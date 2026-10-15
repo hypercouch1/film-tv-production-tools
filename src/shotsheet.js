@@ -232,6 +232,23 @@
     return parts.filter(Boolean).join('  ·  ');
   }
 
+  // Synopsis · cast · page length, shown under a scene's title (scenes imported from a script have these).
+  function sceneInfo(s) {
+    const parts = [
+      s.synopsis ? el('span', { class: 'scene-synopsis' }, s.synopsis) : null,
+      s.cast && s.cast.length ? el('span', { class: 'scene-cast' }, s.cast.join(', ')) : null,
+      s.eighths ? el('span', { class: 'scene-pages' }, pagesLabel(s.eighths)) : null,
+    ].filter(Boolean);
+    return parts.length ? el('div', { class: 'scene-info' }, ...parts) : null;
+  }
+
+  const pagesLabel = (eighths) => `${window.ScriptParse.formatEighths(eighths)} pg${eighths > 8 ? 's' : ''}`;
+
+  // Script pages covered by a shoot day: every scene with at least one shot that day.
+  function dayEighths(p, dayId) {
+    return p.scenes.filter((s) => s.shots.some((x) => x.dayId === dayId)).reduce((n, s) => n + (s.eighths || 0), 0);
+  }
+
   function renderRun(p) {
     const wrap = $('sections');
     wrap.innerHTML = '';
@@ -257,11 +274,12 @@
       if (!ul.children.length) continue;
       wrap.append(el('section', { class: 'section', id: 'sec-' + s.id },
         el('h2', { class: 'section-title' }, `SCENE ${s.number}`, el('span', { class: 'scene-heading' }, s.heading)),
+        sceneInfo(s),
         ul));
     }
     if (!any) {
       wrap.append(el('div', { class: 'empty' },
-        dayFilter === 'all' ? 'No shots yet. Click Edit to add scenes and shots.'
+        dayFilter === 'all' ? 'No shots yet. Click Edit to add scenes and shots, or use "Import script" in the sidebar to build them from a screenplay.'
           : 'No shots on this day yet. Assign shots from the Schedule view or in Edit mode.'));
     }
   }
@@ -374,6 +392,15 @@
             if (s.shots.length && !confirm(`Delete scene ${s.number} and its ${s.shots.length} shots?`)) return;
             p.scenes.splice(sIdx, 1); save(); render({ keepScroll: true });
           } }, '✕')),
+        el('div', { class: 'edit-row scene-extra' },
+          el('input', {
+            class: 'edit-input synopsis-input', value: s.synopsis || '', placeholder: 'Scene synopsis (optional)',
+            oninput: (e) => { s.synopsis = e.target.value; save(); },
+          }),
+          el('input', {
+            class: 'edit-input cast-input', value: (s.cast || []).join(', '), placeholder: 'Cast, comma separated',
+            oninput: (e) => { s.cast = e.target.value.split(',').map((x) => x.trim()).filter(Boolean); save(); },
+          })),
         shotsWrap,
         el('button', { class: 'add-btn', onclick: () => {
           const n = F.newShot(s.shots[s.shots.length - 1]);
@@ -540,7 +567,7 @@
         el('span', { class: 'day-row-num' }, `DAY ${i + 1}`),
         el('span', { class: 'day-row-date' }, fmtDate(d.date)),
         el('span', { class: 'day-row-loc' }, d.location || ''),
-        el('span', { class: 'day-row-count' }, `${done}/${shots.length}`));
+        el('span', { class: 'day-row-count' }, `${done}/${shots.length}` + (dayEighths(p, d.id) ? ` · ${pagesLabel(dayEighths(p, d.id))}` : '')));
       }),
       unscheduled ? el('div', { class: 'muted small unsched-note' }, `${unscheduled} shot${unscheduled === 1 ? '' : 's'} not scheduled yet`) : null);
   }
@@ -591,7 +618,7 @@
         labeled('Wrap', el('input', { class: 'field', type: 'time', value: day.wrap, oninput: upd('wrap') })),
         labeled('Location', el('input', { class: 'field', value: day.location, placeholder: 'Address or set', oninput: upd('location') })),
         labeled('Notes', el('textarea', { class: 'field', rows: 2, placeholder: 'Parking, weather backup, meals…', oninput: upd('notes') }, day.notes))),
-      el('h3', { class: 'panel-title' }, `SHOTS THIS DAY (${mine.length})`),
+      el('h3', { class: 'panel-title' }, `SHOTS THIS DAY (${mine.length})` + (dayEighths(p, day.id) ? ` · ${pagesLabel(dayEighths(p, day.id)).toUpperCase()}` : '')),
       mine.length ? null : el('div', { class: 'muted small' }, 'Add shots from the list below.'),
       el('ul', { class: 'mini-list' }, ...mine.map((x) => miniShot(x, '✕', 'Remove from this day', () => { x.shot.dayId = null; save(); render({ keepScroll: true }); }))),
       el('h3', { class: 'panel-title' }, `UNSCHEDULED (${free.length})`),
@@ -721,7 +748,98 @@
     render({ keepScroll: true });
   }
 
+  // ---------- Script import ----------
+  const SCRIPT_EXTS = ['pdf', 'fdx', 'fountain', 'spmd', 'txt'];
+
+  async function importScript() {
+    const result = await api.importScript();
+    if (result) openScriptResult(result);
+  }
+
+  function openScriptResult(result) {
+    if (result.error) { alert(result.error); return; }
+    let parsed;
+    try {
+      parsed = window.ScriptParse.parseScript(result.script);
+    } catch (err) {
+      alert(`${result.script.name}: ${err.message}`);
+      return;
+    }
+    openScriptPreview(parsed, result.script.name);
+  }
+
+  function openScriptPreview(parsed, fileName) {
+    const SP = window.ScriptParse;
+    const check = (on) => el('input', { type: 'checkbox', checked: on });
+    const title = el('input', { class: 'field', value: parsed.title });
+    const opts = { establishing: check(true), master: check(true), coverage: check(true) };
+    const sceneChecks = parsed.scenes.map(() => check(true));
+    const create = el('button', { class: 'primary-btn' });
+    const summary = el('span', { class: 'muted small' });
+
+    const currentOpts = () => ({
+      title: title.value.trim() || parsed.title,
+      include: new Set(sceneChecks.map((c, i) => (c.checked ? i : -1)).filter((i) => i >= 0)),
+      establishing: opts.establishing.checked,
+      master: opts.master.checked,
+      coverage: opts.coverage.checked,
+    });
+    const update = () => {
+      const raw = SP.buildProject(parsed, currentOpts());
+      const shots = raw.scenes.reduce((n, s) => n + s.shots.length, 0);
+      create.textContent = `Create shot sheet`;
+      create.disabled = !raw.scenes.length;
+      summary.textContent = `${raw.scenes.length} scene${raw.scenes.length === 1 ? '' : 's'} · ${shots} starter shot${shots === 1 ? '' : 's'}`;
+    };
+    for (const c of [...Object.values(opts), ...sceneChecks]) c.addEventListener('change', update);
+    const setAll = (on) => { sceneChecks.forEach((c) => (c.checked = on)); update(); };
+
+    const body = el('div', { class: 'script-import' },
+      el('p', { class: 'script-summary' },
+        el('strong', {}, fileName),
+        el('br'),
+        `${parsed.scenes.length} scenes · ${parsed.characters.length} speaking characters · ${SP.formatEighths(parsed.totalEighths)} pages`),
+      el('label', { class: 'form-field' }, el('span', {}, 'Project name'), title),
+      el('div', { class: 'script-opts' },
+        el('div', { class: 'field-label' }, 'Starter shots for each scene'),
+        el('label', {}, opts.establishing, ' Establishing shot when the location changes'),
+        el('label', {}, opts.master, ' Master wide shot'),
+        el('label', {}, opts.coverage, ' Coverage of speaking characters (singles, two-shots, overs)')),
+      el('div', { class: 'script-scenes-head' },
+        el('span', { class: 'field-label' }, 'Scenes'),
+        el('span', {},
+          el('button', { class: 'link-btn', type: 'button', onclick: () => setAll(true) }, 'All'), ' · ',
+          el('button', { class: 'link-btn', type: 'button', onclick: () => setAll(false) }, 'None'))),
+      el('div', { class: 'script-scenes' }, ...parsed.scenes.map((s, i) => el('label', { class: 'script-scene' },
+        sceneChecks[i],
+        el('span', { class: 'shot-code small' }, s.number),
+        el('span', { class: 'script-scene-main' },
+          el('span', { class: 'script-scene-heading' }, s.heading),
+          el('span', { class: 'muted small' }, [s.cast.join(', '), s.synopsis].filter(Boolean).join(' — '))),
+        el('span', { class: 'muted small nowrap' }, pagesLabel(s.eighths))))),
+      el('p', { class: 'muted small' }, 'Starter shots are a first pass. Adjust them in Edit mode. You can share the project afterwards.'),
+      el('div', { class: 'modal-foot spread' }, summary, create));
+    const m = window.Common.modal('Import script', body, { wide: true });
+
+    create.addEventListener('click', () => {
+      const o = currentOpts();
+      const project = F.normalizeProject(SP.buildProject(parsed, o), o.title);
+      const shots = allShots(project).length;
+      m.close();
+      addProject(project);
+      toast(`Created ${project.scenes.length} scenes and ${shots} shots from ${fileName}`);
+    });
+    update();
+  }
+
   function ingest(files) {
+    // Screenplays dropped on the window go through script import.
+    const script = files.find((f) => SCRIPT_EXTS.includes(f.ext));
+    if (script) {
+      api.readDroppedScript(script.file).then(openScriptResult);
+      files = files.filter((f) => f !== script);
+      if (!files.length) return;
+    }
     let added = 0, last = null;
     const errors = [];
     for (const f of files) {
@@ -769,6 +887,7 @@
     $('homeBtn').addEventListener('click', () => window.Common.goHome(store));
     $('newBtn').addEventListener('click', newProject);
     $('importBtn').addEventListener('click', importFiles);
+    $('importScriptBtn').addEventListener('click', importScript);
     $('resetBtn').addEventListener('click', resetChecks);
     $('editBtn').addEventListener('click', toggleEdit);
     $('sidebarToggle').addEventListener('click', toggleSidebar);
@@ -803,6 +922,7 @@
         new: newProject,
         duplicate: duplicateProject,
         import: importFiles,
+        importScript,
         export: () => exportAs(arg === 'native' ? 'shotsheet' : arg),
         home: () => window.Common.goHome(store),
         toggleEdit,

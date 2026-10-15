@@ -13,6 +13,8 @@
     },
     exportPdf: async () => { window.print(); return null; },
     takePendingFile: async () => null,
+    importScript: async () => ({ error: 'Script import needs the desktop app.' }),
+    readDroppedScript: async () => ({ error: 'Script import needs the desktop app.' }),
     onMenu: () => {},
     onFileOpened: () => {},
     platform: 'web',
@@ -130,16 +132,37 @@
     document.addEventListener('drop', async (e) => {
       if (!e.dataTransfer.files.length) return;
       e.preventDefault();
-      cb(await Promise.all([...e.dataTransfer.files].map(async (f) => ({
-        name: f.name,
-        ext: (f.name.split('.').pop() || '').toLowerCase(),
-        content: (await f.text()).replace(/^﻿/, ''),
-      }))));
+      cb(await Promise.all([...e.dataTransfer.files].map(async (f) => {
+        const ext = (f.name.split('.').pop() || '').toLowerCase();
+        return {
+          name: f.name,
+          ext,
+          content: ext === 'pdf' ? '' : (await f.text()).replace(/^﻿/, ''),
+          file: f,
+        };
+      })));
     });
+  }
+
+  // ---- Modal dialog ----
+  function modal(title, body, { wide = false } = {}) {
+    const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    const overlay = el('div', { class: 'modal-overlay', onmousedown: (e) => { if (e.target === overlay) close(); } },
+      el('div', { class: 'modal' + (wide ? ' wide' : ''), role: 'dialog', 'aria-label': title },
+        el('div', { class: 'modal-head' },
+          el('h2', {}, title),
+          el('button', { class: 'icon-btn', title: 'Close', onclick: close }, '✕')),
+        body));
+    document.addEventListener('keydown', onKey);
+    document.body.append(overlay);
+    const first = body.querySelector('input:not([type=hidden]):not([type=checkbox]), button');
+    if (first) setTimeout(() => first.focus(), 0);
+    return { close };
   }
 
   window.Common = {
     api, uid, $, mod, esc, fmt, el, toast, relTime, safeFileName,
-    parseCSV, csvField, createStore, goHome, wireDropdowns, onFileDrop,
+    parseCSV, csvField, createStore, goHome, wireDropdowns, onFileDrop, modal,
   };
 })();

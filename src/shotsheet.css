@@ -199,6 +199,49 @@ textarea.field { resize: vertical; }
 .link-btn { background: none; border: 0; color: var(--cyan); font-size: 13px; padding: 2px 4px; }
 .link-btn:hover { text-decoration: underline; }
 
+/* Scene details (from script import) */
+.scene-info {
+  display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline;
+  margin: -4px 0 10px 2px; font-size: 14px; color: var(--muted);
+}
+.scene-synopsis { color: #b9b4ac; max-width: 70ch; }
+.scene-cast { color: var(--cyan); }
+.scene-pages {
+  font-family: var(--display); font-size: 16px; letter-spacing: 1px; color: var(--tab);
+  border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px 0;
+}
+.scene-extra { margin-top: 6px; }
+.scene-extra .synopsis-input { flex: 2; font-size: 14px; }
+.scene-extra .cast-input { flex: 1; font-size: 14px; }
+
+/* Sidebar import buttons */
+.sidebar-foot { display: grid; gap: 6px; }
+.script-btn { border-color: rgba(58,167,201,.5); }
+.script-btn:hover { background: rgba(58,167,201,.12); }
+
+/* Script import dialog */
+.script-summary { margin: 0 0 14px; line-height: 1.5; }
+.script-opts { display: grid; gap: 6px; margin: 4px 0 16px; font-size: 14px; }
+.script-opts label, .script-scene { cursor: pointer; }
+.script-opts input, .script-scene input { accent-color: var(--yellow); }
+.script-scenes-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.script-scenes {
+  max-height: 300px; overflow-y: auto;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--bg);
+}
+.script-scene {
+  display: grid; grid-template-columns: 18px 36px 1fr auto; gap: 10px; align-items: start;
+  padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,.04);
+}
+.script-scene:last-child { border-bottom: 0; }
+.script-scene input { margin-top: 3px; }
+.script-scene-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.script-scene-main .muted { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.script-scene-heading { font-weight: 600; font-size: 14px; }
+.nowrap { white-space: nowrap; }
+.modal-foot.spread { justify-content: space-between; align-items: center; }
+.modal .field-label { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); }
+
 @media print {
   .daybar { display: none !important; }
 }

@@ -82,6 +82,13 @@ To add a new system, add an entry to `SYSTEMS` in `src/home.js` (and a logo in `
   - For each day you can set the call and wrap times, location and notes.
   - Assign shots to the day from the unscheduled list. **Run day ▶** opens that day as a checklist.
 - **Edit mode (Ctrl/⌘+E):** pressing Enter in a shot description adds the next shot with the same settings. ⧉ duplicates a shot, and ⠿ drags to reorder.
+- **Import a script:** **Import script** in the sidebar (or **Ctrl/⌘+Shift+O**, or drag the file onto the window) reads a screenplay and breaks it down by scene.
+  - Formats: **PDF**, **Final Draft (.fdx)** or **Fountain**.
+  - For each scene it finds the scene number, heading, synopsis, cast, and page length in eighths.
+  - It can also add starter shots: an establishing shot when the location changes, a master wide shot, and coverage of the speaking characters (a single for one speaker, a two-shot and both overs for two, a group shot plus singles for three or more).
+  - A preview lets you name the project, pick the scenes, and choose which starter shots to add.
+  - Scanned PDFs (images with no selectable text) can't be read. Export the PDF again from your screenwriting app instead.
+  - The Schedule view shows how many script pages each shoot day covers.
 - **Import:** `.shotsheet`, `.json`, `.csv`.
 - **Export:**
   - `.shotsheet` or CSV.

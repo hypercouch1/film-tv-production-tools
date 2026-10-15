@@ -1,6 +1,6 @@
 // Shot sheet data model, option lists, and import/export converters.
 // Project: { id, title, updatedAt, scenes: [Scene], days: [Day] }
-// Scene:   { id, number, heading, shots: [Shot] }
+// Scene:   { id, number, heading, synopsis, cast: [name], eighths (page length in 1/8 pages), shots: [Shot] }
 // Shot:    { id, type, angle, move, lens, cam, fps, audio, desc, notes, dayId, done }
 // Day:     { id, date: 'YYYY-MM-DD', call: 'HH:MM', wrap: 'HH:MM', location, notes }
 (function () {
@@ -63,6 +63,9 @@
       id: uid(),
       number: str(s && s.number, String(i + 1)),
       heading: str(s && s.heading),
+      synopsis: str(s && s.synopsis),
+      cast: Array.isArray(s && s.cast) ? s.cast.map(String) : [],
+      eighths: Number.isFinite(s && s.eighths) ? s.eighths : 0,
       shots: (Array.isArray(s && s.shots) ? s.shots : []).map((sh) => ({
         id: uid(),
         type: str(sh.type, SHOT_DEFAULTS.type),
@@ -94,6 +97,9 @@
       scenes: p.scenes.map((s) => ({
         number: s.number,
         heading: s.heading,
+        synopsis: s.synopsis || '',
+        cast: s.cast || [],
+        eighths: s.eighths || 0,
         shots: s.shots.map(({ type, angle, move, lens, cam, fps, audio, desc, notes, dayId, done }) =>
           ({ type, angle, move, lens, cam, fps, audio, desc, notes, day: dateOf[dayId] || null, done })),
       })),

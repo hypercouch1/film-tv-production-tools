@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<FinalDraft DocumentType="Script" Template="No" Version="5">
+  <Content>
+    <Paragraph Type="Transition"><Text>FADE IN:</Text></Paragraph>
+    <Paragraph Number="1" Type="Scene Heading"><Text>EXT. ROSIE'S DINER - NIGHT</Text></Paragraph>
+    <Paragraph Type="Action"><Text>Rain hammers the neon sign. </Text><Text Style="Bold">MAYA</Text><Text> (30s), soaked, crosses the empty lot toward the door.</Text></Paragraph>
+    <Paragraph Number="2" Type="Scene Heading"><Text>INT. ROSIE'S DINER - NIGHT</Text></Paragraph>
+    <Paragraph Type="Action"><Text>LOU (60s) wipes the counter. He doesn&apos;t look up.</Text></Paragraph>
+    <Paragraph Type="Character"><Text>MAYA</Text></Paragraph>
+    <Paragraph Type="Dialogue"><Text>You still make it too strong.</Text></Paragraph>
+    <Paragraph Type="Character"><Text>LOU</Text></Paragraph>
+    <Paragraph Type="Parenthetical"><Text>(not looking up)</Text></Paragraph>
+    <Paragraph Type="Dialogue"><Text>You still drink it.</Text></Paragraph>
+    <Paragraph Type="Action"><Text>Maya sits. Lou slides a mug across the counter.</Text></Paragraph>
+    <Paragraph Number="3" Type="Scene Heading"><Text>INT. ROSIE'S DINER - BOOTH - LATER</Text></Paragraph>
+    <Paragraph Type="Action"><Text>Maya, Lou and DET. REYES crowd the booth. Nobody touches their coffee.</Text></Paragraph>
+    <Paragraph Type="Character"><Text>REYES</Text></Paragraph>
+    <Paragraph Type="Dialogue"><Text>Somebody start talking.</Text></Paragraph>
+    <Paragraph Type="Character"><Text>MAYA</Text></Paragraph>
+    <Paragraph Type="Dialogue"><Text>He knows what happened that night.</Text></Paragraph>
+    <Paragraph Type="Character"><Text>LOU (CONT'D)</Text></Paragraph>
+    <Paragraph Type="Dialogue"><Text>I know what I saw.</Text></Paragraph>
+    <Paragraph Number="4" Type="Scene Heading"><Text>EXT. PARKING LOT - CONTINUOUS</Text></Paragraph>
+    <Paragraph Type="Action"><Text>Maya runs to her car. Headlights sweep across her face.</Text></Paragraph>
+    <Paragraph Type="Transition"><Text>FADE OUT.</Text></Paragraph>
+  </Content>
+  <TitlePage>
+    <Content>
+      <Paragraph Alignment="Center"><Text>NIGHT DINER</Text></Paragraph>
+      <Paragraph Alignment="Center"><Text>Written by Test Fixture</Text></Paragraph>
+    </Content>
+  </TitlePage>
+</FinalDraft>

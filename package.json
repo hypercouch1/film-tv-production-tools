@@ -10,7 +10,8 @@
     "start": "electron .",
     "dist:win": "electron-builder --win",
     "dist:mac": "electron-builder --mac",
-    "dist": "electron-builder --win --mac"
+    "dist": "electron-builder --win --mac",
+    "test": "node tests/sync-core.test.js && node tests/script-parse.test.js"
   },
   "build": {
     "appId": "com.callsheet.app",
@@ -18,8 +19,13 @@
     "files": [
       "main.js",
       "preload.js",
+      "pdf-text.js",
       "src/**/*",
-      "node_modules/@fontsource/bebas-neue/**/*"
+      "node_modules/@fontsource/bebas-neue/**/*",
+      "node_modules/pdfjs-dist/package.json",
+      "node_modules/pdfjs-dist/legacy/build/*.mjs",
+      "node_modules/pdfjs-dist/cmaps/**/*",
+      "node_modules/pdfjs-dist/standard_fonts/**/*"
     ],
     "fileAssociations": [
       {
@@ -45,14 +51,25 @@
     },
     "mac": {
       "target": [
-        { "target": "dmg", "arch": ["universal"] },
-        { "target": "zip", "arch": ["universal"] }
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
       ],
       "category": "public.app-category.productivity"
     }
   },
   "dependencies": {
-    "@fontsource/bebas-neue": "^5.3.0"
+    "@fontsource/bebas-neue": "^5.3.0",
+    "pdfjs-dist": "^4.10.38"
   },
   "devDependencies": {
     "electron": "^44.7.2",

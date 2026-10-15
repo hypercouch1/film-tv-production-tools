@@ -85,6 +85,7 @@ function buildMenu() {
         { label: 'Duplicate', accelerator: 'CmdOrCtrl+D', click: menuSend('duplicate') },
         { type: 'separator' },
         { label: 'Import…', accelerator: 'CmdOrCtrl+O', click: menuSend('import') },
+        { label: 'Import Script (PDF, Final Draft, Fountain)…', accelerator: 'CmdOrCtrl+Shift+O', click: menuSend('importScript') },
         { label: 'Export (native file)', accelerator: 'CmdOrCtrl+S', click: menuSend('export', 'native') },
         { label: 'Export PDF', accelerator: 'CmdOrCtrl+P', click: menuSend('export', 'pdf') },
         { type: 'separator' },
@@ -176,6 +177,40 @@ ipcMain.handle('file:exportPdf', async (_e, { defaultName }) => {
   fs.writeFileSync(res.filePath, pdf);
   return res.filePath;
 });
+
+// ---- Screenplay import ----
+const SCRIPT_EXTS = ['pdf', 'fdx', 'fountain', 'spmd', 'txt'];
+
+async function readScript(filePath) {
+  const ext = path.extname(filePath).toLowerCase().slice(1);
+  if (!SCRIPT_EXTS.includes(ext)) throw new Error('Choose a PDF, Final Draft (.fdx) or Fountain script.');
+  const name = path.basename(filePath);
+  if (ext === 'pdf') {
+    const { extractPdfLines } = require('./pdf-text.js');
+    return { name, kind: 'pdf', lines: await extractPdfLines(filePath) };
+  }
+  const text = fs.readFileSync(filePath, 'utf8').replace(/^﻿/, '');
+  return ext === 'fdx' ? { name, kind: 'fdx', xml: text } : { name, kind: 'text', text };
+}
+
+// Errors are returned rather than thrown so the page gets a readable message.
+const scriptResult = (p) => p.then((script) => ({ script }), (err) => ({ error: err.message || String(err) }));
+
+ipcMain.handle('script:import', async () => {
+  const res = await dialog.showOpenDialog(win, {
+    title: 'Import Script',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Scripts', extensions: SCRIPT_EXTS },
+      { name: 'All Files', extensions: ['*'] },
+    ],
+  });
+  if (res.canceled || !res.filePaths[0]) return null;
+  return scriptResult(readScript(res.filePaths[0]));
+});
+
+// A script file dragged onto the window.
+ipcMain.handle('script:read', (_e, filePath) => scriptResult(readScript(String(filePath || ''))));
 
 // Called by a page after startup: hands over a double-clicked file meant for it.
 ipcMain.handle('file:takePending', (e) => {

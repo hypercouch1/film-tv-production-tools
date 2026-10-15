@@ -43,22 +43,7 @@
     if (f.selection) try { n.setSelectionRange(...f.selection); } catch { /* not a text field */ }
   }
 
-  // ---------- Modal ----------
-  function modal(title, body, { wide = false } = {}) {
-    const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
-    const onKey = (e) => { if (e.key === 'Escape') close(); };
-    const overlay = el('div', { class: 'modal-overlay', onmousedown: (e) => { if (e.target === overlay) close(); } },
-      el('div', { class: 'modal' + (wide ? ' wide' : ''), role: 'dialog', 'aria-label': title },
-        el('div', { class: 'modal-head' },
-          el('h2', {}, title),
-          el('button', { class: 'icon-btn', title: 'Close', onclick: close }, '✕')),
-        body));
-    document.addEventListener('keydown', onKey);
-    document.body.append(overlay);
-    const first = body.querySelector('input:not([type=hidden]), button');
-    if (first) setTimeout(() => first.focus(), 0);
-    return { close };
-  }
+  const { modal } = window.Common;
 
   function field(label, input) {
     return el('label', { class: 'form-field' }, el('span', {}, label), input);
