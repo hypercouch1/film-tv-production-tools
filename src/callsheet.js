@@ -38,14 +38,52 @@
   }
 
   // ---------- Persistence ----------
-  const store = window.Common.createStore('callsheets', () => state);
+  // Shared (cloud) sheets live on the server, so only local sheets are saved here.
+  const store = window.Common.createStore('callsheets', () => ({ ...state, sheets: collab.localOnly(state.sheets) }));
   function save() {
     const sheet = active();
     if (sheet) sheet.updatedAt = Date.now();
     store.save();
+    collab.changed();
   }
 
   const active = () => state.sheets.find((s) => s.id === state.activeId);
+
+  // ---------- Collaboration ----------
+  const collab = window.Collab.attach({
+    kind: 'callsheet',
+    listKey: 'sheets',
+    noun: 'call sheet',
+    nounPlural: 'call sheets',
+    getState: () => state,
+    render: (opts = {}) => { if (opts.opened) { history = []; editing = false; } render(opts); if (opts.opened) $('sheet').scrollTop = 0; },
+    renderSidebar: () => renderSidebar(),
+    save: () => store.save(),
+    normalize: (doc) => {
+      doc.title = String(doc.title || 'Untitled');
+      doc.sections = Array.isArray(doc.sections) ? doc.sections : [];
+      doc.sections.forEach((s) => { s.items = Array.isArray(s.items) ? s.items : []; });
+      return doc;
+    },
+    selectLocal: () => selectFirstLocal(),
+    onRoleChange: (role) => { if (role === 'viewer') editing = false; },
+  });
+
+  function selectFirstLocal() {
+    if (!collab.localOnly(state.sheets).length) state.sheets.push(blankSheet());
+    state.activeId = collab.localOnly(state.sheets).sort((a, b) => b.updatedAt - a.updatedAt)[0].id;
+    editing = false;
+    history = [];
+    render();
+    $('sheet').scrollTop = 0;
+  }
+
+  // Viewers can watch a shared sheet but not change it.
+  function blockedReadOnly() {
+    if (!collab.readOnly()) return false;
+    toast('You have view-only access to this call sheet');
+    return true;
+  }
 
   function allItems(sheet) {
     return sheet.sections.flatMap((s) => s.items.map((i) => ({ item: i, section: s })));
@@ -57,7 +95,7 @@
     const list = $('sheetList');
     list.innerHTML = '';
     const q = search.toLowerCase();
-    [...state.sheets]
+    collab.localOnly(state.sheets)
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .filter((s) => !q || s.title.toLowerCase().includes(q))
       .forEach((s) => {
@@ -65,11 +103,12 @@
         const done = items.filter((x) => x.item.done).length;
         list.append(el('li', {
           class: s.id === state.activeId ? 'active' : '',
-          onclick: () => { state.activeId = s.id; history = []; save(); render(); $('sheet').scrollTop = 0; },
+          onclick: () => { collab.leave(); state.activeId = s.id; history = []; save(); render(); $('sheet').scrollTop = 0; },
         },
         el('div', { class: 'name' }, s.title || 'Untitled'),
         el('div', { class: 'meta' }, `${done}/${items.length} · ${relTime(s.updatedAt)}`)));
       });
+    collab.renderShared($('sharedList'));
   }
 
   // ---------- Run mode ----------
@@ -129,6 +168,7 @@
   }
 
   function toggleItem(it) {
+    if (blockedReadOnly()) return;
     it.done = !it.done;
     if (it.done) history.push(it.id);
     else history = history.filter((id) => id !== it.id);
@@ -146,7 +186,7 @@
 
   function undoLast() {
     const sheet = active();
-    if (!sheet) return;
+    if (!sheet || blockedReadOnly()) return;
     const items = allItems(sheet).map((x) => x.item);
     let it = null;
     while (history.length && !it) {
@@ -333,8 +373,11 @@
     renderSidebar();
     const sheet = active();
     $('editBtn').textContent = editing ? 'Done' : 'Edit';
+    $('editBtn').hidden = collab.readOnly();
     $('app').classList.toggle('editing', editing);
-    $('resetBtn').hidden = editing;
+    $('resetBtn').hidden = editing || collab.readOnly();
+    $('deleteLabel').textContent = collab.isCloud(sheet) ? (sheet._cloud.role === 'owner' ? 'Delete for everyone' : 'Leave shared sheet') : 'Delete sheet';
+    collab.updateToolbar();
     if (!sheet) {
       $('sections').innerHTML = '';
       return;
@@ -351,6 +394,7 @@
 
   // ---------- Actions ----------
   function addSheet(sheet, { edit = false } = {}) {
+    collab.leave();
     state.sheets.push(sheet);
     state.activeId = sheet.id;
     history = [];
@@ -376,17 +420,17 @@
 
   function deleteSheet() {
     const s = active();
-    if (!s || !confirm(`Delete "${s.title}"? This cannot be undone.`)) return;
+    if (!s) return;
+    if (collab.isCloud(s)) return collab.deleteOrLeave(s);
+    if (!confirm(`Delete "${s.title}"? This cannot be undone.`)) return;
     state.sheets = state.sheets.filter((x) => x.id !== s.id);
-    if (!state.sheets.length) state.sheets.push(blankSheet());
-    state.activeId = [...state.sheets].sort((a, b) => b.updatedAt - a.updatedAt)[0].id;
-    editing = false;
-    save(); render();
+    save();
+    selectFirstLocal();
   }
 
   function resetChecks() {
     const s = active();
-    if (!s) return;
+    if (!s || blockedReadOnly()) return;
     allItems(s).forEach((x) => (x.item.done = false));
     history = [];
     save(); render();
@@ -395,6 +439,7 @@
   }
 
   function toggleEdit() {
+    if (!editing && blockedReadOnly()) return;
     editing = !editing;
     render({ keepScroll: true });
   }
@@ -412,7 +457,7 @@
         errors.push(`${f.name}: ${err.message}`);
       }
     }
-    if (last) { state.activeId = last.id; editing = false; history = []; save(); render(); $('sheet').scrollTop = 0; }
+    if (last) { collab.leave(); state.activeId = last.id; editing = false; history = []; save(); render(); $('sheet').scrollTop = 0; }
     if (errors.length) alert('Some files could not be imported:\n\n' + errors.join('\n'));
     else if (added) toast(`Imported ${added} call sheet${added > 1 ? 's' : ''}`);
   }
@@ -511,7 +556,9 @@
       save();
     }
     wire();
+    collab.mountToolbar(document.querySelector('.toolbar'), $('resetBtn'));
     render();
+    collab.init();
     const pending = await api.takePendingFile();
     if (pending) ingest([pending]);
   }

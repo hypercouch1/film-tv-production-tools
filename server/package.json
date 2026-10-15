@@ -1,0 +1,15 @@
+{
+  "name": "production-hub-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:init": "wrangler d1 execute production-hub --remote --file=schema.sql",
+    "db:init:local": "wrangler d1 execute production-hub --local --file=schema.sql",
+    "test": "node test/api.test.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.151.0"
+  }
+}

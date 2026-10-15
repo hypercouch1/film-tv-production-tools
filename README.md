@@ -42,6 +42,23 @@ The app isn't signed with an Apple Developer ID, so macOS blocks it the first ti
 
 To get rid of these warnings, sign and notarize the app with an Apple Developer account ($99/yr).
 
+## Working together online
+
+The `online` branch adds accounts and live collaboration. It needs the small Cloudflare server in [`server/`](server/README.md); that page has the one-time setup.
+
+- **Accounts:** click **Sign in** in the top-right corner of any screen to create an account or sign in.
+- **Local and shared:** each sidebar has two lists.
+  - **On this computer:** works offline, exactly as before.
+  - **Shared:** stored on the server and edited live by everyone in the project.
+- **Sharing:** open a call sheet or project and click **Share**. This moves it online. Then add people by the email they signed up with:
+  - **Can edit:** full editing, including checking items off.
+  - **View only:** they can watch live but can't change anything.
+- **Live:** checkmarks, edits, new shots, and schedule changes appear for everyone within a fraction of a second. Avatars show who else is in the project.
+  - The status pill shows **Live**, **Connecting…** or **Offline · will sync**.
+  - Edits made offline are sent when the connection returns.
+- **Owners** manage people under **People**. The ⋯ menu offers **Delete for everyone** to the owner and **Leave** to everyone else.
+- **Private copy:** **Duplicate** on a shared project makes a copy on this computer only.
+
 ## Home screen
 
 Click a tile (or press **1**, **2**) to open a system. **Ctrl/⌘+H** or the ⌂ button returns home. Upcoming shoot days from every Shot Sheet project are listed under the tiles.

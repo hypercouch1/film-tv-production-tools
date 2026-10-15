@@ -13,12 +13,52 @@
   let history = [];
   let search = '';
 
-  const store = window.Common.createStore('shotsheets', () => state);
+  // Shared (cloud) projects live on the server, so only local projects are saved here.
+  const store = window.Common.createStore('shotsheets', () => ({ ...state, projects: collab.localOnly(state.projects) }));
   const active = () => state.projects.find((p) => p.id === state.activeId);
   function save() {
     const p = active();
     if (p) p.updatedAt = Date.now();
     store.save();
+    collab.changed();
+  }
+
+  // ---------- Collaboration ----------
+  const collab = window.Collab.attach({
+    kind: 'shotsheet',
+    listKey: 'projects',
+    noun: 'project',
+    nounPlural: 'projects',
+    getState: () => state,
+    render: (opts = {}) => {
+      if (opts.opened) { dayFilter = 'all'; history = []; selectedDate = null; calMonth = null; editing = false; }
+      render(opts);
+      if (opts.opened) $('sheet').scrollTop = 0;
+    },
+    renderSidebar: () => renderSidebar(),
+    save: () => store.save(),
+    normalize: (doc) => {
+      doc.title = String(doc.title || 'Untitled');
+      doc.scenes = Array.isArray(doc.scenes) ? doc.scenes : [];
+      doc.scenes.forEach((s) => { s.shots = Array.isArray(s.shots) ? s.shots : []; });
+      doc.days = Array.isArray(doc.days) ? doc.days : [];
+      return doc;
+    },
+    selectLocal: () => selectFirstLocal(),
+    onRoleChange: (role) => { if (role === 'viewer') editing = false; },
+  });
+
+  function selectFirstLocal() {
+    if (!collab.localOnly(state.projects).length) state.projects.push(blankProject());
+    editing = false;
+    selectProject(collab.localOnly(state.projects).sort((a, b) => b.updatedAt - a.updatedAt)[0].id);
+  }
+
+  // Viewers can watch a shared project but not change it.
+  function blockedReadOnly() {
+    if (!collab.readOnly()) return false;
+    toast('You have view-only access to this project');
+    return true;
   }
 
   // ---------- Dates ----------
@@ -91,7 +131,7 @@
     const list = $('list');
     list.innerHTML = '';
     const q = search.toLowerCase();
-    [...state.projects]
+    collab.localOnly(state.projects)
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .filter((p) => !q || p.title.toLowerCase().includes(q))
       .forEach((p) => {
@@ -106,9 +146,12 @@
           `${shots.filter((x) => x.shot.done).length}/${shots.length} shots · ` +
           (next ? 'next ' + fmtDate(next.date, { month: 'short', day: 'numeric' }) : relTime(p.updatedAt)))));
       });
+    collab.renderShared($('sharedList'));
   }
 
+  // Selects a project on this computer (shared ones are opened through collab.open).
   function selectProject(id) {
+    collab.leave();
     state.activeId = id;
     dayFilter = 'all';
     history = [];
@@ -224,6 +267,7 @@
   }
 
   function toggleShot(shot) {
+    if (blockedReadOnly()) return;
     shot.done = !shot.done;
     if (shot.done) history.push(shot.id);
     else history = history.filter((id) => id !== shot.id);
@@ -241,7 +285,7 @@
 
   function undoLast() {
     const p = active();
-    if (!p) return;
+    if (!p || blockedReadOnly()) return;
     const shots = visibleShots(p).map((x) => x.shot);
     let s = null;
     while (history.length && !s) {
@@ -503,7 +547,7 @@
 
   function addDay(date) {
     const p = active();
-    if (dayOnDate(p, date)) return;
+    if (dayOnDate(p, date) || blockedReadOnly()) return;
     p.days.push({ id: uid(), date, call: '07:00', wrap: '', location: '', notes: '' });
     selectedDate = date;
     save(); render({ keepScroll: true });
@@ -599,8 +643,11 @@
     const p = active();
     document.querySelectorAll('#viewToggle button').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
     $('editBtn').textContent = editing ? 'Done' : 'Edit';
-    $('editBtn').hidden = view !== 'shots';
-    $('resetBtn').hidden = editing || view !== 'shots';
+    $('editBtn').hidden = view !== 'shots' || collab.readOnly();
+    $('resetBtn').hidden = editing || view !== 'shots' || collab.readOnly();
+    $('app').classList.toggle('read-only', collab.readOnly());
+    $('deleteLabel').textContent = collab.isCloud(p) ? (p._cloud.role === 'owner' ? 'Delete for everyone' : 'Leave shared project') : 'Delete project';
+    collab.updateToolbar();
     $('app').classList.toggle('editing', editing);
     $('app').classList.toggle('schedule-view', view === 'schedule');
     if (!p) { $('sections').innerHTML = ''; return; }
@@ -650,16 +697,16 @@
 
   function deleteProject() {
     const p = active();
-    if (!p || !confirm(`Delete "${p.title}"? This cannot be undone.`)) return;
+    if (!p) return;
+    if (collab.isCloud(p)) return collab.deleteOrLeave(p);
+    if (!confirm(`Delete "${p.title}"? This cannot be undone.`)) return;
     state.projects = state.projects.filter((x) => x.id !== p.id);
-    if (!state.projects.length) state.projects.push(blankProject());
-    editing = false;
-    selectProject([...state.projects].sort((a, b) => b.updatedAt - a.updatedAt)[0].id);
+    selectFirstLocal();
   }
 
   function resetChecks() {
     const p = active();
-    if (!p) return;
+    if (!p || blockedReadOnly()) return;
     visibleShots(p).forEach((x) => (x.shot.done = false));
     history = [];
     save(); render();
@@ -668,6 +715,7 @@
   }
 
   function toggleEdit() {
+    if (!editing && blockedReadOnly()) return;
     if (view !== 'shots') { view = 'shots'; editing = true; }
     else editing = !editing;
     render({ keepScroll: true });
@@ -791,7 +839,9 @@
       calMonth = { y: d.getFullYear(), m: d.getMonth() };
     }
     wire();
+    collab.mountToolbar(document.querySelector('.toolbar'), $('resetBtn'));
     render();
+    collab.init();
     const pending = await api.takePendingFile();
     if (pending) ingest([pending]);
   }

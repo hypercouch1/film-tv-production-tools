@@ -3,11 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:">
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self' https: wss: http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:*">
   <title>Shot Sheet</title>
   <link rel="stylesheet" href="../node_modules/@fontsource/bebas-neue/index.css">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="shotsheet.css">
+  <link rel="stylesheet" href="collab.css">
 </head>
 <body>
   <div class="app" id="app">
@@ -17,7 +18,11 @@
         <button class="icon-btn" id="newBtn" title="New project (Ctrl/Cmd+N)">+</button>
       </div>
       <input class="search" id="search" type="search" placeholder="Search…">
-      <ul class="sheet-list" id="list"></ul>
+      <div class="sidebar-lists">
+        <div class="list-heading">On this computer</div>
+        <ul class="sheet-list" id="list"></ul>
+        <div id="sharedList"></div>
+      </div>
       <div class="sidebar-foot">
         <button class="ghost-btn" id="importBtn">Import…</button>
       </div>
@@ -49,7 +54,7 @@
           <button class="ghost-btn" data-menu="moreMenu">⋯</button>
           <div class="menu" id="moreMenu" hidden>
             <button data-more="duplicate">Duplicate project</button>
-            <button data-more="delete" class="danger">Delete project</button>
+            <button data-more="delete" class="danger" id="deleteLabel">Delete project</button>
           </div>
         </div>
         <button class="primary-btn" id="editBtn" title="Ctrl/Cmd+E">Edit</button>
@@ -76,7 +81,11 @@
   <datalist id="lensList"></datalist>
   <div class="toast" id="toast" hidden></div>
 
+  <script src="config.js"></script>
   <script src="common.js"></script>
+  <script src="sync-core.js"></script>
+  <script src="cloud.js"></script>
+  <script src="collab-ui.js"></script>
   <script src="shotsheet-formats.js"></script>
   <script src="shotsheet.js"></script>
 </body>

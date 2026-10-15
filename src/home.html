@@ -3,11 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:">
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self' https: wss: http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:*">
   <title>Production Hub</title>
   <link rel="stylesheet" href="../node_modules/@fontsource/bebas-neue/index.css">
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="home.css">
+  <link rel="stylesheet" href="collab.css">
 </head>
 <body>
   <div class="home">
@@ -15,8 +16,9 @@
       <div class="title-row">
         <span class="live-dot"></span>
         <h1 class="sheet-title">Production Hub</h1>
+        <div id="account"></div>
       </div>
-      <p class="home-sub">Pick a system to get started.</p>
+      <p class="home-sub" id="homeSub">Pick a system to get started.</p>
     </header>
 
     <section class="tiles" id="tiles"></section>
@@ -27,7 +29,13 @@
     </section>
   </div>
 
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="config.js"></script>
   <script src="common.js"></script>
+  <script src="sync-core.js"></script>
+  <script src="cloud.js"></script>
+  <script src="collab-ui.js"></script>
   <script src="home.js"></script>
 </body>
 </html>

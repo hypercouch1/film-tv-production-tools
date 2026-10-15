@@ -1,3 +1,4 @@
 node_modules/
 dist/
 Call-Sheet-source.zip
+.wrangler/

@@ -1,0 +1,21 @@
+name = "production-hub"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+[vars]
+# PBKDF2 rounds for new passwords. Workers allows at most 100000.
+PBKDF2_ITERATIONS = "100000"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "production-hub"
+# Replace with the id printed by `npx wrangler d1 create production-hub`.
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "ProjectRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ProjectRoom"]

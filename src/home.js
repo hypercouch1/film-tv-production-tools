@@ -124,6 +124,16 @@
     renderTiles(data);
     renderUpcoming(data.shotsheets);
 
+    $('account').append(window.Collab.accountButton());
+    const greet = () => {
+      $('homeSub').textContent = window.Cloud.signedIn
+        ? `Signed in as ${window.Cloud.user.name}. Shared projects appear in each system's sidebar.`
+        : 'Pick a system to get started. Sign in to share projects and work on them together.';
+    };
+    window.Cloud.onAuth(greet);
+    greet();
+    window.Cloud.refreshMe();
+
     document.addEventListener('keydown', (e) => {
       const sys = SYSTEMS[Number(e.key) - 1];
       if (sys && !e.ctrlKey && !e.metaKey) location.href = sys.page;
