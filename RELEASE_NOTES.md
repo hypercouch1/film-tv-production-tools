@@ -1,8 +1,10 @@
-# Production Hub: Online release
+# Production Tools 1.1.0
 
 Changes on the `online` branch since **v1.0.0**.
 
 This release lets a team work on the same call sheet or shot sheet at the same time. Shot Sheet can also build a project from a screenplay, and it now tracks the cast, crew, props and equipment each shoot day needs.
+
+**The app has a new name: Production Tools** (it was "Call Sheet"). Your projects and sign-in carry over automatically. Call Sheet is still the name of the live-show checklist system inside the app.
 
 ---
 
@@ -69,7 +71,8 @@ This release lets a team work on the same call sheet or shot sheet at the same t
 ## Upgrading
 - **Existing projects:** your call sheets and shot sheets on this computer carry over automatically. Projects with cast listed by name (for example from a script import) are converted into the new Cast & Crew list the first time they're opened.
 - **Sign-in is optional:** without an account, everything works offline as before.
-- **Installing:** download the Mac (`.dmg`) or Windows (`.exe`) installer from the **Build apps** run on the `online` branch. The app isn't signed with a paid Apple or Microsoft developer certificate, so on a Mac, right-click the app and choose **Open** the first time. If macOS says the app "is damaged", run `xattr -cr "/Applications/Call Sheet.app"` in Terminal.
+- **Installing:** download the Mac (`.dmg`) or Windows (`.exe`) installer from the **Build apps** run on the `online` branch. The app isn't signed with a paid Apple or Microsoft developer certificate, so on a Mac, right-click the app and choose **Open** the first time. If macOS says the app "is damaged", run `xattr -cr "/Applications/Production Tools.app"` in Terminal.
+- **Renamed app:** on Windows, the installer replaces the old **Call Sheet** install. On a Mac, the new **Production Tools** app sits next to the old one in Applications. Once you've opened the new app and checked your projects are there, drag **Call Sheet** to the Trash.
 
 ## Known limitations
 - **Password reset:** there's no reset by email yet. Someone who forgets their password needs a new account and a fresh invite from the project owner.
@@ -93,4 +96,5 @@ This release lets a team work on the same call sheet or shot sheet at the same t
 - **Tests:**
   - **App:** `npm test` covers sync convergence under concurrent edits, screenplay parsing (PDF, FDX and Fountain), and the cast & crew data model.
   - **Server:** `npm test` in `server/` runs the end-to-end API and live-sync checks against a running server.
-- **Version:** `package.json` is still `1.0.0`. Bump it (e.g. to `1.1.0`) and tag `v1.1.0` to cut this as a release.
+- **Version:** `package.json` is `1.1.0`. Tag `v1.1.0` to cut this as a release (the tag also triggers the Mac and Windows builds).
+- **Rename:** the app ID (`com.callsheet.app`) and the server address (`production-hub…workers.dev`) are unchanged on purpose. Changing the app ID would install the renamed app alongside the old one instead of updating it, and changing the server address would disconnect existing installs.

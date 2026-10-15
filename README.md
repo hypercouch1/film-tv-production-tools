@@ -1,6 +1,8 @@
-# Production Hub
+# Production Tools
 
-A desktop app (Windows and macOS) with several production systems behind one home screen. Everything stays on your computer. Each system keeps its own save file in your user data folder (`%APPDATA%\Call Sheet\` on Windows, `~/Library/Application Support/Call Sheet/` on macOS).
+A desktop app (Windows and macOS) with several production systems behind one home screen. Projects you don't share stay on your computer. Each system keeps its own save file in your user data folder (`%APPDATA%\Production Tools\` on Windows, `~/Library/Application Support/Production Tools/` on macOS).
+
+The app was previously called **Call Sheet**. On first launch under the new name, it copies everything over from the old `Call Sheet` folder (projects and sign-in).
 
 | System | What it does |
 |---|---|
@@ -26,18 +28,18 @@ npm run dist:mac
 
 Apple's tools only run on macOS, so the Mac app can't be built on Windows. There are two ways to build it, and both produce one **universal** `.dmg` that runs on Intel and Apple Silicon Macs:
 
-1. **On any Mac:** install Node.js 22 from nodejs.org, unzip `Call-Sheet-source.zip`, open Terminal in the `tv-callsheet-app` folder, and run `npm install`, then `npm run dist:mac`. The `.dmg` ends up in `dist/`.
+1. **On any Mac:** install Node.js 22 from nodejs.org, clone this repository, open Terminal in its folder, and run `npm install`, then `npm run dist:mac`. The `.dmg` ends up in `dist/`.
 2. **Without a Mac (GitHub Actions):** put this folder in a GitHub repository. Then go to the repository's **Actions** tab, open **Build apps** and click **Run workflow**. The workflow is in `.github/workflows/build.yml`. After about 10 minutes, download `mac-app` (and `windows-app`) from the run's **Artifacts**.
 
 ### First launch on a Mac
 
 The app isn't signed with an Apple Developer ID, so macOS blocks it the first time it opens.
 
-- **Usual fix:** drag **Call Sheet** into Applications, then right-click it, choose **Open**, and choose **Open** again. If there's no Open button, go to **System Settings → Privacy & Security** and click **Open Anyway**.
+- **Usual fix:** drag **Production Tools** into Applications, then right-click it, choose **Open**, and choose **Open** again. If there's no Open button, go to **System Settings → Privacy & Security** and click **Open Anyway**.
 - **If macOS says the app "is damaged"** (this happens with downloaded copies), run this once in Terminal:
 
   ```bash
-  xattr -cr "/Applications/Call Sheet.app"
+  xattr -cr "/Applications/Production Tools.app"
   ```
 
 To get rid of these warnings, sign and notarize the app with an Apple Developer account ($99/yr).

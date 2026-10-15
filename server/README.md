@@ -1,4 +1,4 @@
-# Production Hub server (Cloudflare)
+# Production Tools server (Cloudflare)
 
 This is the online part of the app: accounts, shared projects, and live editing. It runs on Cloudflare using three services:
 

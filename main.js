@@ -6,6 +6,27 @@ const isMac = process.platform === 'darwin';
 let win = null;
 let pendingOpenFile = null;
 
+// The app used to be called "Call Sheet", and its data (projects, sign-in) lives in a
+// folder named after the app. On first run under the new name, copy the old folder over.
+function migrateFromOldName() {
+  const current = app.getPath('userData');
+  const old = path.join(app.getPath('appData'), 'Call Sheet');
+  if (old === current || !fs.existsSync(old)) return;
+  const hasData = (dir) => ['callsheets.json', 'shotsheets.json', 'Local Storage'].some((f) => fs.existsSync(path.join(dir, f)));
+  if (hasData(current) || !hasData(old)) return;
+  try {
+    fs.cpSync(old, current, {
+      recursive: true,
+      force: false,
+      errorOnExist: false,
+      filter: (src) => !/^Singleton/.test(path.basename(src)), // the old app's single-instance lock
+    });
+  } catch (err) {
+    console.error('Could not copy data from the old Call Sheet folder:', err);
+  }
+}
+migrateFromOldName();
+
 // Each system keeps its own store file in the user data folder.
 const STORES = ['callsheets', 'shotsheets'];
 const storePath = (key) => {
@@ -48,7 +69,7 @@ function createWindow() {
     minWidth: 720,
     minHeight: 500,
     backgroundColor: '#0c0a08',
-    title: 'Call Sheet',
+    title: 'Production Tools',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -153,7 +174,7 @@ ipcMain.handle('file:import', async (_e, { label = 'Files', extensions = ['*'] }
 
 ipcMain.handle('file:export', async (_e, { defaultName, ext, label, content }) => {
   const res = await dialog.showSaveDialog(win, {
-    title: 'Export Call Sheet',
+    title: 'Export',
     defaultPath: defaultName,
     filters: [{ name: label, extensions: [ext] }],
   });

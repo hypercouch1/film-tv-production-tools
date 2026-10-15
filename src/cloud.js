@@ -1,4 +1,4 @@
-// Talks to the Production Hub server: accounts, shared projects and live sessions.
+// Talks to the Production Tools server: accounts, shared projects and live sessions.
 (function () {
   const { diff, applyAll, clone } = window.SyncCore;
 

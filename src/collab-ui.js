@@ -68,7 +68,7 @@
     });
     return el('details', { class: 'server-details', open: open || !Cloud.serverUrl() },
       el('summary', {}, 'Server'),
-      el('p', { class: 'muted small' }, 'The address of your Production Hub server (the Cloudflare Worker URL).'),
+      el('p', { class: 'muted small' }, 'The address of your Production Tools server (the Cloudflare Worker URL).'),
       el('div', { class: 'inline-form' }, input, save));
   }
 

@@ -315,7 +315,7 @@
   function toICS(p) {
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
     const days = [...p.days].sort((a, b) => a.date.localeCompare(b.date));
-    const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Production Hub//Shot Sheet//EN', 'CALSCALE:GREGORIAN'];
+    const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Production Tools//Shot Sheet//EN', 'CALSCALE:GREGORIAN'];
     days.forEach((d, i) => {
       const shots = [];
       for (const s of p.scenes) s.shots.forEach((sh, j) => {

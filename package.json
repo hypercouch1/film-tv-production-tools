@@ -1,8 +1,8 @@
 {
-  "name": "callsheet-app",
-  "productName": "Call Sheet",
+  "name": "production-tools",
+  "productName": "Production Tools",
   "version": "1.1.0",
-  "description": "Local live-show call sheet builder and runner",
+  "description": "Call sheets, shot lists and shoot scheduling for film and TV production",
   "main": "main.js",
   "author": "Matthew Sosdorf",
   "license": "UNLICENSED",
@@ -15,7 +15,7 @@
   },
   "build": {
     "appId": "com.callsheet.app",
-    "productName": "Call Sheet",
+    "productName": "Production Tools",
     "files": [
       "main.js",
       "preload.js",

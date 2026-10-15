@@ -1,4 +1,4 @@
-// Production Hub server: accounts, shared projects and live sync.
+// Production Tools server: accounts, shared projects and live sync.
 //   Worker         – REST API for accounts, projects and members (D1 database)
 //   ProjectRoom DO – one per shared project: holds the document and relays edits
 //                    to everyone connected over WebSockets.

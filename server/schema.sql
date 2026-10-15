@@ -1,4 +1,4 @@
--- D1 schema for the Production Hub server.
+-- D1 schema for the Production Tools server.
 -- Apply with: npm run db:init (remote) or npm run db:init:local (local dev)
 
 CREATE TABLE IF NOT EXISTS users (
