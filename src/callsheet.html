@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:">
+  <title>Call Sheet</title>
+  <link rel="stylesheet" href="../node_modules/@fontsource/bebas-neue/index.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app" id="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-head">
+        <span class="sidebar-title">Call Sheets</span>
+        <button class="icon-btn" id="newSheetBtn" title="New call sheet (Ctrl/Cmd+N)">+</button>
+      </div>
+      <input class="search" id="search" type="search" placeholder="Search…">
+      <ul class="sheet-list" id="sheetList"></ul>
+      <div class="sidebar-foot">
+        <button class="ghost-btn" id="importBtn">Import…</button>
+      </div>
+    </aside>
+
+    <main class="stage">
+      <div class="toolbar">
+        <button class="icon-btn" id="homeBtn" title="Home (Ctrl/Cmd+H)">⌂</button>
+        <button class="icon-btn" id="sidebarToggle" title="Toggle sidebar (Ctrl/Cmd+B)">☰</button>
+        <span class="system-label">Call Sheet</span>
+        <div class="toolbar-spacer"></div>
+        <button class="ghost-btn" id="resetBtn" title="Uncheck everything (Ctrl/Cmd+Shift+R)">Reset</button>
+        <div class="menu-wrap">
+          <button class="ghost-btn" id="exportBtn" data-menu="exportMenu">Export ▾</button>
+          <div class="menu" id="exportMenu" hidden>
+            <button data-export="callsheet">Call Sheet (.callsheet)</button>
+            <button data-export="csv">CSV (.csv)</button>
+            <button data-export="md">Markdown (.md)</button>
+            <button data-export="pdf">PDF (.pdf)</button>
+            <hr>
+            <button data-export="all">Backup all sheets (.json)</button>
+          </div>
+        </div>
+        <div class="menu-wrap">
+          <button class="ghost-btn" id="moreBtn" data-menu="moreMenu">⋯</button>
+          <div class="menu" id="moreMenu" hidden>
+            <button data-more="duplicate">Duplicate sheet</button>
+            <button data-more="delete" class="danger">Delete sheet</button>
+          </div>
+        </div>
+        <button class="primary-btn" id="editBtn" title="Ctrl/Cmd+E">Edit</button>
+      </div>
+
+      <div class="sheet" id="sheet">
+        <header class="sheet-header">
+          <div class="title-row">
+            <span class="live-dot"></span>
+            <h1 class="sheet-title" id="sheetTitle"></h1>
+            <input class="sheet-title-input" id="sheetTitleInput" hidden>
+            <span class="counter" id="counter">0/0</span>
+          </div>
+          <nav class="tabs" id="tabs"></nav>
+        </header>
+        <div class="sections" id="sections"></div>
+        <div class="hint" id="hint"></div>
+      </div>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="common.js"></script>
+  <script src="callsheet-formats.js"></script>
+  <script src="callsheet.js"></script>
+</body>
+</html>

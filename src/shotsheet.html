@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:">
+  <title>Shot Sheet</title>
+  <link rel="stylesheet" href="../node_modules/@fontsource/bebas-neue/index.css">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="shotsheet.css">
+</head>
+<body>
+  <div class="app" id="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-head">
+        <span class="sidebar-title">Projects</span>
+        <button class="icon-btn" id="newBtn" title="New project (Ctrl/Cmd+N)">+</button>
+      </div>
+      <input class="search" id="search" type="search" placeholder="Search…">
+      <ul class="sheet-list" id="list"></ul>
+      <div class="sidebar-foot">
+        <button class="ghost-btn" id="importBtn">Import…</button>
+      </div>
+    </aside>
+
+    <main class="stage">
+      <div class="toolbar">
+        <button class="icon-btn" id="homeBtn" title="Home (Ctrl/Cmd+H)">⌂</button>
+        <button class="icon-btn" id="sidebarToggle" title="Toggle sidebar (Ctrl/Cmd+B)">☰</button>
+        <span class="system-label">Shot Sheet</span>
+        <div class="seg" id="viewToggle">
+          <button data-view="shots">Shot List</button>
+          <button data-view="schedule">Schedule</button>
+        </div>
+        <div class="toolbar-spacer"></div>
+        <button class="ghost-btn" id="resetBtn" title="Uncheck shots in this view (Ctrl/Cmd+Shift+R)">Reset</button>
+        <div class="menu-wrap">
+          <button class="ghost-btn" data-menu="exportMenu">Export ▾</button>
+          <div class="menu" id="exportMenu" hidden>
+            <button data-export="shotsheet">Shot Sheet (.shotsheet)</button>
+            <button data-export="csv">CSV (.csv)</button>
+            <button data-export="pdf">PDF of current shot list (.pdf)</button>
+            <button data-export="ics">Shoot days to calendar (.ics)</button>
+            <hr>
+            <button data-export="all">Backup all projects (.json)</button>
+          </div>
+        </div>
+        <div class="menu-wrap">
+          <button class="ghost-btn" data-menu="moreMenu">⋯</button>
+          <div class="menu" id="moreMenu" hidden>
+            <button data-more="duplicate">Duplicate project</button>
+            <button data-more="delete" class="danger">Delete project</button>
+          </div>
+        </div>
+        <button class="primary-btn" id="editBtn" title="Ctrl/Cmd+E">Edit</button>
+      </div>
+
+      <div class="sheet" id="sheet">
+        <header class="sheet-header">
+          <div class="title-row">
+            <span class="live-dot cyan"></span>
+            <h1 class="sheet-title" id="title"></h1>
+            <input class="sheet-title-input" id="titleInput" hidden>
+            <span class="counter" id="counter">0/0</span>
+          </div>
+          <div class="day-info" id="dayInfo" hidden></div>
+          <nav class="daybar" id="daybar"></nav>
+          <nav class="tabs" id="tabs"></nav>
+        </header>
+        <div class="sections" id="sections"></div>
+        <div class="hint" id="hint"></div>
+      </div>
+    </main>
+  </div>
+
+  <datalist id="lensList"></datalist>
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="common.js"></script>
+  <script src="shotsheet-formats.js"></script>
+  <script src="shotsheet.js"></script>
+</body>
+</html>

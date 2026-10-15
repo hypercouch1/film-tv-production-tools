@@ -1,0 +1,61 @@
+{
+  "name": "callsheet-app",
+  "productName": "Call Sheet",
+  "version": "1.0.0",
+  "description": "Local live-show call sheet builder and runner",
+  "main": "main.js",
+  "author": "Matthew Sosdorf",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist": "electron-builder --win --mac"
+  },
+  "build": {
+    "appId": "com.callsheet.app",
+    "productName": "Call Sheet",
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "node_modules/@fontsource/bebas-neue/**/*"
+    ],
+    "fileAssociations": [
+      {
+        "ext": "callsheet",
+        "name": "Call Sheet",
+        "role": "Editor"
+      },
+      {
+        "ext": "shotsheet",
+        "name": "Shot Sheet",
+        "role": "Editor"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["universal"] },
+        { "target": "zip", "arch": ["universal"] }
+      ],
+      "category": "public.app-category.productivity"
+    }
+  },
+  "dependencies": {
+    "@fontsource/bebas-neue": "^5.3.0"
+  },
+  "devDependencies": {
+    "electron": "^44.7.2",
+    "electron-builder": "^26.15.3"
+  }
+}

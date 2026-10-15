@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:">
+  <title>Production Hub</title>
+  <link rel="stylesheet" href="../node_modules/@fontsource/bebas-neue/index.css">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="home.css">
+</head>
+<body>
+  <div class="home">
+    <header class="home-header">
+      <div class="title-row">
+        <span class="live-dot"></span>
+        <h1 class="sheet-title">Production Hub</h1>
+      </div>
+      <p class="home-sub">Pick a system to get started.</p>
+    </header>
+
+    <section class="tiles" id="tiles"></section>
+
+    <section class="upcoming" id="upcoming" hidden>
+      <h2 class="section-title">Upcoming Shoots</h2>
+      <ul class="upcoming-list" id="upcomingList"></ul>
+    </section>
+  </div>
+
+  <script src="common.js"></script>
+  <script src="home.js"></script>
+</body>
+</html>

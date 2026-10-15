@@ -1,0 +1,40 @@
+# Builds the Mac and Windows apps on GitHub's machines.
+# Run it from the repo's Actions tab ("Run workflow"); download the results from the run's Artifacts section.
+name: Build apps
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            args: --mac
+            name: mac-app
+            files: |
+              dist/*.dmg
+              dist/*.zip
+          - os: windows-latest
+            args: --win
+            name: windows-app
+            files: dist/*.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx electron-builder ${{ matrix.args }} --publish never
+        env:
+          # No Apple Developer certificate: build an unsigned (ad-hoc signed) app.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.files }}

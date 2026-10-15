@@ -1,0 +1,83 @@
+body {
+  overflow-y: auto;
+  background:
+    radial-gradient(1200px 600px at 70% -10%, rgba(120, 80, 40, .12), transparent 60%),
+    radial-gradient(900px 500px at 10% 110%, rgba(80, 60, 40, .10), transparent 60%),
+    var(--bg-sheet);
+  min-height: 100%;
+}
+.home { max-width: 1100px; margin: 0 auto; padding: 56px 48px 64px; }
+.home-header .sheet-title { font-size: 56px; }
+.home-sub { color: var(--muted); margin: 10px 0 0 28px; font-size: 16px; }
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 22px;
+  margin-top: 40px;
+}
+.tile {
+  --accent: var(--yellow);
+  display: flex; flex-direction: column;
+  padding: 26px 24px 22px;
+  min-height: 250px;
+  border-radius: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--text);
+  text-decoration: none;
+  position: relative;
+  overflow: hidden;
+  transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.tile::before {
+  content: ''; position: absolute; inset: 0 0 auto 0; height: 4px; background: var(--accent);
+}
+a.tile:hover, a.tile:focus-visible {
+  transform: translateY(-3px);
+  border-color: var(--accent);
+  box-shadow: 0 14px 34px rgba(0,0,0,.45);
+  outline: none;
+}
+.tile-logo {
+  width: 84px; height: 84px;
+  border-radius: 16px;
+  display: grid; place-items: center;
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 18%, var(--panel-2));
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.tile-logo svg { width: 56px; height: 56px; }
+.tile-name {
+  font-family: var(--display); font-size: 40px; letter-spacing: 1px; line-height: 1;
+  margin-top: 22px;
+}
+.tile-tag { color: var(--muted); font-size: 15px; margin-top: 6px; }
+.tile-stats {
+  margin-top: auto; padding-top: 18px;
+  font-size: 13px; color: var(--accent); font-weight: 600; letter-spacing: .3px;
+}
+.tile-soon {
+  background: transparent; border-style: dashed; color: var(--muted);
+}
+.tile-soon::before { display: none; }
+.tile-soon .tile-logo { background: transparent; border: 1px dashed var(--line); color: var(--muted); }
+.tile-soon .tile-name { color: var(--muted); }
+
+.upcoming { margin-top: 52px; }
+.upcoming-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.upcoming-list a {
+  display: flex; align-items: center; gap: 18px;
+  padding: 12px 16px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  color: var(--text); text-decoration: none;
+}
+.upcoming-list a:hover { border-color: var(--yellow); }
+.up-date {
+  width: 56px; flex-shrink: 0; text-align: center;
+  border-radius: 8px; background: var(--panel-2); padding: 6px 0 4px;
+}
+.up-mon { display: block; font-size: 11px; color: var(--red); font-weight: 700; letter-spacing: 1px; }
+.up-day { display: block; font-family: var(--display); font-size: 30px; line-height: 1; }
+.up-title { font-weight: 600; font-size: 16px; }
+.up-meta { color: var(--muted); font-size: 13px; margin-top: 3px; }
