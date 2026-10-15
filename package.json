@@ -1,7 +1,7 @@
 {
   "name": "callsheet-app",
   "productName": "Call Sheet",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Local live-show call sheet builder and runner",
   "main": "main.js",
   "author": "Matthew Sosdorf",
