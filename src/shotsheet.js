@@ -5,7 +5,8 @@
   const safeFileName = (s) => window.Common.safeFileName(s, 'shot-sheet');
 
   let state = { projects: [], activeId: null, sidebarHidden: false };
-  let view = 'shots';          // 'shots' | 'schedule'
+  let view = 'shots';          // 'shots' | 'schedule' | 'people' | 'summary'
+  let summaryDayId = null;     // shoot day shown in the 'summary' view
   let editing = false;
   let dayFilter = 'all';       // 'all' | 'none' | <dayId>
   let calMonth = null;         // { y, m } shown in the schedule calendar
@@ -42,7 +43,7 @@
       doc.scenes = Array.isArray(doc.scenes) ? doc.scenes : [];
       doc.scenes.forEach((s) => { s.shots = Array.isArray(s.shots) ? s.shots : []; });
       doc.days = Array.isArray(doc.days) ? doc.days : [];
-      return doc;
+      return F.upgradeProject(doc);
     },
     selectLocal: () => selectFirstLocal(),
     onRoleChange: (role) => { if (role === 'viewer') editing = false; },
@@ -94,17 +95,28 @@
     const S = (type, desc, extra = {}) => ({ type, desc, ...extra });
     return F.normalizeProject({
       title: 'Night Diner',
+      characters: [
+        { id: 'c1', name: 'Maya', actor: '', contact: '' },
+        { id: 'c2', name: 'Lou', actor: '', contact: '' },
+      ],
+      crew: [
+        { id: 'k1', role: 'Director', name: '', contact: '', allDays: true },
+        { id: 'k2', role: 'Director of Photography', name: '', contact: '', allDays: true },
+        { id: 'k3', role: 'Sound Mixer', name: '', contact: '', allDays: true },
+        { id: 'k4', role: 'Gaffer', name: '', contact: '' },
+        { id: 'k5', role: 'Prop Master', name: '', contact: '' },
+      ],
       days: [
         { date: d1, call: '07:00', wrap: '19:00', location: 'Rosie’s Diner, 4th St', notes: 'Practical neons on by 6:30.' },
         { date: d2, call: '16:00', wrap: '02:00', location: 'Parking lot behind diner', notes: 'Night exterior — rain tower booked.' },
       ],
       scenes: [
-        { number: '1', heading: 'EXT. DINER - NIGHT', shots: [
+        { number: '1', heading: 'EXT. DINER - NIGHT', castIds: ['c1'], crewIds: ['k4'], equipment: 'Rain tower', shots: [
           S('EST', 'Diner sign flickers, rain on the window', { move: 'Crane', lens: '24mm', day: d2, audio: 'MOS' }),
           S('WS', 'Maya crosses the lot toward the door', { move: 'Tracking', lens: '35mm', day: d2 }),
           S('CU', 'Her hand hesitates on the *door handle*', { lens: '85mm', day: d2, audio: 'MOS' }),
         ] },
-        { number: '2', heading: 'INT. DINER - NIGHT', shots: [
+        { number: '2', heading: 'INT. DINER - NIGHT', castIds: ['c1', 'c2'], crewIds: ['k4', 'k5'], props: 'Coffee pot, chipped mug, dish rag', shots: [
           S('WS', 'Master — Maya enters, Lou behind counter', { lens: '24mm', day: d1 }),
           S('MS', 'Lou pours coffee without looking up', { day: d1 }),
           S('OTS', 'Over Lou onto Maya', { lens: '50mm', day: d1 }),
@@ -112,7 +124,7 @@
           S('MCU', 'Maya: "You still make it too strong."', { move: 'Push In', lens: '50mm', day: d1 }),
           S('INS', 'Coffee mug slides across counter', { angle: 'High', lens: '100mm', fps: '48', audio: 'MOS', day: d1 }),
         ] },
-        { number: '3', heading: 'INT. DINER - BOOTH - LATER', shots: [
+        { number: '3', heading: 'INT. DINER - BOOTH - LATER', castIds: ['c1', 'c2'], props: 'Two coffee mugs', shots: [
           S('2S', 'Maya and Lou in the booth', { lens: '35mm' }),
           S('ECU', 'Lou’s eyes — the truth lands', { lens: '135mm', angle: 'Low' }),
           S('POV', 'Maya’s POV through rain-streaked glass', { move: 'Handheld' }),
@@ -174,7 +186,7 @@
     const counter = $('counter');
     counter.textContent = `${done}/${vis.length}`;
     counter.classList.toggle('complete', vis.length > 0 && done === vis.length);
-    counter.hidden = view === 'schedule' || editing;
+    counter.hidden = view !== 'shots' || editing;
 
     // Shoot day filter chips
     const bar = $('daybar');
@@ -232,11 +244,32 @@
     return parts.filter(Boolean).join('  ·  ');
   }
 
-  // Synopsis · cast · page length, shown under a scene's title (scenes imported from a script have these).
-  function sceneInfo(s) {
+  // ---------- Cast & crew helpers ----------
+  const characterLabel = (c) => (c.actor ? `${c.name || 'Unnamed'} (${c.actor})` : c.name || 'Unnamed');
+  const crewLabel = (k) => [k.role || 'Crew', k.name].filter(Boolean).join(' — ');
+  const sceneCast = (p, s) => p.characters.filter((c) => s.castIds.includes(c.id));
+  const sceneCrew = (p, s) => p.crew.filter((k) => s.crewIds.includes(k.id));
+  // Scenes being shot on a day: any scene with at least one shot scheduled that day.
+  const scenesOnDay = (p, dayId) => p.scenes.filter((s) => s.shots.some((x) => x.dayId === dayId));
+  // The shoot days a scene is (partly) scheduled on, in date order.
+  const daysForScene = (p, s) => sortedDays(p).filter((d) => s.shots.some((x) => x.dayId === d.id));
+  function daysLabel(p, scenes) {
+    const days = sortedDays(p).filter((d) => scenes.some((s) => s.shots.some((x) => x.dayId === d.id)));
+    return days.map((d) => `Day ${dayNum(p, d.id)}`).join(', ');
+  }
+
+  // Synopsis, cast, crew, props and page length, shown under a scene's title.
+  function sceneInfo(p, s) {
+    const cast = sceneCast(p, s);
+    const crew = sceneCrew(p, s);
+    const props = F.listItems(s.props);
+    const gear = F.listItems(s.equipment);
     const parts = [
       s.synopsis ? el('span', { class: 'scene-synopsis' }, s.synopsis) : null,
-      s.cast && s.cast.length ? el('span', { class: 'scene-cast' }, s.cast.join(', ')) : null,
+      cast.length ? el('span', { class: 'scene-cast', title: 'Cast' }, cast.map(characterLabel).join(', ')) : null,
+      crew.length ? el('span', { class: 'scene-crew', title: 'Crew' }, crew.map((k) => k.role || k.name).join(', ')) : null,
+      props.length ? el('span', { class: 'scene-tagged' }, el('b', {}, 'Props '), props.join(', ')) : null,
+      gear.length ? el('span', { class: 'scene-tagged' }, el('b', {}, 'Gear '), gear.join(', ')) : null,
       s.eighths ? el('span', { class: 'scene-pages' }, pagesLabel(s.eighths)) : null,
     ].filter(Boolean);
     return parts.length ? el('div', { class: 'scene-info' }, ...parts) : null;
@@ -274,7 +307,7 @@
       if (!ul.children.length) continue;
       wrap.append(el('section', { class: 'section', id: 'sec-' + s.id },
         el('h2', { class: 'section-title' }, `SCENE ${s.number}`, el('span', { class: 'scene-heading' }, s.heading)),
-        sceneInfo(s),
+        sceneInfo(p, s),
         ul));
     }
     if (!any) {
@@ -396,11 +429,18 @@
           el('input', {
             class: 'edit-input synopsis-input', value: s.synopsis || '', placeholder: 'Scene synopsis (optional)',
             oninput: (e) => { s.synopsis = e.target.value; save(); },
-          }),
-          el('input', {
-            class: 'edit-input cast-input', value: (s.cast || []).join(', '), placeholder: 'Cast, comma separated',
-            oninput: (e) => { s.cast = e.target.value.split(',').map((x) => x.trim()).filter(Boolean); save(); },
           })),
+        picker(p, s, 'cast'),
+        picker(p, s, 'crew'),
+        el('div', { class: 'edit-row scene-extra' },
+          labeled('Props', el('input', {
+            class: 'field', value: s.props, placeholder: 'e.g. coffee mug, car keys',
+            oninput: (e) => { s.props = e.target.value; save(); },
+          })),
+          labeled('Equipment', el('input', {
+            class: 'field', value: s.equipment, placeholder: 'e.g. rain tower, haze machine',
+            oninput: (e) => { s.equipment = e.target.value; save(); },
+          }))),
         shotsWrap,
         el('button', { class: 'add-btn', onclick: () => {
           const n = F.newShot(s.shots[s.shots.length - 1]);
@@ -415,6 +455,49 @@
       const inp = document.querySelector(`#sec-${s.id} .section-input:not(.scene-num)`);
       if (inp) { inp.scrollIntoView({ block: 'center' }); inp.focus(); }
     } }, '+ ADD SCENE'));
+  }
+
+  // Tap-to-select chips for the characters or crew a scene needs, plus a box to add a new one.
+  function picker(p, s, kind) {
+    const isCast = kind === 'cast';
+    const list = isCast ? p.characters : p.crew;
+    const key = isCast ? 'castIds' : 'crewIds';
+    const wrap = el('div', { class: 'picker', 'data-picker': kind });
+    const add = el('input', {
+      class: 'pick-add',
+      placeholder: isCast ? '+ New character' : '+ New crew role',
+      title: 'Type a name and press Enter',
+      onkeydown: (e) => {
+        if (e.key !== 'Enter' || !e.target.value.trim()) return;
+        e.preventDefault();
+        const text = e.target.value.trim();
+        const item = isCast
+          ? { id: uid(), name: text, actor: '', contact: '' }
+          : { id: uid(), role: text, name: '', contact: '', allDays: false };
+        list.push(item);
+        s[key].push(item.id);
+        save();
+        render({ keepScroll: true });
+        const again = document.querySelector(`#sec-${s.id} [data-picker="${kind}"] .pick-add`);
+        if (again) again.focus();
+      },
+    });
+    const draw = () => wrap.replaceChildren(
+      el('span', { class: 'picker-label' }, isCast ? 'Cast' : 'Crew'),
+      ...list.map((item) => el('button', {
+        type: 'button',
+        class: 'pick-chip' + (s[key].includes(item.id) ? ' on' : ''),
+        title: isCast ? (item.actor ? `Played by ${item.actor}` : 'No actor assigned yet') : (item.name || 'No name yet'),
+        onclick: () => {
+          const i = s[key].indexOf(item.id);
+          if (i >= 0) s[key].splice(i, 1); else s[key].push(item.id);
+          save();
+          draw();
+        },
+      }, isCast ? item.name || 'Unnamed' : item.role || item.name || 'Crew')),
+      add);
+    draw();
+    return wrap;
   }
 
   // Update the auto shot codes in place after a scene number edit (keeps input focus).
@@ -603,9 +686,11 @@
         el('div', {},
           el('div', { class: 'panel-day' }, `DAY ${n}`),
           el('div', { class: 'panel-date' }, fmtDate(day.date, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }))),
-        el('button', { class: 'primary-btn', title: 'Open this day as a checklist', onclick: () => {
-          dayFilter = day.id; view = 'shots'; editing = false; history = []; render(); $('sheet').scrollTop = 0;
-        } }, 'Run day ▶')),
+        el('div', { class: 'panel-actions' },
+          el('button', { class: 'ghost-btn', title: 'People, equipment, props and notes for this day', onclick: () => openSummary(day.id) }, 'Day summary'),
+          el('button', { class: 'primary-btn', title: 'Open this day as a checklist', onclick: () => {
+            dayFilter = day.id; view = 'shots'; editing = false; history = []; render(); $('sheet').scrollTop = 0;
+          } }, 'Run day ▶'))),
       el('div', { class: 'day-fields' },
         labeled('Date', el('input', { class: 'field', type: 'date', value: day.date, onchange: (e) => {
           const v = e.target.value;
@@ -617,7 +702,8 @@
         labeled('Call', el('input', { class: 'field', type: 'time', value: day.call, oninput: upd('call') })),
         labeled('Wrap', el('input', { class: 'field', type: 'time', value: day.wrap, oninput: upd('wrap') })),
         labeled('Location', el('input', { class: 'field', value: day.location, placeholder: 'Address or set', oninput: upd('location') })),
-        labeled('Notes', el('textarea', { class: 'field', rows: 2, placeholder: 'Parking, weather backup, meals…', oninput: upd('notes') }, day.notes))),
+        labeled('Notes', el('textarea', { class: 'field', rows: 2, placeholder: 'Parking, weather backup, meals…', oninput: upd('notes') }, day.notes)),
+        labeled('Extra equipment for the day', el('textarea', { class: 'field', rows: 2, placeholder: 'Generator, walkies, craft services tent…', oninput: upd('equipment') }, day.equipment || ''))),
       el('h3', { class: 'panel-title' }, `SHOTS THIS DAY (${mine.length})` + (dayEighths(p, day.id) ? ` · ${pagesLabel(dayEighths(p, day.id)).toUpperCase()}` : '')),
       mine.length ? null : el('div', { class: 'muted small' }, 'Add shots from the list below.'),
       el('ul', { class: 'mini-list' }, ...mine.map((x) => miniShot(x, '✕', 'Remove from this day', () => { x.shot.dayId = null; save(); render({ keepScroll: true }); }))),
@@ -662,13 +748,198 @@
       el('button', { class: 'icon-btn mini-btn', title, onclick }, btn));
   }
 
+  // ---------- Cast & Crew ----------
+  function renderPeople(p) {
+    const wrap = $('sections');
+    wrap.innerHTML = '';
+    const ro = collab.readOnly();
+    const sceneNums = (scenes) => (scenes.length ? 'SC ' + scenes.map((s) => s.number).join(', ') : '—');
+
+    function input(item, keyName, placeholder, extra = {}) {
+      return el('input', {
+        class: 'field', value: item[keyName] || '', placeholder, disabled: ro, ...extra,
+        oninput: (e) => { item[keyName] = e.target.value; save(); },
+      });
+    }
+
+    function removeItem(list, item, key, label) {
+      if (blockedReadOnly()) return;
+      const used = p.scenes.filter((s) => s[key].includes(item.id));
+      if (used.length && !confirm(`Remove ${label}? They are in ${used.length} scene${used.length === 1 ? '' : 's'}.`)) return;
+      list.splice(list.indexOf(item), 1);
+      for (const s of used) s[key].splice(s[key].indexOf(item.id), 1);
+      save();
+      render({ keepScroll: true });
+    }
+
+    function addItem(list, item) {
+      if (blockedReadOnly()) return;
+      list.push(item);
+      save();
+      render({ keepScroll: true });
+      const first = document.querySelector(`[data-item="${item.id}"] input`);
+      if (first) first.focus();
+    }
+
+    const castRows = p.characters.map((c) => {
+      const scenes = p.scenes.filter((s) => s.castIds.includes(c.id));
+      return el('div', { class: 'people-row cast-row', 'data-item': c.id },
+        input(c, 'name', 'Character'),
+        input(c, 'actor', 'Actor'),
+        input(c, 'contact', 'Phone or email'),
+        el('span', { class: 'people-meta' }, sceneNums(scenes)),
+        el('span', { class: 'people-meta days' }, daysLabel(p, scenes) || 'Not scheduled'),
+        ro ? el('span') : el('button', { class: 'icon-btn del', title: 'Remove character', onclick: () => removeItem(p.characters, c, 'castIds', c.name || 'this character') }, '✕'));
+    });
+
+    const crewRows = p.crew.map((k) => {
+      const scenes = p.scenes.filter((s) => s.crewIds.includes(k.id));
+      return el('div', { class: 'people-row crew-row', 'data-item': k.id },
+        input(k, 'role', 'Role', { list: 'crewRoles' }),
+        input(k, 'name', 'Name'),
+        input(k, 'contact', 'Phone or email'),
+        el('label', { class: 'people-check', title: 'Needed on every shoot day (director, DP, sound…)' },
+          el('input', { type: 'checkbox', checked: k.allDays, disabled: ro, onchange: (e) => { k.allDays = e.target.checked; save(); render({ keepScroll: true }); } }),
+          ' Every day'),
+        el('span', { class: 'people-meta' }, k.allDays ? 'All scenes' : sceneNums(scenes)),
+        el('span', { class: 'people-meta days' }, k.allDays ? (p.days.length ? 'Every shoot day' : 'Not scheduled') : daysLabel(p, scenes) || 'Not scheduled'),
+        ro ? el('span') : el('button', { class: 'icon-btn del', title: 'Remove crew member', onclick: () => removeItem(p.crew, k, 'crewIds', k.name || k.role || 'this crew member') }, '✕'));
+    });
+
+    wrap.append(
+      el('p', { class: 'edit-help' }, 'Build the cast and crew lists here, then choose who each scene needs in the Shot List (Edit mode). Scenes and shoot days update automatically from the schedule.'),
+      el('section', { class: 'people-card' },
+        el('div', { class: 'people-head' },
+          el('h2', { class: 'section-title' }, `CAST (${p.characters.length})`),
+          ro ? null : el('button', { class: 'ghost-btn', onclick: () => addItem(p.characters, { id: uid(), name: '', actor: '', contact: '' }) }, '+ Add character')),
+        el('div', { class: 'people-row people-cols cast-row' }, ...['Character', 'Actor', 'Contact', 'Scenes', 'Shoot days', ''].map((h) => el('span', {}, h))),
+        ...(castRows.length ? castRows : [el('div', { class: 'list-note' }, 'No characters yet. Add them here, or import a script to fill this in.')])),
+      el('section', { class: 'people-card' },
+        el('div', { class: 'people-head' },
+          el('h2', { class: 'section-title' }, `CREW (${p.crew.length})`),
+          ro ? null : el('button', { class: 'ghost-btn', onclick: () => addItem(p.crew, { id: uid(), role: '', name: '', contact: '', allDays: false }) }, '+ Add crew member')),
+        el('div', { class: 'people-row people-cols crew-row' }, ...['Role', 'Name', 'Contact', '', 'Scenes', 'Shoot days', ''].map((h) => el('span', {}, h))),
+        ...(crewRows.length ? crewRows : [el('div', { class: 'list-note' }, 'No crew yet.')])));
+  }
+
+  // ---------- Day summary ----------
+  function openSummary(dayId) {
+    summaryDayId = dayId;
+    view = 'summary';
+    editing = false;
+    render();
+    $('sheet').scrollTop = 0;
+  }
+
+  function daySummaryData(p, day) {
+    const scenes = scenesOnDay(p, day.id);
+    const shots = allShots(p).filter((x) => x.shot.dayId === day.id);
+    const scenesWith = (key, id) => scenes.filter((s) => s[key].includes(id));
+    const cast = p.characters
+      .filter((c) => scenes.some((s) => s.castIds.includes(c.id)))
+      .map((c) => ({ c, scenes: scenesWith('castIds', c.id) }));
+    const crew = p.crew
+      .filter((k) => k.allDays || scenes.some((s) => s.crewIds.includes(k.id)))
+      .map((k) => ({ k, scenes: scenesWith('crewIds', k.id) }));
+    // Collect items with where they're needed, merging duplicates case-insensitively.
+    const collect = (entries) => {
+      const map = new Map();
+      for (const [item, ref] of entries) {
+        const key = item.toLowerCase();
+        if (!map.has(key)) map.set(key, { item, refs: [] });
+        if (ref && !map.get(key).refs.includes(ref)) map.get(key).refs.push(ref);
+      }
+      return [...map.values()];
+    };
+    const equipment = [
+      ...collect([
+        ...scenes.flatMap((s) => F.listItems(s.equipment).map((i) => [i, 'SC ' + s.number])),
+        ...F.listItems(day.equipment).map((i) => [i, 'Day']),
+      ]),
+      ...F.shotEquipment(shots).map((g) => ({ item: g.item, refs: g.refs, fromShots: true })),
+    ];
+    const props = collect(scenes.flatMap((s) => F.listItems(s.props).map((i) => [i, 'SC ' + s.number])));
+    const shotNotes = shots.filter((x) => x.shot.notes.trim());
+    const eighths = scenes.reduce((n, s) => n + (s.eighths || 0), 0);
+    return { scenes, shots, cast, crew, equipment, props, shotNotes, eighths };
+  }
+
+  function renderSummary(p) {
+    const wrap = $('sections');
+    wrap.innerHTML = '';
+    const day = dayById(p, summaryDayId);
+    if (!day) { view = 'schedule'; render(); return; }
+    const d = daySummaryData(p, day);
+    const n = dayNum(p, day.id);
+    const plural = (k, word) => `${k} ${word}${k === 1 ? '' : 's'}`;
+    const table = (head, rows, empty) => (rows.length
+      ? el('table', { class: 'sum-table' },
+        el('thead', {}, el('tr', {}, ...head.map((h) => el('th', {}, h)))),
+        el('tbody', {}, ...rows.map((r) => el('tr', {}, ...r.map((cell) => el('td', {}, cell))))))
+      : el('p', { class: 'sum-empty' }, empty));
+    const list = (items, empty) => (items.length
+      ? el('ul', { class: 'sum-list' }, ...items.map((x) => el('li', {}, x.item, x.refs.length ? el('span', { class: 'sum-ref' }, ' — ' + x.refs.join(', ')) : null)))
+      : el('p', { class: 'sum-empty' }, empty));
+
+    wrap.append(
+      el('div', { class: 'summary-actions' },
+        el('button', { class: 'ghost-btn', onclick: () => { view = 'schedule'; selectedDate = day.date; render(); } }, '← Back to schedule'),
+        el('button', { class: 'primary-btn', onclick: () => exportAs('pdf') }, 'Export PDF')),
+      el('article', { class: 'summary-paper' },
+        el('header', { class: 'sum-head' },
+          el('div', { class: 'sum-project' }, p.title),
+          el('h1', {}, `Day ${n} of ${p.days.length}`),
+          el('div', { class: 'sum-date' }, fmtDate(day.date, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })),
+          el('div', { class: 'sum-facts' },
+            el('div', {}, el('span', {}, 'Call'), el('strong', {}, fmtTime(day.call) || '—')),
+            el('div', {}, el('span', {}, 'Wrap'), el('strong', {}, fmtTime(day.wrap) || '—')),
+            el('div', { class: 'wide' }, el('span', {}, 'Location'), el('strong', {}, day.location || '—'))),
+          el('div', { class: 'sum-counts' }, [
+            plural(d.scenes.length, 'scene'),
+            d.eighths ? pagesLabel(d.eighths) : null,
+            plural(d.shots.length, 'shot'),
+            plural(d.cast.length, 'cast member'),
+            plural(d.crew.length, 'crew member'),
+          ].filter(Boolean).join(' · '))),
+        day.notes.trim() ? el('div', { class: 'sum-notes' }, el('h3', {}, 'Notes'), el('p', {}, day.notes)) : null,
+
+        el('h3', {}, 'Scenes'),
+        table(['SC', 'Scene', 'Cast', 'Pages', 'Shots'], d.scenes.map((s) => [
+          s.number,
+          el('div', {}, el('strong', {}, s.heading || 'Untitled scene'), s.synopsis ? el('div', { class: 'sum-sub' }, s.synopsis) : null),
+          sceneCast(p, s).map((c) => c.name).join(', ') || '—',
+          s.eighths ? window.ScriptParse.formatEighths(s.eighths) : '—',
+          String(s.shots.filter((x) => x.dayId === day.id).length),
+        ]), 'No scenes scheduled yet. Assign shots to this day in the Schedule view.'),
+
+        el('h3', {}, 'Cast'),
+        table(['Character', 'Actor', 'Contact', 'Scenes'], d.cast.map(({ c, scenes }) => [
+          c.name || 'Unnamed', c.actor || '—', c.contact || '—', scenes.map((s) => s.number).join(', '),
+        ]), 'No cast picked for these scenes. Choose cast per scene in the Shot List (Edit mode).'),
+
+        el('h3', {}, 'Crew'),
+        table(['Role', 'Name', 'Contact', 'Needed for'], d.crew.map(({ k, scenes }) => [
+          k.role || '—', k.name || '—', k.contact || '—', k.allDays ? 'All day' : 'SC ' + scenes.map((s) => s.number).join(', '),
+        ]), 'No crew picked. Mark core crew as "Every day" in Cast & Crew, and choose crew per scene.'),
+
+        el('div', { class: 'sum-columns' },
+          el('div', {}, el('h3', {}, 'Equipment'), list(d.equipment, 'No equipment listed.')),
+          el('div', {}, el('h3', {}, 'Props'), list(d.props, 'No props listed.'))),
+
+        d.shotNotes.length ? el('h3', {}, 'Shot notes') : null,
+        d.shotNotes.length ? el('ul', { class: 'sum-list' }, ...d.shotNotes.map((x) => el('li', {}, el('strong', {}, x.code + ' '), x.shot.notes))) : null,
+        el('footer', { class: 'sum-foot' }, `${p.title} · Day ${n} summary · generated ${new Date().toLocaleDateString()}`)));
+  }
+
   // ---------- Render ----------
   function render({ keepScroll = false } = {}) {
     const sheetEl = $('sheet');
     const top = sheetEl.scrollTop;
     renderSidebar();
     const p = active();
-    document.querySelectorAll('#viewToggle button').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
+    const shownView = view === 'summary' ? 'schedule' : view;
+    document.querySelectorAll('#viewToggle button').forEach((b) => b.classList.toggle('active', b.dataset.view === shownView));
+    $('app').classList.toggle('summary-mode', view === 'summary');
     $('editBtn').textContent = editing ? 'Done' : 'Edit';
     $('editBtn').hidden = view !== 'shots' || collab.readOnly();
     $('resetBtn').hidden = editing || view !== 'shots' || collab.readOnly();
@@ -681,6 +952,8 @@
     if (dayFilter !== 'all' && dayFilter !== 'none' && !dayById(p, dayFilter)) dayFilter = 'all';
     renderHeader(p);
     if (view === 'schedule') renderSchedule(p);
+    else if (view === 'people') renderPeople(p);
+    else if (view === 'summary') renderSummary(p);
     else if (editing) renderEdit(p);
     else renderRun(p);
     $('hint').hidden = view !== 'shots';
@@ -693,7 +966,7 @@
 
   function setView(v) {
     view = v;
-    if (v === 'schedule') editing = false;
+    if (v !== 'shots') editing = false;
     render();
     $('sheet').scrollTop = 0;
   }
@@ -863,7 +1136,9 @@
     if (!p && kind !== 'all') return;
     const name = p ? safeFileName(p.title) : 'shot-sheets';
     let saved = null;
-    if (kind === 'pdf') {
+    if (kind === 'pdf' && view === 'summary' && dayById(p, summaryDayId)) {
+      saved = await api.exportPdf({ defaultName: `${name} - Day ${dayNum(p, summaryDayId)} summary.pdf` });
+    } else if (kind === 'pdf') {
       const prev = { view, editing };
       view = 'shots'; editing = false; render();
       const suffix = dayById(p, dayFilter) ? ` - Day ${dayNum(p, dayFilter)}` : '';
@@ -903,6 +1178,7 @@
 
     const lens = $('lensList');
     OPTIONS.lens.forEach((l) => lens.append(el('option', { value: l })));
+    F.CREW_ROLES.forEach((r) => $('crewRoles').append(el('option', { value: r })));
 
     document.addEventListener('keydown', (e) => {
       const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
@@ -943,6 +1219,7 @@
     const stored = await api.loadStore('shotsheets');
     if (stored && Array.isArray(stored.projects) && stored.projects.length) {
       state = { sidebarHidden: false, ...stored };
+      state.projects.forEach(F.upgradeProject); // projects saved before cast & crew existed
       if (!active()) state.activeId = state.projects[0].id;
     } else {
       const p = sampleProject();

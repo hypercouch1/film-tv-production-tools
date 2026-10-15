@@ -1,8 +1,9 @@
 // Shot sheet data model, option lists, and import/export converters.
 // Project: { id, title, updatedAt, scenes: [Scene], days: [Day] }
-// Scene:   { id, number, heading, synopsis, cast: [name], eighths (page length in 1/8 pages), shots: [Shot] }
+// Project also has characters: [{ id, name, actor, contact }] and crew: [{ id, role, name, contact, allDays }].
+// Scene:   { id, number, heading, synopsis, castIds, crewIds, props, equipment, eighths (page length in 1/8 pages), shots: [Shot] }
 // Shot:    { id, type, angle, move, lens, cam, fps, audio, desc, notes, dayId, done }
-// Day:     { id, date: 'YYYY-MM-DD', call: 'HH:MM', wrap: 'HH:MM', location, notes }
+// Day:     { id, date: 'YYYY-MM-DD', call: 'HH:MM', wrap: 'HH:MM', location, notes, equipment }
 (function () {
   const { uid, parseCSV, csvField } = window.Common;
 
@@ -43,17 +44,39 @@
 
   const str = (v, d = '') => (v == null ? d : String(v));
 
+  // Common crew roles offered when typing a role (any text is allowed).
+  const CREW_ROLES = [
+    'Director', 'Producer', '1st AD', '2nd AD', 'Script Supervisor', 'Director of Photography', 'Camera Operator',
+    '1st AC', '2nd AC', 'DIT', 'Gaffer', 'Best Boy Electric', 'Key Grip', 'Dolly Grip', 'Sound Mixer', 'Boom Operator',
+    'Production Designer', 'Art Director', 'Prop Master', 'Set Dresser', 'Costume Designer', 'Wardrobe',
+    'Hair & Makeup', 'Stunt Coordinator', 'Location Manager', 'Production Assistant', 'Catering', 'Driver',
+  ];
+
+  const ids = (list, map) => (Array.isArray(list) ? list.map((x) => map[x] || null).filter(Boolean) : []);
+
   // Accepts the internal shape (shot.dayId + day.id) or the file shape (shot.day = 'YYYY-MM-DD').
   function normalizeProject(raw, fallbackTitle) {
     raw = raw || {};
     const idMap = {};
     const dateMap = {};
+    const charMap = {};
+    const crewMap = {};
+    const characters = (Array.isArray(raw.characters) ? raw.characters : []).map((c) => {
+      const out = { id: uid(), name: str(c.name), actor: str(c.actor), contact: str(c.contact) };
+      if (c.id) charMap[c.id] = out.id;
+      return out;
+    });
+    const crew = (Array.isArray(raw.crew) ? raw.crew : []).map((c) => {
+      const out = { id: uid(), role: str(c.role), name: str(c.name), contact: str(c.contact), allDays: !!c.allDays };
+      if (c.id) crewMap[c.id] = out.id;
+      return out;
+    });
     const days = (Array.isArray(raw.days) ? raw.days : [])
       .filter((d) => d && /^\d{4}-\d{2}-\d{2}$/.test(d.date))
       .map((d) => {
         const day = {
           id: uid(), date: d.date, call: str(d.call), wrap: str(d.wrap),
-          location: str(d.location), notes: str(d.notes),
+          location: str(d.location), notes: str(d.notes), equipment: str(d.equipment),
         };
         if (d.id) idMap[d.id] = day.id;
         dateMap[d.date] = day.id;
@@ -64,7 +87,12 @@
       number: str(s && s.number, String(i + 1)),
       heading: str(s && s.heading),
       synopsis: str(s && s.synopsis),
-      cast: Array.isArray(s && s.cast) ? s.cast.map(String) : [],
+      castIds: ids(s && s.castIds, charMap),
+      crewIds: ids(s && s.crewIds, crewMap),
+      // Older files and script imports list cast by name; upgradeProject turns these into characters.
+      ...(Array.isArray(s && s.cast) && s.cast.length ? { cast: s.cast.map(String) } : {}),
+      props: str(s && s.props),
+      equipment: str(s && s.equipment),
       eighths: Number.isFinite(s && s.eighths) ? s.eighths : 0,
       shots: (Array.isArray(s && s.shots) ? s.shots : []).map((sh) => ({
         id: uid(),
@@ -81,7 +109,73 @@
         done: !!sh.done,
       })),
     }));
-    return { id: uid(), title: str(raw.title, fallbackTitle || 'Untitled Project'), updatedAt: Date.now(), scenes, days };
+    return upgradeProject({
+      id: uid(), title: str(raw.title, fallbackTitle || 'Untitled Project'), updatedAt: Date.now(), scenes, days, characters, crew,
+    });
+  }
+
+  // Fills in fields added in later versions, in place, so older local and shared
+  // projects keep working. Scene cast given as names becomes character entries.
+  function upgradeProject(p) {
+    if (!Array.isArray(p.characters)) p.characters = [];
+    if (!Array.isArray(p.crew)) p.crew = [];
+    if (!Array.isArray(p.days)) p.days = [];
+    if (!Array.isArray(p.scenes)) p.scenes = [];
+    for (const d of p.days) if (typeof d.equipment !== 'string') d.equipment = '';
+    const byName = new Map(p.characters.map((c) => [c.name.trim().toLowerCase(), c]));
+    for (const s of p.scenes) {
+      if (!Array.isArray(s.shots)) s.shots = [];
+      if (!Array.isArray(s.castIds)) s.castIds = [];
+      if (!Array.isArray(s.crewIds)) s.crewIds = [];
+      if (typeof s.props !== 'string') s.props = '';
+      if (typeof s.equipment !== 'string') s.equipment = '';
+      if (Array.isArray(s.cast)) {
+        for (const name of s.cast) {
+          const key = String(name).trim().toLowerCase();
+          if (!key) continue;
+          let c = byName.get(key);
+          if (!c) {
+            c = { id: uid(), name: String(name).trim(), actor: '', contact: '' };
+            p.characters.push(c);
+            byName.set(key, c);
+          }
+          if (!s.castIds.includes(c.id)) s.castIds.push(c.id);
+        }
+        delete s.cast;
+      }
+    }
+    return p;
+  }
+
+  // Splits a free-text list ("mug, keys\nnewspaper") into items.
+  const listItems = (text) => String(text || '').split(/[,\n;]+/).map((x) => x.trim()).filter(Boolean);
+
+  // Equipment implied by how shots are filmed.
+  const MOVE_GEAR = {
+    Dolly: 'Dolly & track', Truck: 'Dolly & track', Tracking: 'Dolly / tracking vehicle',
+    'Push In': 'Dolly or slider', 'Pull Out': 'Dolly or slider', Crane: 'Crane / jib', Gimbal: 'Gimbal', Zoom: 'Zoom lens',
+  };
+  // Returns [{ item, refs: [shot codes] }] for the given shots ({ shot, code }).
+  function shotEquipment(shots) {
+    const found = new Map();
+    const add = (item, code) => {
+      if (!found.has(item)) found.set(item, []);
+      if (!found.get(item).includes(code)) found.get(item).push(code);
+    };
+    const lenses = new Set();
+    for (const { shot, code } of shots) {
+      if (MOVE_GEAR[shot.move]) add(MOVE_GEAR[shot.move], code);
+      if (shot.cam && shot.cam !== 'A') add(`${shot.cam} camera`, code);
+      if (parseInt(shot.fps, 10) >= 48) add(`High-speed capture (${shot.fps} fps)`, code);
+      if (shot.audio === 'Sync') add('Sound kit (sync sound)', code);
+      if (shot.lens) lenses.add(shot.lens);
+    }
+    const out = [...found].map(([item, refs]) => ({ item, refs }));
+    if (lenses.size) {
+      const sorted = [...lenses].sort((a, b) => parseFloat(a) - parseFloat(b) || a.localeCompare(b));
+      out.unshift({ item: `Lenses: ${sorted.join(', ')}`, refs: [] });
+    }
+    return out;
   }
 
   const baseName = (n) => n.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim();
@@ -92,13 +186,18 @@
       format: 'shotsheet',
       version: 1,
       title: p.title,
+      characters: (p.characters || []).map(({ id, name, actor, contact }) => ({ id, name, actor, contact })),
+      crew: (p.crew || []).map(({ id, role, name, contact, allDays }) => ({ id, role, name, contact, allDays })),
       days: [...p.days].sort((a, b) => a.date.localeCompare(b.date))
-        .map(({ date, call, wrap, location, notes }) => ({ date, call, wrap, location, notes })),
+        .map(({ date, call, wrap, location, notes, equipment }) => ({ date, call, wrap, location, notes, equipment: equipment || '' })),
       scenes: p.scenes.map((s) => ({
         number: s.number,
         heading: s.heading,
         synopsis: s.synopsis || '',
-        cast: s.cast || [],
+        castIds: s.castIds || [],
+        crewIds: s.crewIds || [],
+        props: s.props || '',
+        equipment: s.equipment || '',
         eighths: s.eighths || 0,
         shots: s.shots.map(({ type, angle, move, lens, cam, fps, audio, desc, notes, dayId, done }) =>
           ({ type, angle, move, lens, cam, fps, audio, desc, notes, day: dateOf[dayId] || null, done })),
@@ -238,7 +337,10 @@
       }
       lines.push(fold('SUMMARY:' + icsEscape(`${p.title} — Shoot Day ${i + 1}`)));
       if (d.location) lines.push(fold('LOCATION:' + icsEscape(d.location)));
-      const desc = [d.notes, shots.length ? `${shots.length} shots:\n` + shots.join('\n') : ''].filter(Boolean).join('\n\n');
+      const castIds = new Set(p.scenes.filter((s) => s.shots.some((x) => x.dayId === d.id)).flatMap((s) => s.castIds || []));
+      const cast = (p.characters || []).filter((c) => castIds.has(c.id)).map((c) => (c.actor ? `${c.name} (${c.actor})` : c.name));
+      const desc = [d.notes, cast.length ? 'Cast: ' + cast.join(', ') : '', shots.length ? `${shots.length} shots:\n` + shots.join('\n') : '']
+        .filter(Boolean).join('\n\n');
       if (desc) lines.push(fold('DESCRIPTION:' + icsEscape(desc)));
       lines.push('END:VEVENT');
     });
@@ -252,6 +354,7 @@
   }
 
   window.ShotFormats = {
-    OPTIONS, SHOT_DEFAULTS, newShot, shotLetter, normalizeProject, importFile, toShotsheet, toBackup, toCSV, toICS,
+    OPTIONS, SHOT_DEFAULTS, CREW_ROLES, newShot, shotLetter, normalizeProject, upgradeProject, listItems, shotEquipment,
+    importFile, toShotsheet, toBackup, toCSV, toICS,
   };
 })();

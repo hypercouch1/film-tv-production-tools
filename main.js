@@ -172,7 +172,8 @@ ipcMain.handle('file:exportPdf', async (_e, { defaultName }) => {
   const pdf = await win.webContents.printToPDF({
     printBackground: true,
     pageSize: 'Letter',
-    margins: { marginType: 'none' },
+    // Pages lay out their own margins; Electron's default margin would show as a dark border.
+    margins: { top: 0, bottom: 0, left: 0, right: 0 },
   });
   fs.writeFileSync(res.filePath, pdf);
   return res.filePath;

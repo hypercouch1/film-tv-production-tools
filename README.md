@@ -82,6 +82,19 @@ To add a new system, add an entry to `SYSTEMS` in `src/home.js` (and a logo in `
   - For each day you can set the call and wrap times, location and notes.
   - Assign shots to the day from the unscheduled list. **Run day ▶** opens that day as a checklist.
 - **Edit mode (Ctrl/⌘+E):** pressing Enter in a shot description adds the next shot with the same settings. ⧉ duplicates a shot, and ⠿ drags to reorder.
+- **Cast & Crew view:**
+  - **Cast:** list the film's characters with the actor playing each one and their contact details.
+  - **Crew:** list each person's role, name and contact. Tick **Every day** for people needed on every shoot day (director, DP, sound).
+  - **Where they're needed:** each person shows which scenes and shoot days need them, worked out from the schedule.
+- **Per scene (Edit mode):** tap the **Cast** and **Crew** chips to choose who a scene needs, or type a new name to add someone. List the scene's **Props** and **Equipment**.
+- **Day summary:** in the Schedule view, open a shoot day and click **Day summary**. It builds a printable sheet for that day:
+  - call and wrap times, location, and notes
+  - the scenes being shot
+  - the cast (with actors and contacts) and crew needed
+  - equipment and props
+  - shot notes
+
+  Equipment comes from three places: what the scenes list, the day's extra equipment, and gear implied by the shots. For example, dolly or crane moves, B camera, high frame rates, lenses, and sync sound. **Export PDF** saves the summary.
 - **Import a script:** **Import script** in the sidebar (or **Ctrl/⌘+Shift+O**, or drag the file onto the window) reads a screenplay and breaks it down by scene.
   - Formats: **PDF**, **Final Draft (.fdx)** or **Fountain**.
   - For each scene it finds the scene number, heading, synopsis, cast, and page length in eighths.
