@@ -32,9 +32,10 @@
   });
   const readOnly = () => collab.readOnly();
 
+  // Opens the most recent local script, or the empty screen if there are none.
   function selectFirstLocal() {
-    if (!collab.localOnly(state.scripts).length) state.scripts.push(S.newDoc());
-    selectScript(collab.localOnly(state.scripts).sort((a, b) => b.updatedAt - a.updatedAt)[0].id);
+    const local = collab.localOnly(state.scripts).sort((a, b) => b.updatedAt - a.updatedAt);
+    selectScript(local.length ? local[0].id : null);
   }
 
   function selectScript(id) {
@@ -139,19 +140,59 @@
     updatePageBreaks();
   }
 
-  // Dashed page-break markers where each new page starts.
+  // ---------- Pages ----------
+  // The page area is 9in (54 lines of 12pt Courier) inside 1in top/bottom margins. Pages are
+  // laid out from the measured height of every line, so the screen and the PDF break in the
+  // same places. Each break draws the bottom of one sheet, a gap, and the top of the next.
+  const IN = 96;
+  const PAGE_BODY = 9 * IN;
+  const LINE = 16;
+  const GAP_BEFORE = { heading: LINE, action: LINE, character: LINE, transition: LINE, shot: LINE, parenthetical: 0, dialogue: 0 };
+  let layout = { pageOf: [], pages: 0 };
+
+  function measurePages(doc) {
+    const pageOf = [];
+    const fill = []; // empty space left at the bottom of each page
+    let page = 1;
+    let used = 0;
+    doc.elements.forEach((item, i) => {
+      const node = nodes.get(item.id);
+      const h = node ? node.offsetHeight : LINE;
+      const gap = used === 0 ? 0 : GAP_BEFORE[item.type] || 0;
+      // Keep a scene heading or character name with at least the next line.
+      const keep = item.type === 'heading' || item.type === 'character' ? LINE * 2 : 0;
+      if (used > 0 && used + gap + h + keep > PAGE_BODY) {
+        fill[page] = PAGE_BODY - used;
+        page++;
+        used = h;
+      } else {
+        used += gap + h;
+      }
+      pageOf[i] = page;
+    });
+    fill[page] = Math.max(0, PAGE_BODY - used);
+    return { pageOf, pages: doc.elements.length ? page : 0, fill };
+  }
+
   function updatePageBreaks() {
     const doc = active();
     if (!doc) return;
     const paper = $('paper');
     paper.querySelectorAll('.page-break').forEach((n) => n.remove());
-    const { pageOf } = S.paginate(doc.elements);
+    layout = measurePages(doc);
+    const { pageOf, fill } = layout;
     doc.elements.forEach((item, i) => {
-      if (i > 0 && pageOf[i] !== pageOf[i - 1]) {
-        const node = nodes.get(item.id);
-        if (node) paper.insertBefore(el('div', { class: 'page-break', 'data-page': pageOf[i] + '.' }), node);
-      }
+      if (i === 0 || pageOf[i] === pageOf[i - 1]) return;
+      const node = nodes.get(item.id);
+      if (!node) return;
+      const prevPage = pageOf[i - 1];
+      paper.insertBefore(el('div', { class: 'page-break', 'aria-hidden': 'true' },
+        el('div', { class: 'pb-bottom', style: `height:${Math.max(0, fill[prevPage]) + IN}px` }),
+        el('div', { class: 'pb-gap' }),
+        el('div', { class: 'pb-top' }, el('span', { class: 'pb-num' }, pageOf[i] + '.'))), node);
     });
+    // Pad the last page out to a full sheet.
+    paper.style.paddingBottom = (fill[layout.pages] || 0) + IN + 'px';
   }
 
   let laterTimer = null;
@@ -166,7 +207,7 @@
     const nav = $('sceneNav');
     nav.innerHTML = '';
     if (!doc) return;
-    const { pageOf } = S.paginate(doc.elements);
+    const pageOf = layout.pageOf.length === doc.elements.length ? layout.pageOf : S.paginate(doc.elements).pageOf;
     const scenes = S.scenes(doc);
     nav.append(el('div', { class: 'nav-head' }, `Scenes (${scenes.length})`));
     if (!scenes.length) nav.append(el('div', { class: 'list-note' }, 'Scene headings appear here. Type INT. or EXT. to start one.'));
@@ -205,6 +246,7 @@
     const doc = active();
     if (!doc) return;
     const st = S.stats(doc);
+    if (layout.pages) st.pages = layout.pages; // measured on screen, matches the PDF
     const cur = currentElement();
     $('statusbar').innerHTML = '';
     $('statusbar').append(
@@ -466,7 +508,9 @@
           tp.draftDate ? el('div', { class: 'tp-draft' }, tp.draftDate) : null),
         tp.contact ? el('div', { class: 'tp-contact' }, tp.contact) : null));
     }
-    const { pageOf } = S.paginate(doc.elements);
+    // Same page breaks as the editor shows.
+    updatePageBreaks();
+    const { pageOf } = layout;
     let page = null;
     let sceneNo = 0;
     doc.elements.forEach((item, i) => {
@@ -544,7 +588,24 @@
   function render(opts = {}) {
     renderSidebar();
     const doc = active();
-    if (!doc) return;
+    $('app').classList.toggle('is-empty', !doc);
+    const empty = $('emptyState');
+    if (empty) empty.remove();
+    if (!doc) {
+      $('paper').innerHTML = '';
+      nodes.clear();
+      $('sceneNav').innerHTML = '';
+      $('desk').append(Object.assign(window.Common.emptyState({
+        title: 'No scripts',
+        text: 'Start a new screenplay, or import one you have already written (PDF, Final Draft or Fountain).',
+        actions: [
+          { label: 'New script', primary: true, onclick: newScript },
+          { label: 'Import script…', onclick: async () => openImported(await api.importScript()) },
+          { label: 'Load example', onclick: () => addScript(sampleScript()) },
+        ],
+      }), { id: 'emptyState' }));
+      return;
+    }
     $('numbersToggle').textContent = doc.sceneNumbers ? 'Hide scene numbers' : 'Show scene numbers';
     $('deleteLabel').textContent = collab.isCloud(doc) ? (doc._cloud.role === 'owner' ? 'Delete for everyone' : 'Leave shared script') : 'Delete script';
     $('app').classList.toggle('read-only', readOnly());
@@ -642,14 +703,13 @@
 
   async function init() {
     const stored = await api.loadStore('scripts');
-    if (stored && Array.isArray(stored.scripts) && stored.scripts.length) {
+    // Starting with no scripts is fine: the empty screen offers New, Import and an example.
+    if (stored && Array.isArray(stored.scripts)) {
       state = { sidebarHidden: false, ...stored };
       state.scripts = state.scripts.map((d) => S.normalizeDoc(d));
-      if (!active()) state.activeId = state.scripts[0].id;
+      if (!active()) state.activeId = state.scripts.length ? state.scripts[0].id : null;
     } else {
-      const d = sampleScript();
-      state = { scripts: [d], activeId: d.id, sidebarHidden: false };
-      store.save();
+      state = { scripts: [], activeId: null, sidebarHidden: false };
     }
     wire();
     collab.mountToolbar(document.querySelector('.toolbar'), $('titlePageBtn'));

@@ -165,6 +165,17 @@
     return { close };
   }
 
+  // ---- "Nothing here yet" screen shown when a system has no projects ----
+  // actions: [{ label, onclick, primary }]
+  function emptyState({ title, text, actions = [] }) {
+    return el('div', { class: 'empty-state' },
+      el('h2', {}, title),
+      text ? el('p', {}, text) : null,
+      el('div', { class: 'empty-actions' }, ...actions.map((a) => el('button', {
+        class: a.primary ? 'primary-btn' : 'ghost-btn', type: 'button', onclick: a.onclick,
+      }, a.label))));
+  }
+
   // ---- Handing a script from one system to another (survives the page change) ----
   function setHandoff(payload) {
     try { sessionStorage.setItem('handoff', JSON.stringify(payload)); } catch { /* storage unavailable */ }
@@ -267,6 +278,6 @@
   window.Common = {
     api, uid, $, mod, esc, fmt, el, toast, relTime, safeFileName,
     parseCSV, csvField, createStore, goHome, wireDropdowns, onFileDrop, modal,
-    setHandoff, takeHandoff, compareVersions, initUpdates, pickScript,
+    setHandoff, takeHandoff, compareVersions, initUpdates, pickScript, emptyState,
   };
 })();

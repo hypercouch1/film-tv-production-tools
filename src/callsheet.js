@@ -69,9 +69,10 @@
     onRoleChange: (role) => { if (role === 'viewer') editing = false; },
   });
 
+  // Opens the most recent local sheet, or the empty screen if there are none.
   function selectFirstLocal() {
-    if (!collab.localOnly(state.sheets).length) state.sheets.push(blankSheet());
-    state.activeId = collab.localOnly(state.sheets).sort((a, b) => b.updatedAt - a.updatedAt)[0].id;
+    const local = collab.localOnly(state.sheets).sort((a, b) => b.updatedAt - a.updatedAt);
+    state.activeId = local.length ? local[0].id : null;
     editing = false;
     history = [];
     render();
@@ -378,8 +379,19 @@
     $('resetBtn').hidden = editing || collab.readOnly();
     $('deleteLabel').textContent = collab.isCloud(sheet) ? (sheet._cloud.role === 'owner' ? 'Delete for everyone' : 'Leave shared sheet') : 'Delete sheet';
     collab.updateToolbar();
+    $('app').classList.toggle('is-empty', !sheet);
     if (!sheet) {
       $('sections').innerHTML = '';
+      $('sections').append(window.Common.emptyState({
+        title: 'No call sheets',
+        text: 'Create a call sheet, import one, or make one from a script.',
+        actions: [
+          { label: 'New call sheet', primary: true, onclick: newSheet },
+          { label: 'Import script…', onclick: importScript },
+          { label: 'Import…', onclick: importFiles },
+          { label: 'Load example', onclick: () => addSheet(sampleSheet()) },
+        ],
+      }));
       return;
     }
     renderHeader(sheet);
@@ -439,7 +451,7 @@
   }
 
   function toggleEdit() {
-    if (!editing && blockedReadOnly()) return;
+    if (!active() || (!editing && blockedReadOnly())) return;
     editing = !editing;
     render({ keepScroll: true });
   }
@@ -535,7 +547,9 @@
     $('sidebarToggle').addEventListener('click', () => { state.sidebarHidden = !state.sidebarHidden; save(); renderSidebar(); });
     $('search').addEventListener('input', (e) => { search = e.target.value; renderSidebar(); });
     $('sheetTitleInput').addEventListener('input', (e) => {
-      const s = active(); s.title = e.target.value; save(); renderSidebar();
+      const s = active();
+      if (!s) return;
+      s.title = e.target.value; save(); renderSidebar();
     });
     $('sheet').addEventListener('scroll', updateActiveTab, { passive: true });
     $('homeBtn').addEventListener('click', () => window.Common.goHome(store));
@@ -573,13 +587,12 @@
 
   async function init() {
     const stored = await api.loadStore('callsheets');
-    if (stored && Array.isArray(stored.sheets) && stored.sheets.length) {
+    // Starting with no sheets is fine: the empty screen offers New, Import and an example.
+    if (stored && Array.isArray(stored.sheets)) {
       state = { sidebarHidden: false, ...stored };
-      if (!active()) state.activeId = state.sheets[0].id;
+      if (!active()) state.activeId = state.sheets.length ? state.sheets[0].id : null;
     } else {
-      const s = sampleSheet();
-      state = { sheets: [s], activeId: s.id, sidebarHidden: false };
-      save();
+      state = { sheets: [], activeId: null, sidebarHidden: false };
     }
     wire();
     collab.mountToolbar(document.querySelector('.toolbar'), $('resetBtn'));

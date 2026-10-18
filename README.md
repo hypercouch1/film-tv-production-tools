@@ -75,7 +75,7 @@ To add a new system, add an entry to `SYSTEMS` in `src/home.js` (and a logo in `
   - **Tab** / **Shift+Tab** switch the current line's element, for example action to character, or dialogue to parenthetical. **Ctrl/⌘+1–7** pick one directly, as does the toolbar.
   - **Auto-detection:** typing `INT.` or `EXT.` makes a scene heading, and `CUT TO:` makes a transition. Parentheticals are wrapped in brackets for you.
   - **Suggestions:** as you type, it suggests character names, locations and times of day (`DAY`, `NIGHT`, `CONTINUOUS`…), plus transitions. Press Enter or Tab to accept one.
-  - **Layout:** page breaks are shown as you write. Scene numbers appear in both margins (switch them off in ⋯). The scene list on the left jumps to any scene.
+  - **Layout:** the script appears as separate Letter-size pages, each with its page number. Pages break exactly where they will in the exported PDF. Scene numbers appear in both margins (switch them off in ⋯). The scene list on the left jumps to any scene.
 - **Title page:** title, credit, author, draft and contact.
 - **Import scripts you already have:** PDF, Final Draft (`.fdx`) or Fountain. Use **Import script**, drag the file in, or open a `.fountain`/`.fdx` file with the app.
 - **Export:** a print-ready PDF (with title page and page numbers), Fountain, or Final Draft.
@@ -97,6 +97,10 @@ The sync server can also require a minimum app version (`MIN_CLIENT_VERSION` in 
 2. Commit, then tag and push the tag (e.g. `v1.2.0`) from GitHub Desktop or the command line.
 
 The **Build apps** workflow runs the tests, builds the Mac and Windows apps, and publishes a GitHub Release with the installers and the release notes. Installed copies then see the update notice.
+
+## Empty lists
+
+Each system can have no projects at all. Deleting the last call sheet, shot sheet or script leaves the list empty instead of creating a new one. The empty screen offers **New**, **Import**, and **Load example** (a sample to explore).
 
 ## Call Sheet
 

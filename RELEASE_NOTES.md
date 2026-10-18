@@ -11,7 +11,7 @@ This release adds a screenplay editor, and the app now tells you when a new vers
   - **Tab** switches the current line's element (action → character, dialogue → parenthetical, and so on).
   - **Auto-detection:** typing `INT.` or `EXT.` starts a scene heading, and parentheticals are wrapped in brackets for you.
 - **Suggestions:** as you type, it suggests character names, locations and times of day.
-- **Layout:** page breaks, scene numbers, a scene list for jumping around, and a title page.
+- **Layout:** the script appears as real pages, separate Letter-size sheets with page numbers, breaking exactly where the PDF will. There are also scene numbers, a scene list for jumping around, and a title page.
 - **Import scripts you already have:** PDF, Final Draft (.fdx) and Fountain.
 - **Export:** a print-ready PDF, Fountain, or Final Draft.
 - **Send to Shot Sheet or Call Sheet** in one click. Shot Sheet opens its scene breakdown, and Call Sheet builds a section of cues for each scene.
@@ -24,6 +24,9 @@ This release adds a screenplay editor, and the app now tells you when a new vers
 ### Update notices
 - **New-version notice:** when a newer version is published, a notice shows the version with **What's new** and **Download** buttons. **Help → Check for Updates…** checks straight away.
 - **Too-old versions:** if the sync server stops supporting an old version, the app says so, so shared projects don't silently stop syncing.
+
+## Changes
+- **Empty lists are allowed:** deleting your last call sheet, shot sheet or script no longer creates a blank one, and a fresh install no longer adds a sample automatically. The empty screen offers **New**, **Import**, and **Load example**.
 
 ## Fixes
 - **Share:** after **Share**, the People dialog now opens once the project has loaded, so you can invite people straight away. Before, it sometimes didn't appear.

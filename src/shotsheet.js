@@ -49,10 +49,11 @@
     onRoleChange: (role) => { if (role === 'viewer') editing = false; },
   });
 
+  // Opens the most recent local project, or the empty screen if there are none.
   function selectFirstLocal() {
-    if (!collab.localOnly(state.projects).length) state.projects.push(blankProject());
+    const local = collab.localOnly(state.projects).sort((a, b) => b.updatedAt - a.updatedAt);
     editing = false;
-    selectProject(collab.localOnly(state.projects).sort((a, b) => b.updatedAt - a.updatedAt)[0].id);
+    selectProject(local.length ? local[0].id : null);
   }
 
   // Viewers can watch a shared project but not change it.
@@ -948,7 +949,21 @@
     collab.updateToolbar();
     $('app').classList.toggle('editing', editing);
     $('app').classList.toggle('schedule-view', view === 'schedule');
-    if (!p) { $('sections').innerHTML = ''; return; }
+    $('app').classList.toggle('is-empty', !p);
+    if (!p) {
+      $('sections').innerHTML = '';
+      $('sections').append(window.Common.emptyState({
+        title: 'No projects',
+        text: 'Create a shot sheet, build one from a script, or import a project.',
+        actions: [
+          { label: 'New project', primary: true, onclick: newProject },
+          { label: 'Import script…', onclick: importScript },
+          { label: 'Import…', onclick: importFiles },
+          { label: 'Load example', onclick: () => addProject(sampleProject()) },
+        ],
+      }));
+      return;
+    }
     if (dayFilter !== 'all' && dayFilter !== 'none' && !dayById(p, dayFilter)) dayFilter = 'all';
     renderHeader(p);
     if (view === 'schedule') renderSchedule(p);
@@ -1015,7 +1030,7 @@
   }
 
   function toggleEdit() {
-    if (!editing && blockedReadOnly()) return;
+    if (!active() || (!editing && blockedReadOnly())) return;
     if (view !== 'shots') { view = 'shots'; editing = true; }
     else editing = !editing;
     render({ keepScroll: true });
@@ -1175,7 +1190,11 @@
     $('editBtn').addEventListener('click', toggleEdit);
     $('sidebarToggle').addEventListener('click', toggleSidebar);
     $('search').addEventListener('input', (e) => { search = e.target.value; renderSidebar(); });
-    $('titleInput').addEventListener('input', (e) => { active().title = e.target.value; save(); renderSidebar(); });
+    $('titleInput').addEventListener('input', (e) => {
+      const p = active();
+      if (!p) return;
+      p.title = e.target.value; save(); renderSidebar();
+    });
     $('sheet').addEventListener('scroll', updateActiveTab, { passive: true });
     document.querySelectorAll('#viewToggle button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
     window.Common.wireDropdowns();
@@ -1225,14 +1244,13 @@
 
   async function init() {
     const stored = await api.loadStore('shotsheets');
-    if (stored && Array.isArray(stored.projects) && stored.projects.length) {
+    // Starting with no projects is fine: the empty screen offers New, Import and an example.
+    if (stored && Array.isArray(stored.projects)) {
       state = { sidebarHidden: false, ...stored };
       state.projects.forEach(F.upgradeProject); // projects saved before cast & crew existed
-      if (!active()) state.activeId = state.projects[0].id;
+      if (!active()) state.activeId = state.projects.length ? state.projects[0].id : null;
     } else {
-      const p = sampleProject();
-      state = { projects: [p], activeId: p.id, sidebarHidden: false };
-      save();
+      state = { projects: [], activeId: null, sidebarHidden: false };
     }
     // Deep link from the home screen: ?project=<id>&view=schedule&date=YYYY-MM-DD
     const q = new URLSearchParams(location.search);

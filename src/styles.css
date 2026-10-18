@@ -278,6 +278,17 @@ input { font: inherit; color: inherit; }
 .edit-help { color: var(--muted); font-size: 13px; margin-top: 6px; }
 .edit-help mark { background: none; color: var(--yellow); font-weight: 700; }
 
+/* ---------- Empty state (no projects in this system) ---------- */
+.empty-state { max-width: 460px; margin: 12vh auto 0; text-align: center; padding: 0 24px; }
+.empty-state h2 { font-family: var(--display); font-weight: 400; font-size: 40px; letter-spacing: 1px; margin: 0 0 8px; }
+.empty-state p { color: var(--muted); font-size: 15px; line-height: 1.5; margin: 0 0 22px; }
+.empty-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+.empty-actions button { padding: 9px 16px; font-size: 14px; }
+/* With nothing open, hide the controls that act on a project. */
+.app.is-empty .toolbar > *:not(#homeBtn):not(#sidebarToggle):not(.system-label):not(.toolbar-spacer):not(.account-btn) { display: none !important; }
+.app.is-empty .sheet-header, .app.is-empty .hint, .app.is-empty .scene-nav,
+.app.is-empty .statusbar, .app.is-empty #paper { display: none !important; }
+
 /* ---------- Update banner ---------- */
 .update-banner {
   position: fixed; left: 16px; bottom: 16px; z-index: 80;
