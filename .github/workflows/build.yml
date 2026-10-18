@@ -9,6 +9,10 @@ on:
   push:
     tags: ['v*']
 
+# Read-only by default; only the release job below gets write access.
+permissions:
+  contents: read
+
 jobs:
   build:
     strategy:
@@ -67,7 +71,8 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
+      # Third-party action pinned to an exact commit (v2) so a moved tag can't change what runs.
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
           name: Production Tools ${{ github.ref_name }}
           body_path: RELEASE_NOTES.md

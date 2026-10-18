@@ -1,6 +1,8 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
-contextBridge.exposeInMainWorld('api', {
+// Only the app's own pages (loaded from disk) get the API. The main process also blocks
+// navigation away from them and rejects IPC from anything else.
+if (location.protocol === 'file:') contextBridge.exposeInMainWorld('api', {
   loadStore: (key) => ipcRenderer.invoke('store:load', key),
   saveStore: (key, data) => ipcRenderer.invoke('store:save', key, data),
   importFiles: (opts) => ipcRenderer.invoke('file:import', opts),

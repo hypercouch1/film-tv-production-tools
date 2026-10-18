@@ -59,10 +59,17 @@
     render: (opts = {}) => { if (opts.opened) { history = []; editing = false; } render(opts); if (opts.opened) $('sheet').scrollTop = 0; },
     renderSidebar: () => renderSidebar(),
     save: () => store.save(),
+    // Shared documents come from other people: make sure every field has the expected type
+    // so malformed data can't break this page.
     normalize: (doc) => {
+      const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x) && typeof x.id === 'string';
       doc.title = String(doc.title || 'Untitled');
-      doc.sections = Array.isArray(doc.sections) ? doc.sections : [];
-      doc.sections.forEach((s) => { s.items = Array.isArray(s.items) ? s.items : []; });
+      doc.sections = (Array.isArray(doc.sections) ? doc.sections : []).filter(isObj);
+      doc.sections.forEach((s) => {
+        s.title = String(s.title == null ? '' : s.title);
+        s.items = (Array.isArray(s.items) ? s.items : []).filter(isObj);
+        s.items.forEach((it) => { it.text = String(it.text == null ? '' : it.text); it.done = !!it.done; });
+      });
       return doc;
     },
     selectLocal: () => selectFirstLocal(),

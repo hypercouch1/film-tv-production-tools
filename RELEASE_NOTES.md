@@ -27,6 +27,14 @@ This release adds a screenplay editor, and the app now tells you when a new vers
 - **New-version notice:** when a newer version is published, a notice shows the version with **What's new** and **Download** buttons. **Help → Check for Updates…** checks straight away.
 - **Too-old versions:** if the sync server stops supporting an old version, the app says so, so shared projects don't silently stop syncing.
 
+## Security
+- **Navigation locked:** the app window can no longer be sent to a web page (for example, by dropping a link onto it). Before this fix, such a page could read or overwrite the projects saved on your computer. Links meant to open in a new window still open in your browser, and only for web addresses.
+- **Shared data is checked:** shared projects with malformed data are cleaned up when they arrive, so a collaborator can't break the page for others.
+- **Sign-out and password changes:** signing out, or changing your password on another device, now also disconnects that device's live editing straight away.
+- **Sign-in token:** the token is no longer sent in the live connection's web address, where it could end up in server logs.
+- **Sign-in timing:** checking an email that doesn't have an account now takes as long as a wrong password, so timing doesn't reveal who has an account.
+- **Release builds:** they run with read-only access except for the publishing step, and the third-party release action is pinned to an exact version.
+
 ## Changes
 - **Empty lists are allowed:** deleting your last call sheet, shot sheet or script no longer creates a blank one, and a fresh install no longer adds a sample automatically. The empty screen offers **New**, **Import**, and **Load example**.
 
@@ -36,7 +44,7 @@ This release adds a screenplay editor, and the app now tells you when a new vers
 - **Final Draft imports:** these keep "Shot" lines as shots.
 
 ## For maintainers
-- **Server:** redeploy it for this release (`npm run deploy` in `server/`). It adds the `script` project type and reports `minClientVersion` from `MIN_CLIENT_VERSION` in `wrangler.toml`.
+- **Server:** redeploy it **before** publishing this release (`npm run deploy` in `server/`). The 1.2.2 app sends its sign-in token as a WebSocket subprotocol, which older servers don't accept. The new server still accepts the old way, so older apps keep working. It adds the `script` project type and reports `minClientVersion` from `MIN_CLIENT_VERSION` in `wrangler.toml`.
 - **Release workflow:** pushing a `v*` tag now runs the tests, builds both apps, and publishes a GitHub Release with the installers and this file as the notes. This is what installed apps check for updates.
 - **Tests:** new suites for the screenplay module (formatting rules, Fountain and Final Draft round trips, pagination, sending to other systems) and the update checker.
 

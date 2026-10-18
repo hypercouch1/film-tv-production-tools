@@ -18,8 +18,13 @@ async function api(method, path, body, token) {
 }
 
 // A minimal live client that queues every message so tests can wait for them.
-function live(projectId, token) {
-  const ws = new WebSocket(`${BASE.replace(/^http/, 'ws')}/api/projects/${projectId}/live?token=${encodeURIComponent(token)}`);
+// The token travels as a WebSocket subprotocol, like the app sends it; legacy: true uses
+// the ?token= URL form that apps older than 1.2.2 use.
+function live(projectId, token, { legacy = false } = {}) {
+  const base = `${BASE.replace(/^http/, 'ws')}/api/projects/${projectId}/live`;
+  const ws = legacy
+    ? new WebSocket(`${base}?token=${encodeURIComponent(token)}`)
+    : new WebSocket(base, ['production-tools', 'auth.' + token]);
   const queue = [];
   const waiters = [];
   ws.onmessage = (e) => {
@@ -152,6 +157,35 @@ await c.next((m) => m.type === 'gone');
 await c.closed;
 assert.equal((await api('GET', '/api/projects', null, C)).projects.length, 0);
 step('removed member is disconnected and loses access');
+
+// Older apps (token in the URL) still connect.
+const old = live(pid, A, { legacy: true });
+assert.equal((await old.next((m) => m.type === 'snapshot')).role, 'owner');
+old.close();
+step('older apps that send the token in the URL still connect');
+
+// Changing the password disconnects other devices' live connections, not this one.
+const second = await api('POST', '/api/login', { email: `alice.${run}@example.com`, password: 'correct horse' });
+const otherDevice = live(pid, second.token);
+await otherDevice.next((m) => m.type === 'snapshot');
+const changed = await api('PATCH', '/api/me', { currentPassword: 'correct horse', newPassword: 'correct horse 2' }, A);
+assert.equal(changed.status, 200, changed.error);
+assert.equal(changed.user.sessionHash, undefined, 'session details are not returned');
+assert.match((await otherDevice.next((m) => m.type === 'gone')).message, /signed out/i);
+await otherDevice.closed;
+a.send({ type: 'ops', batch: 9, ops: [] });
+await a.next((m) => m.type === 'ops' && m.batch === 9); // this device is still live
+assert.equal((await api('GET', '/api/me', null, second.token)).status, 401);
+step('password change signs out other devices, including their live connections');
+
+// Signing out closes that session's live connection.
+const third = await api('POST', '/api/login', { email: `alice.${run}@example.com`, password: 'correct horse 2' });
+const laptop = live(pid, third.token);
+await laptop.next((m) => m.type === 'snapshot');
+await api('POST', '/api/logout', null, third.token);
+await laptop.next((m) => m.type === 'gone');
+await laptop.closed;
+step('signing out disconnects that session live');
 
 // Bad tokens can't connect.
 const bad = live(pid, 'not-a-token');

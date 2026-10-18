@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { fileURLToPath } = require('url');
 const { createUpdater } = require('./updates.js');
 
 const isMac = process.platform === 'darwin';
@@ -83,12 +84,50 @@ function createWindow() {
     ? PAGE_FOR_EXT[path.extname(pendingOpenFile).toLowerCase().slice(1)] || 'home.html'
     : 'home.html';
   win.loadFile(path.join(__dirname, 'src', startPage));
-  // Open external links in the user's browser, never inside the app.
+  // The window only ever shows the app's own pages. Anything else (a dropped link, a
+  // redirect) is quietly stopped. Without this, a web page loaded in the window would get
+  // the app's private API (reading and overwriting saved projects). Links meant to open
+  // in a new window go to the user's browser via the handler below.
+  const guard = (e, url) => {
+    if (!isAppUrl(url)) e.preventDefault();
+  };
+  win.webContents.on('will-navigate', guard);
+  win.webContents.on('will-redirect', guard);
+  win.webContents.on('will-attach-webview', (e) => e.preventDefault());
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openInBrowser(url);
     return { action: 'deny' };
   });
   win.on('closed', () => { win = null; });
+}
+
+// ---- What the window may show and open ----
+const APP_PAGES = path.join(__dirname, 'src') + path.sep;
+
+function isAppUrl(url) {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'file:' && path.normalize(fileURLToPath(u)).toLowerCase().startsWith(APP_PAGES.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+// Only ordinary web links go to the browser; never file:, custom protocols, etc.
+function openInBrowser(url) {
+  try {
+    const u = new URL(String(url));
+    if (u.protocol === 'https:' || u.protocol === 'http:') shell.openExternal(u.href);
+  } catch { /* not a URL */ }
+}
+
+// IPC handlers only answer the app's own pages.
+function handle(channel, fn) {
+  ipcMain.handle(channel, (e, ...args) => {
+    const from = (e.senderFrame && e.senderFrame.url) || e.sender.getURL();
+    if (!isAppUrl(from)) throw new Error('Not allowed');
+    return fn(e, ...args);
+  });
 }
 
 function menuSend(channel, arg) {
@@ -171,8 +210,8 @@ async function checkForUpdatesInteractive() {
       defaultId: 0,
       cancelId: 2,
     });
-    if (response === 0) shell.openExternal(info.downloadUrl);
-    if (response === 1) shell.openExternal(info.url);
+    if (response === 0) openInBrowser(info.downloadUrl);
+    if (response === 1) openInBrowser(info.url);
   } else {
     dialog.showMessageBox(win, { type: 'info', message: "You're up to date", detail: `Production Tools ${info.current} is the latest version.` });
   }
@@ -180,7 +219,7 @@ async function checkForUpdatesInteractive() {
 
 // ---- IPC ----
 
-ipcMain.handle('store:load', (_e, key) => {
+handle('store:load', (_e, key) => {
   try {
     return JSON.parse(fs.readFileSync(storePath(key), 'utf8'));
   } catch {
@@ -188,7 +227,7 @@ ipcMain.handle('store:load', (_e, key) => {
   }
 });
 
-ipcMain.handle('store:save', (_e, key, data) => {
+handle('store:save', (_e, key, data) => {
   const target = storePath(key);
   const tmp = target + '.tmp';
   fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -197,7 +236,7 @@ ipcMain.handle('store:save', (_e, key, data) => {
   return true;
 });
 
-ipcMain.handle('file:import', async (_e, { label = 'Files', extensions = ['*'] } = {}) => {
+handle('file:import', async (_e, { label = 'Files', extensions = ['*'] } = {}) => {
   const res = await dialog.showOpenDialog(win, {
     title: 'Import ' + label,
     properties: ['openFile', 'multiSelections'],
@@ -210,7 +249,7 @@ ipcMain.handle('file:import', async (_e, { label = 'Files', extensions = ['*'] }
   return res.filePaths.map(readFileForRenderer);
 });
 
-ipcMain.handle('file:export', async (_e, { defaultName, ext, label, content }) => {
+handle('file:export', async (_e, { defaultName, ext, label, content }) => {
   const res = await dialog.showSaveDialog(win, {
     title: 'Export',
     defaultPath: defaultName,
@@ -221,7 +260,7 @@ ipcMain.handle('file:export', async (_e, { defaultName, ext, label, content }) =
   return res.filePath;
 });
 
-ipcMain.handle('file:exportPdf', async (_e, { defaultName }) => {
+handle('file:exportPdf', async (_e, { defaultName }) => {
   const res = await dialog.showSaveDialog(win, {
     title: 'Export PDF',
     defaultPath: defaultName,
@@ -256,7 +295,7 @@ async function readScript(filePath) {
 // Errors are returned rather than thrown so the page gets a readable message.
 const scriptResult = (p) => p.then((script) => ({ script }), (err) => ({ error: err.message || String(err) }));
 
-ipcMain.handle('script:import', async () => {
+handle('script:import', async () => {
   const res = await dialog.showOpenDialog(win, {
     title: 'Import Script',
     properties: ['openFile'],
@@ -270,20 +309,20 @@ ipcMain.handle('script:import', async () => {
 });
 
 // A script file dragged onto the window.
-ipcMain.handle('script:read', (_e, filePath) => scriptResult(readScript(String(filePath || ''))));
+handle('script:read', (_e, filePath) => scriptResult(readScript(String(filePath || ''))));
 
 // Called by a page after startup: hands over a double-clicked file meant for it.
-ipcMain.handle('update:get', () => updater.get());
-ipcMain.handle('update:check', () => updater.check());
+handle('update:get', () => updater.get());
+handle('update:check', () => updater.check());
 // Only GitHub links (release pages and downloads) are opened from the update banner.
-ipcMain.handle('update:open', (_e, url) => {
+handle('update:open', (_e, url) => {
   try {
     const u = new URL(String(url));
     if (u.protocol === 'https:' && /(^|\.)github\.com$/.test(u.hostname)) shell.openExternal(u.href);
   } catch { /* not a URL */ }
 });
 
-ipcMain.handle('file:takePending', (e) => {
+handle('file:takePending', (e) => {
   if (!pendingOpenFile) return null;
   const page = path.basename(decodeURIComponent(new URL(e.sender.getURL()).pathname));
   if (PAGE_FOR_EXT[path.extname(pendingOpenFile).toLowerCase().slice(1)] !== page) return null;

@@ -79,16 +79,39 @@ async function createSession(env, userId) {
   return token;
 }
 
-async function authUser(req, env, url) {
+// Live connections can't set an Authorization header, so the app sends the token as a
+// WebSocket subprotocol ("auth.<token>"), which isn't logged like a URL is. The ?token=
+// form is still accepted for apps older than 1.2.2.
+const WS_PROTOCOL = 'production-tools';
+function tokenFrom(req, url) {
   const header = req.headers.get('Authorization') || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : url.searchParams.get('token');
+  if (header.startsWith('Bearer ')) return header.slice(7);
+  const proto = (req.headers.get('Sec-WebSocket-Protocol') || '').split(',').map((s) => s.trim()).find((s) => s.startsWith('auth.'));
+  if (proto) return proto.slice(5);
+  return url.searchParams.get('token');
+}
+
+async function authUser(req, env, url) {
+  const token = tokenFrom(req, url);
   if (!token) throw new HttpError(401, 'Please sign in.');
+  const tokenHash = await sha256Hex(token);
   const row = await env.DB.prepare(
     'SELECT u.id, u.email, u.name FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?'
-  ).bind(await sha256Hex(token), Date.now()).first();
+  ).bind(tokenHash, Date.now()).first();
   if (!row) throw new HttpError(401, 'Your session has expired. Please sign in again.');
-  return row;
+  return { ...row, sessionHash: tokenHash };
 }
+
+// Disconnects a user's live connections in every project they belong to.
+// keep: session to leave connected; only: the one session to disconnect.
+async function revokeLive(env, userId, { keep, only } = {}) {
+  const { results } = await env.DB.prepare('SELECT project_id FROM members WHERE user_id = ?').bind(userId).all();
+  await Promise.all(results.map((r) => roomCall(env, r.project_id, '/revoke', { userId, keep, only })));
+}
+
+// Stand-in hash so a sign-in for an unknown email takes as long as a wrong password,
+// and timing doesn't reveal which emails have accounts.
+let dummyHash = null;
 
 async function roleOf(env, projectId, userId) {
   const row = await env.DB.prepare('SELECT role FROM members WHERE project_id = ? AND user_id = ?').bind(projectId, userId).first();
@@ -153,6 +176,10 @@ async function route(req, env, url) {
       throw new HttpError(429, 'Too many failed sign-in attempts. Try again in 15 minutes.');
     }
     const user = await env.DB.prepare('SELECT id, email, name, pw FROM users WHERE email = ?').bind(email).first();
+    if (!user) {
+      dummyHash = dummyHash || (await hashPassword('not-a-real-password', env));
+      await verifyPassword(String(body.password || ''), dummyHash);
+    }
     if (!user || !(await verifyPassword(String(body.password || ''), user.pw))) {
       if (!fail || now - fail.window_start >= FAILURE_WINDOW_MS) {
         await env.DB.prepare('INSERT OR REPLACE INTO auth_failures (email, count, window_start) VALUES (?, 1, ?)').bind(email, now).run();
@@ -168,14 +195,17 @@ async function route(req, env, url) {
   if (pathname === '/api/logout' && method === 'POST') {
     const header = req.headers.get('Authorization') || '';
     if (header.startsWith('Bearer ')) {
-      await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(await sha256Hex(header.slice(7))).run();
+      const hash = await sha256Hex(header.slice(7));
+      const session = await env.DB.prepare('SELECT user_id FROM sessions WHERE token_hash = ?').bind(hash).first();
+      await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(hash).run();
+      if (session) await revokeLive(env, session.user_id, { only: hash });
     }
     return json({ ok: true });
   }
 
   const user = await authUser(req, env, url);
 
-  if (pathname === '/api/me' && method === 'GET') return json({ user });
+  if (pathname === '/api/me' && method === 'GET') return json({ user: publicUser(user) });
 
   if (pathname === '/api/me' && method === 'PATCH') {
     const body = await readJson(req);
@@ -191,11 +221,12 @@ async function route(req, env, url) {
       const pw = String(body.newPassword);
       if (pw.length < 8 || pw.length > 200) throw new HttpError(400, 'Password must be at least 8 characters.');
       await env.DB.prepare('UPDATE users SET pw = ? WHERE id = ?').bind(await hashPassword(pw, env), user.id).run();
-      // Sign out every other device.
-      const current = (req.headers.get('Authorization') || '').slice(7);
-      await env.DB.prepare('DELETE FROM sessions WHERE user_id = ? AND token_hash != ?').bind(user.id, await sha256Hex(current)).run();
+      // Sign out every other device, including their open live connections.
+      await env.DB.prepare('DELETE FROM sessions WHERE user_id = ? AND token_hash != ?').bind(user.id, user.sessionHash).run();
+      await revokeLive(env, user.id, { keep: user.sessionHash });
     }
-    return json({ user });
+    const { sessionHash, ...publicFields } = user;
+    return json({ user: publicFields });
   }
 
   // Projects
@@ -300,6 +331,7 @@ async function route(req, env, url) {
     headers.set('X-User-Name', encodeURIComponent(user.name));
     headers.set('X-Role', role);
     headers.set('X-Project-Id', id);
+    headers.set('X-Session-Hash', user.sessionHash);
     return room(env, id).fetch(new Request(req.url, { headers }));
   }
 
@@ -382,6 +414,19 @@ export class ProjectRoom extends DurableObject {
       this.broadcastPresence();
       return new Response('ok');
     }
+    // Signed out (or password changed on another device): close that session's connections.
+    if (url.pathname === '/revoke') {
+      for (const ws of this.ctx.getWebSockets()) {
+        const att = ws.deserializeAttachment();
+        if (att.userId !== body.userId) continue;
+        if (body.keep && att.sessionHash === body.keep) continue;
+        if (body.only && att.sessionHash !== body.only) continue;
+        this.safeSend(ws, { type: 'gone', message: 'You were signed out. Please sign in again.' });
+        try { ws.close(4001, 'Signed out'); } catch { /* already closed */ }
+      }
+      this.broadcastPresence();
+      return new Response('ok');
+    }
     return new Response('Not found', { status: 404 });
   }
 
@@ -398,11 +443,15 @@ export class ProjectRoom extends DurableObject {
       userId: req.headers.get('X-User-Id'),
       name: decodeURIComponent(req.headers.get('X-User-Name') || 'Someone'),
       role: req.headers.get('X-Role'),
+      sessionHash: req.headers.get('X-Session-Hash'),
     };
     server.serializeAttachment(att);
     this.safeSend(server, { type: 'snapshot', doc: this.doc, v: this.version, clientId: att.clientId, role: att.role });
     this.broadcastPresence();
-    return new Response(null, { status: 101, webSocket: client });
+    // A client that sent its token as a subprotocol must get one of its protocols back.
+    const offered = (req.headers.get('Sec-WebSocket-Protocol') || '').split(',').map((s) => s.trim());
+    const headers = offered.includes(WS_PROTOCOL) ? { 'Sec-WebSocket-Protocol': WS_PROTOCOL } : undefined;
+    return new Response(null, { status: 101, webSocket: client, headers });
   }
 
   async webSocketMessage(ws, raw) {

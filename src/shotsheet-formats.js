@@ -116,19 +116,34 @@
 
   // Fills in fields added in later versions, in place, so older local and shared
   // projects keep working. Scene cast given as names becomes character entries.
+  // Also makes every field the expected type: shared projects come from other people,
+  // and malformed data shouldn't be able to break the page.
+  const isItem = (x) => x && typeof x === 'object' && !Array.isArray(x) && typeof x.id === 'string';
+  const items = (list) => (Array.isArray(list) ? list.filter(isItem) : []);
+  const texts = (o, keys) => keys.forEach((k) => { if (typeof o[k] !== 'string') o[k] = o[k] == null ? '' : String(o[k]); });
+  const idList = (list) => (Array.isArray(list) ? list.filter((x) => typeof x === 'string') : []);
+
   function upgradeProject(p) {
-    if (!Array.isArray(p.characters)) p.characters = [];
-    if (!Array.isArray(p.crew)) p.crew = [];
-    if (!Array.isArray(p.days)) p.days = [];
-    if (!Array.isArray(p.scenes)) p.scenes = [];
-    for (const d of p.days) if (typeof d.equipment !== 'string') d.equipment = '';
+    p.title = String(p.title == null ? 'Untitled Project' : p.title);
+    p.characters = items(p.characters);
+    p.crew = items(p.crew);
+    p.days = items(p.days).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d.date));
+    p.scenes = items(p.scenes);
+    p.characters.forEach((c) => texts(c, ['name', 'actor', 'contact']));
+    p.crew.forEach((k) => { texts(k, ['role', 'name', 'contact']); k.allDays = !!k.allDays; });
+    p.days.forEach((d) => texts(d, ['call', 'wrap', 'location', 'notes', 'equipment']));
     const byName = new Map(p.characters.map((c) => [c.name.trim().toLowerCase(), c]));
     for (const s of p.scenes) {
-      if (!Array.isArray(s.shots)) s.shots = [];
-      if (!Array.isArray(s.castIds)) s.castIds = [];
-      if (!Array.isArray(s.crewIds)) s.crewIds = [];
-      if (typeof s.props !== 'string') s.props = '';
-      if (typeof s.equipment !== 'string') s.equipment = '';
+      texts(s, ['number', 'heading', 'synopsis', 'props', 'equipment']);
+      if (!Number.isFinite(s.eighths)) s.eighths = 0;
+      s.shots = items(s.shots);
+      s.shots.forEach((sh) => {
+        texts(sh, ['type', 'angle', 'move', 'lens', 'cam', 'fps', 'audio', 'desc', 'notes']);
+        if (typeof sh.dayId !== 'string') sh.dayId = null;
+        sh.done = !!sh.done;
+      });
+      s.castIds = idList(s.castIds);
+      s.crewIds = idList(s.crewIds);
       if (Array.isArray(s.cast)) {
         for (const name of s.cast) {
           const key = String(name).trim().toLowerCase();

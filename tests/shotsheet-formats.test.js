@@ -16,6 +16,25 @@ assert.ok(!('cast' in old.scenes[0]));
 assert.deepStrictEqual([old.crew, old.scenes[0].crewIds, old.scenes[0].props], [[], [], '']);
 console.log('  ✓ older projects upgrade to the character list');
 
+// Malformed shared data is cleaned up instead of breaking the page.
+const bad = {
+  title: 42,
+  characters: [{ id: 'c', name: { evil: true } }, 'junk', null],
+  crew: [{ id: 'k', role: 7, allDays: 'yes' }],
+  days: [{ id: 'd', date: 'not a date' }, { id: 'd2', date: '2026-11-02', notes: ['x'] }],
+  scenes: [{ id: 's', number: 3, shots: [{ id: 'x', desc: { a: 1 }, done: 'true', dayId: 5 }, 'junk'], castIds: ['c', 9, null], eighths: 'lots' }],
+};
+F.upgradeProject(bad);
+assert.strictEqual(bad.title, '42');
+assert.deepStrictEqual(bad.characters.map((c) => typeof c.name), ['string']);
+assert.deepStrictEqual([bad.crew[0].role, bad.crew[0].allDays], ['7', true]);
+assert.deepStrictEqual(bad.days.map((d) => d.id), ['d2'], 'days without a valid date are dropped');
+assert.strictEqual(typeof bad.days[0].notes, 'string');
+const shot = bad.scenes[0].shots[0];
+assert.deepStrictEqual([typeof shot.desc, shot.done, shot.dayId, bad.scenes[0].shots.length], ['string', true, null, 1]);
+assert.deepStrictEqual([bad.scenes[0].number, bad.scenes[0].castIds, bad.scenes[0].eighths], ['3', ['c'], 0]);
+console.log('  ✓ malformed shared data is cleaned up');
+
 // Round trip through the .shotsheet file keeps people and their scene assignments.
 const p = F.normalizeProject({
   title: 'Film',

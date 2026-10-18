@@ -79,16 +79,17 @@
     connect() {
       if (this.closed) return;
       this.status(this.failures ? 'offline' : 'connecting');
-      const url = serverUrl().replace(/^http/, 'ws') + `/api/projects/${encodeURIComponent(this.id)}/live?token=${encodeURIComponent(token || '')}`;
+      // The token goes in a subprotocol rather than the URL, so it doesn't end up in logs.
+      const url = serverUrl().replace(/^http/, 'ws') + `/api/projects/${encodeURIComponent(this.id)}/live`;
       let ws;
-      try { ws = new WebSocket(url); } catch { return this.retry(); }
+      try { ws = new WebSocket(url, ['production-tools', 'auth.' + (token || '')]); } catch { return this.retry(); }
       this.ws = ws;
       ws.onopen = () => { this.failures = 0; };
       ws.onmessage = (e) => this.receive(e.data);
       ws.onclose = (e) => {
         clearInterval(this.pinger);
         if (this.ws !== ws || this.closed) return;
-        if (e.code === 4003 || e.code === 4004) return; // 'gone' message already handled
+        if (e.code === 4001 || e.code === 4003 || e.code === 4004) return; // 'gone' message already handled
         this.status('offline');
         this.retry();
       };
