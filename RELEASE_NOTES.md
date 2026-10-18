@@ -1,6 +1,8 @@
-# Production Tools 1.2.0
+# Production Tools 1.2.2
 
 This release adds a screenplay editor, and the app now tells you when a new version is available.
+
+> **If you installed 1.2.0 or 1.2.1:** those builds both reported themselves as version 1.2.0, so the app kept saying an update was needed even after updating. Install 1.2.2 once and the notice will stop. From now on, the release build checks that the version tag matches the app's version.
 
 ## New
 

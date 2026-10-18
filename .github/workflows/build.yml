@@ -29,6 +29,17 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
+      # A release tag must match the app's version, or installed apps would think
+      # they're out of date (the app reports package.json's version).
+      - name: Check tag matches package.json version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          version="v$(node -p "require('./package.json').version")"
+          if [ "$version" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} doesn't match package.json version ${version}. Update \"version\" in package.json, commit, then tag that commit."
+            exit 1
+          fi
       - uses: actions/setup-node@v5
         with:
           node-version: 22
