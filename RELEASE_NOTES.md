@@ -6,6 +6,41 @@ This release adds a screenplay editor, and the app now tells you when a new vers
 
 ## New
 
+### Undo and redo everywhere
+- **Shortcuts and buttons:** **Ctrl/⌘+Z** undoes and **Ctrl+Y** (Windows) or **⌘+Shift+Z** (Mac) redoes, with ↶ ↷ buttons in every system's toolbar.
+- **Shared projects:** undo only reverses your own changes, never what a collaborator did.
+
+### Comments
+- **Where:** comment on script lines, shots, scenes, and call sheet cues and sections. Hover over an item and click 💬, or use the 💬 toolbar button (**Ctrl/⌘+Alt+M**).
+- **Badges:** a badge shows how many open comments an item has.
+- **Panel:** the side panel lists comments by item. You can resolve, reopen and delete them, or click an item to jump to it.
+- **Live:** in shared projects, comments sync live like everything else.
+
+### Script revisions (Script Writer)
+- **Saving drafts:** **Revisions** saves named drafts, in the industry colour order (White, Blue, Pink, Yellow, Green…).
+- **Show changes:** this marks every line changed since a draft with an asterisk in the margin. The PDF prints the asterisks plus a revision header ("Blue Rev. 10/18/26") on each page.
+- **Restore:** you can go back to any saved draft, and undo that too.
+
+### Smarter page breaks (Script Writer)
+- **Split speeches:** a long speech no longer jumps to the next page whole. It splits at a sentence, with **(MORE)** at the bottom of the page and **NAME (CONT'D)** at the top of the next, as in Final Draft. The editor and the PDF break in the same places.
+- **Headings and names:** scene headings and character names always stay with the lines that follow them.
+
+### Industry call sheets (Shot Sheet)
+- **Call sheet:** each shoot day's **Day summary** is now a proper **Call sheet**. It has:
+  - general crew call, shooting call and estimated wrap
+  - weather, sunrise and sunset, filled in by **Get forecast**
+  - location, parking and nearest hospital
+  - scenes with day/night and cast numbers
+  - cast and crew with individual call times
+  - equipment, props and notes
+- **Editing:** edit any field right on the sheet, then **Export PDF**.
+- **Weather:** the forecast uses the free Open-Meteo service. Only the place name and date are sent, and forecasts reach about 16 days ahead.
+
+### Script ↔ Shot Sheet link
+- **What's linked:** a shot sheet made from a Script Writer script stays linked to it.
+- **What it shows:** when the script changes, the shot sheet shows which scenes changed, which are new and which were removed. **Review changes** updates scenes (shots are kept), adds new scenes with starter shots, or handles removed ones.
+- **No duplicates:** sending the same script again offers to update the existing shot sheet instead of making a duplicate.
+
 ### Script Writer
 - **New system:** a fourth tile on the home screen, for writing screenplays with the formatting done for you.
 - **Formatting as you type:** scene headings, action, character names, parentheticals, dialogue, transitions and shots are laid out with standard margins and indents in Courier.

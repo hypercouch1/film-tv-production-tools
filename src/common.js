@@ -165,6 +165,33 @@
     return { close };
   }
 
+  // ---- Undo / redo wiring shared by the system pages ----
+  // history: from History.createHistory; textFieldsUndoNatively: in Call Sheet / Shot Sheet,
+  // Ctrl+Z while typing in a field undoes that field's typing like any text box.
+  function wireUndo(history, { textFieldsUndoNatively = true } = {}) {
+    const undoBtn = $('undoBtn');
+    const redoBtn = $('redoBtn');
+    const typing = () => {
+      const a = document.activeElement;
+      return a && /^(INPUT|TEXTAREA)$/.test(a.tagName) && !a.readOnly && a.type !== 'checkbox';
+    };
+    const run = (redo, fromMenu) => {
+      if (fromMenu && textFieldsUndoNatively && typing()) {
+        document.execCommand(redo ? 'redo' : 'undo');
+        return;
+      }
+      if (!(redo ? history.redo() : history.undo())) toast(redo ? 'Nothing to redo' : 'Nothing to undo');
+    };
+    if (undoBtn) undoBtn.addEventListener('click', () => run(false, false));
+    if (redoBtn) redoBtn.addEventListener('click', () => run(true, false));
+    const update = () => {
+      if (undoBtn) undoBtn.disabled = !history.canUndo;
+      if (redoBtn) redoBtn.disabled = !history.canRedo;
+    };
+    update();
+    return { run, update };
+  }
+
   // ---- "Nothing here yet" screen shown when a system has no projects ----
   // actions: [{ label, onclick, primary }]
   function emptyState({ title, text, actions = [] }) {
@@ -278,6 +305,6 @@
   window.Common = {
     api, uid, $, mod, esc, fmt, el, toast, relTime, safeFileName,
     parseCSV, csvField, createStore, goHome, wireDropdowns, onFileDrop, modal,
-    setHandoff, takeHandoff, compareVersions, initUpdates, pickScript, emptyState,
+    setHandoff, takeHandoff, compareVersions, initUpdates, pickScript, emptyState, wireUndo,
   };
 })();

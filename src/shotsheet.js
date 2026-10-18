@@ -22,7 +22,43 @@
     if (p) p.updatedAt = Date.now();
     store.save();
     collab.changed();
+    undoHistory.record();
+    undoUi.update();
   }
+
+  // ---------- Undo / redo ----------
+  const undoHistory = window.History.createHistory({
+    getDoc: () => active(),
+    onApply: () => { save(); render({ keepScroll: true }); },
+  });
+  const undoUi = window.Common.wireUndo(undoHistory);
+
+  // ---------- Comments (on shots and scenes) ----------
+  const comments = window.Comments.attach({
+    getDoc: () => active(),
+    save: () => save(),
+    rerender: () => render({ keepScroll: true }),
+    readOnly: () => collab.readOnly(),
+    describe: (target) => {
+      const p = active();
+      if (!p) return null;
+      for (const s of p.scenes) {
+        if (s.id === target) return `Scene ${s.number}: ${s.heading}`;
+        const i = s.shots.findIndex((x) => x.id === target);
+        if (i >= 0) return `Shot ${s.number}${shotLetter(i)} ${s.shots[i].type}: ${s.shots[i].desc.replace(/\*/g, '') || 'no description'}`;
+      }
+      return null;
+    },
+    jump: (target) => {
+      if (view !== 'shots') { view = 'shots'; dayFilter = 'all'; render(); }
+      const node = document.querySelector(`[data-shot="${CSS.escape(target)}"]`) || document.getElementById('sec-' + target);
+      if (node) node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    },
+  });
+  const commentControl = (target) => comments.badge(target) || el('button', {
+    class: 'cm-add', type: 'button', title: 'Add a comment',
+    onclick: (e) => { e.stopPropagation(); comments.open(target); },
+  }, '💬');
 
   // ---------- Collaboration ----------
   const collab = window.Collab.attach({
@@ -283,9 +319,155 @@
     return p.scenes.filter((s) => s.shots.some((x) => x.dayId === dayId)).reduce((n, s) => n + (s.eighths || 0), 0);
   }
 
+  // ---------- Link to the Script Writer script this project came from ----------
+  // Scenes remember their script scene (heading line id + fingerprint). Comparing with the
+  // script as it is now shows which scenes changed, which are new and which were removed.
+  const SP = () => window.ScriptParse;
+  const SW = () => window.Screenplay;
+  let scripts = []; // Script Writer scripts on this computer
+
+  async function loadScripts() {
+    try {
+      const data = await api.loadStore('scripts');
+      scripts = data && Array.isArray(data.scripts) ? data.scripts : [];
+    } catch { scripts = []; }
+  }
+
+  function linkStatus(p) {
+    if (!p || !p.scriptLink) return null;
+    const raw = scripts.find((d) => d.id === p.scriptLink.scriptId);
+    if (!raw) return { missing: true };
+    const script = SW().normalizeDoc(raw);
+    const links = SW().sceneLinks(script);
+    const hashOf = new Map(links.map((l) => [l.id, l.hash]));
+    const linked = new Set(p.scenes.filter((s) => s.scriptScene).map((s) => s.scriptScene.id));
+    const changed = p.scenes.filter((s) => s.scriptScene && hashOf.has(s.scriptScene.id) && hashOf.get(s.scriptScene.id) !== s.scriptScene.hash);
+    const removed = p.scenes.filter((s) => s.scriptScene && !hashOf.has(s.scriptScene.id));
+    const added = links.map((l, index) => ({ ...l, index })).filter((l) => !linked.has(l.id));
+    return { script, links, changed, removed, added, total: changed.length + removed.length + added.length };
+  }
+
+  function scriptBadge(s) {
+    const st = s.scriptScene && linkStatus(active());
+    if (!st || st.missing) return null;
+    if (st.changed.includes(s)) return el('button', { class: 'script-badge', type: 'button', title: 'This scene changed in the script', onclick: (e) => { e.stopPropagation(); openLinkReview(); } }, 'Script changed');
+    if (st.removed.includes(s)) return el('button', { class: 'script-badge removed', type: 'button', title: 'This scene is no longer in the script', onclick: (e) => { e.stopPropagation(); openLinkReview(); } }, 'Removed from script');
+    return null;
+  }
+
+  function linkBanner(p) {
+    const st = linkStatus(p);
+    if (!st) return null;
+    if (st.missing) return el('div', { class: 'link-banner muted' }, `Linked to the script "${p.scriptLink.title}", which isn't on this computer.`);
+    if (!st.total) return el('div', { class: 'link-banner ok' }, `✓ Up to date with the script "${st.script.title}".`);
+    const parts = [
+      st.changed.length && `${st.changed.length} scene${st.changed.length === 1 ? '' : 's'} changed`,
+      st.added.length && `${st.added.length} new`,
+      st.removed.length && `${st.removed.length} removed`,
+    ].filter(Boolean).join(', ');
+    return el('div', { class: 'link-banner' },
+      el('span', {}, `The script "${st.script.title}" has changed: ${parts}.`),
+      el('button', { class: 'primary-btn', type: 'button', onclick: openLinkReview }, 'Review changes'));
+  }
+
+  // What the script now says about scene `index` (heading, synopsis, cast, length).
+  function scriptScene(st, index) {
+    st.parsed = st.parsed || SP().parseScript(SW().toParseInput(st.script));
+    return st.parsed.scenes[index];
+  }
+
+  function updateFromScript(p, s, st) {
+    const index = st.links.findIndex((l) => l.id === s.scriptScene.id);
+    const ps = scriptScene(st, index);
+    if (ps) {
+      Object.assign(s, { heading: ps.heading, synopsis: ps.synopsis, eighths: ps.eighths });
+      s.castIds = [];
+      s.cast = ps.cast;
+      F.upgradeProject(p); // turns the cast names into characters
+    }
+    s.scriptScene.hash = st.links[index].hash;
+  }
+
+  function addFromScript(p, l, st, withShots) {
+    const one = F.normalizeProject(SP().buildProject({ ...st.parsed, scenes: [scriptScene(st, l.index)] },
+      { establishing: withShots, master: withShots, coverage: withShots })).scenes[0];
+    one.scriptScene = { id: l.id, hash: l.hash };
+    one.castIds = [];
+    one.cast = scriptScene(st, l.index).cast;
+    // Place it after the scene that comes before it in the script.
+    const prevIds = new Set(st.links.slice(0, l.index).map((x) => x.id));
+    let at = 0;
+    p.scenes.forEach((s, i) => { if (s.scriptScene && prevIds.has(s.scriptScene.id)) at = i + 1; });
+    p.scenes.splice(at, 0, one);
+    F.upgradeProject(p);
+  }
+
+  async function openLinkReview() {
+    await loadScripts();
+    const p = active();
+    const st = linkStatus(p);
+    if (!st || st.missing) { toast("The linked script isn't on this computer"); return; }
+    const ro = collab.readOnly();
+    const body = el('div', { class: 'link-review' });
+    const m = window.Common.modal('Script changes', body, { wide: true });
+    const withShots = el('input', { type: 'checkbox', checked: true });
+    const done = (msg) => { save(); render({ keepScroll: true }); toast(msg); draw(); };
+    const row = (label, sub, ...buttons) => el('div', { class: 'lr-row' },
+      el('div', {}, el('div', { class: 'lr-title' }, label), sub ? el('div', { class: 'muted small' }, sub) : null),
+      el('div', { class: 'lr-actions' }, ...(ro ? [] : buttons)));
+    const btn = (text, onclick, primary) => el('button', { class: primary ? 'primary-btn' : 'ghost-btn', type: 'button', onclick }, text);
+    function draw() {
+      const now = linkStatus(active());
+      body.innerHTML = '';
+      if (!now.total) {
+        body.append(el('p', {}, `Everything matches the script "${now.script.title}".`),
+          el('div', { class: 'modal-foot' }, btn('Done', () => m.close(), true)));
+        return;
+      }
+      body.append(el('p', { class: 'muted small' }, `Changes in "${now.script.title}" since this shot sheet was made or last reviewed. Updating a scene refreshes its heading, synopsis, cast and length; your shots stay as they are.`));
+      if (now.changed.length) {
+        body.append(el('h3', { class: 'panel-title' }, 'Changed scenes'),
+          ...now.changed.map((s) => row(`SC ${s.number} — ${s.heading}`, (scriptScene(now, now.links.findIndex((l) => l.id === s.scriptScene.id)) || {}).synopsis,
+            btn('Update from script', () => { updateFromScript(active(), s, now); done(`Scene ${s.number} updated`); }, true),
+            btn('Mark reviewed', () => { s.scriptScene.hash = now.links.find((l) => l.id === s.scriptScene.id).hash; done('Marked as reviewed'); }))));
+      }
+      if (now.added.length) {
+        body.append(el('h3', { class: 'panel-title' }, 'New in the script'),
+          el('label', { class: 'small muted lr-opt' }, withShots, ' Add starter shots to new scenes'),
+          ...now.added.map((l) => {
+            const ps = scriptScene(now, l.index);
+            return row(ps ? ps.heading : 'New scene', ps && ps.synopsis,
+              btn('Add scene', () => { addFromScript(active(), l, now, withShots.checked); done('Scene added'); }, true));
+          }));
+      }
+      if (now.removed.length) {
+        body.append(el('h3', { class: 'panel-title' }, 'Removed from the script'),
+          ...now.removed.map((s) => row(`SC ${s.number} — ${s.heading}`, `${s.shots.length} shot${s.shots.length === 1 ? '' : 's'}`,
+            btn('Delete scene', () => {
+              if (s.shots.length && !confirm(`Delete scene ${s.number} and its ${s.shots.length} shots?`)) return;
+              const scenes = active().scenes;
+              scenes.splice(scenes.indexOf(s), 1);
+              done('Scene deleted');
+            }),
+            btn('Keep (unlink)', () => { s.scriptScene = null; done('Scene kept'); }))));
+      }
+      body.append(el('div', { class: 'modal-foot spread' },
+        ro ? el('span') : btn('Update all and add new scenes', () => {
+          const pr = active();
+          now.changed.forEach((s) => updateFromScript(pr, s, now));
+          now.added.forEach((l) => addFromScript(pr, l, now, withShots.checked));
+          done('Shot sheet updated from the script');
+        }),
+        btn('Done', () => m.close(), true)));
+    }
+    draw();
+  }
+
   function renderRun(p) {
     const wrap = $('sections');
     wrap.innerHTML = '';
+    const banner = linkBanner(p);
+    if (banner) wrap.append(banner);
     const cur = currentShot(p);
     let any = false;
     for (const s of p.scenes) {
@@ -295,19 +477,21 @@
         any = true;
         ul.append(el('li', {
           class: 'item shot' + (shot.done ? ' checked' : '') + (cur === shot ? ' current' : ''),
+          'data-shot': shot.id,
           onclick: () => toggleShot(shot),
         },
         el('span', { class: 'box' }),
         el('span', { class: 'shot-code' }, s.number + shotLetter(i)),
         el('span', { class: 'type-chip', title: typeName(shot.type) }, shot.type),
         el('div', { class: 'shot-body' },
-          el('div', { class: 'item-text', html: shot.desc ? fmt(shot.desc) : '<span class="muted">No description</span>' }),
+          el('div', { class: 'item-text' }, el('span', { html: shot.desc ? fmt(shot.desc) : '<span class="muted">No description</span>' }), commentControl(shot.id)),
           el('div', { class: 'shot-meta' }, shotMeta(p, shot)),
           shot.notes ? el('div', { class: 'shot-notes' }, shot.notes) : null)));
       });
       if (!ul.children.length) continue;
       wrap.append(el('section', { class: 'section', id: 'sec-' + s.id },
-        el('h2', { class: 'section-title' }, `SCENE ${s.number}`, el('span', { class: 'scene-heading' }, s.heading)),
+        el('h2', { class: 'section-title' }, `SCENE ${s.number}`, el('span', { class: 'scene-heading' }, s.heading),
+          scriptBadge(s), commentControl(s.id)),
         sceneInfo(p, s),
         ul));
     }
@@ -659,7 +843,10 @@
   function addDay(date) {
     const p = active();
     if (dayOnDate(p, date) || blockedReadOnly()) return;
-    p.days.push({ id: uid(), date, call: '07:00', wrap: '', location: '', notes: '' });
+    p.days.push({
+      id: uid(), date, call: '07:00', wrap: '', location: '', notes: '', equipment: '',
+      crewCall: '06:30', parking: '', hospital: '', weather: '', sunrise: '', sunset: '', weatherPlace: '', calls: {},
+    });
     selectedDate = date;
     save(); render({ keepScroll: true });
     toast(`Shoot day added for ${fmtDate(date)}`);
@@ -688,7 +875,7 @@
           el('div', { class: 'panel-day' }, `DAY ${n}`),
           el('div', { class: 'panel-date' }, fmtDate(day.date, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }))),
         el('div', { class: 'panel-actions' },
-          el('button', { class: 'ghost-btn', title: 'People, equipment, props and notes for this day', onclick: () => openSummary(day.id) }, 'Day summary'),
+          el('button', { class: 'ghost-btn', title: 'The printable call sheet for this day: call times, weather, location, scenes, cast and crew', onclick: () => openSummary(day.id) }, 'Call sheet'),
           el('button', { class: 'primary-btn', title: 'Open this day as a checklist', onclick: () => {
             dayFilter = day.id; view = 'shots'; editing = false; history = []; render(); $('sheet').scrollTop = 0;
           } }, 'Run day ▶'))),
@@ -700,7 +887,8 @@
           day.date = v; selectedDate = v; const dt = parseYmd(v); calMonth = { y: dt.getFullYear(), m: dt.getMonth() };
           save(); render({ keepScroll: true });
         } })),
-        labeled('Call', el('input', { class: 'field', type: 'time', value: day.call, oninput: upd('call') })),
+        labeled('Crew call', el('input', { class: 'field', type: 'time', value: day.crewCall || '', oninput: upd('crewCall') })),
+        labeled('Shooting call', el('input', { class: 'field', type: 'time', value: day.call, oninput: upd('call') })),
         labeled('Wrap', el('input', { class: 'field', type: 'time', value: day.wrap, oninput: upd('wrap') })),
         labeled('Location', el('input', { class: 'field', value: day.location, placeholder: 'Address or set', oninput: upd('location') })),
         labeled('Notes', el('textarea', { class: 'field', rows: 2, placeholder: 'Parking, weather backup, meals…', oninput: upd('notes') }, day.notes)),
@@ -865,62 +1053,140 @@
     return { scenes, shots, cast, crew, equipment, props, shotNotes, eighths };
   }
 
+  // The industry-style call sheet for a shoot day. Logistics (call times, parking, hospital,
+  // weather…) are edited right on the sheet and print as plain text.
   function renderSummary(p) {
     const wrap = $('sections');
     wrap.innerHTML = '';
     const day = dayById(p, summaryDayId);
     if (!day) { view = 'schedule'; render(); return; }
+    day.calls = day.calls || {};
     const d = daySummaryData(p, day);
     const n = dayNum(p, day.id);
+    const ro = collab.readOnly();
     const plural = (k, word) => `${k} ${word}${k === 1 ? '' : 's'}`;
-    const table = (head, rows, empty) => (rows.length
-      ? el('table', { class: 'sum-table' },
+
+    // Inputs that write straight into the day (no re-render, so typing isn't interrupted).
+    const field = (key, opts = {}) => {
+      const tag = opts.multiline ? 'textarea' : 'input';
+      const node = el(tag, {
+        class: 'cs-input' + (opts.cls ? ' ' + opts.cls : ''),
+        type: opts.multiline ? null : opts.type || 'text',
+        rows: opts.multiline ? 2 : null,
+        placeholder: ro ? '' : opts.placeholder || '',
+        disabled: ro,
+        oninput: (e) => { day[key] = e.target.value; e.target.classList.toggle('empty', !e.target.value); save(); },
+      });
+      node.value = day[key] || '';
+      node.classList.toggle('empty', !node.value); // empty time fields print blank, not "--:--"
+      return node;
+    };
+    const callInput = (id, fallback) => {
+      const node = el('input', {
+        class: 'cs-input cs-time', type: 'time', disabled: ro,
+        title: 'Call time',
+        oninput: (e) => {
+          if (e.target.value) day.calls[id] = e.target.value; else delete day.calls[id];
+          e.target.classList.toggle('empty', !e.target.value);
+          save();
+        },
+      });
+      node.value = day.calls[id] || fallback || '';
+      node.classList.toggle('empty', !node.value);
+      return node;
+    };
+    const box = (label, ...content) => el('div', { class: 'cs-box' }, el('div', { class: 'cs-label' }, label), ...content);
+    const table = (head, rows, empty, cls = '') => (rows.length
+      ? el('table', { class: 'sum-table ' + cls },
         el('thead', {}, el('tr', {}, ...head.map((h) => el('th', {}, h)))),
         el('tbody', {}, ...rows.map((r) => el('tr', {}, ...r.map((cell) => el('td', {}, cell))))))
       : el('p', { class: 'sum-empty' }, empty));
     const list = (items, empty) => (items.length
       ? el('ul', { class: 'sum-list' }, ...items.map((x) => el('li', {}, x.item, x.refs.length ? el('span', { class: 'sum-ref' }, ' — ' + x.refs.join(', ')) : null)))
       : el('p', { class: 'sum-empty' }, empty));
+    const castNo = (c) => p.characters.indexOf(c) + 1;
+    const dayNight = (heading) => {
+      const t = window.ScriptParse.parseHeading(heading || '').time;
+      return ({
+        DAY: 'D', NIGHT: 'N', MORNING: 'M', EVENING: 'E', DUSK: 'Dusk', DAWN: 'Dawn',
+        CONTINUOUS: 'Cont.', LATER: 'Later', 'MOMENTS LATER': 'Later', SAME: 'Same',
+      })[t] || (t ? t.slice(0, 6) : '—');
+    };
+
+    // Weather: look up the forecast for the day from the place name.
+    const forecastBtn = el('button', { class: 'ghost-btn cs-noprint', type: 'button', disabled: ro }, 'Get forecast');
+    forecastBtn.addEventListener('click', async () => {
+      const place = (day.weatherPlace || day.location || '').trim();
+      forecastBtn.disabled = true;
+      forecastBtn.textContent = 'Getting forecast…';
+      try {
+        const f = await window.Weather.forecast(place, day.date, window.Weather.defaultUnit());
+        Object.assign(day, { weather: f.weather, sunrise: f.sunrise, sunset: f.sunset, weatherPlace: f.place });
+        save();
+        toast(`Forecast for ${f.place}`);
+        render({ keepScroll: true });
+      } catch (err) {
+        alert(err.message);
+        forecastBtn.disabled = false;
+        forecastBtn.textContent = 'Get forecast';
+      }
+    });
 
     wrap.append(
       el('div', { class: 'summary-actions' },
         el('button', { class: 'ghost-btn', onclick: () => { view = 'schedule'; selectedDate = day.date; render(); } }, '← Back to schedule'),
+        el('span', { class: 'muted small' }, ro ? 'View only' : 'Click any field on the sheet to edit it.'),
         el('button', { class: 'primary-btn', onclick: () => exportAs('pdf') }, 'Export PDF')),
-      el('article', { class: 'summary-paper' },
-        el('header', { class: 'sum-head' },
-          el('div', { class: 'sum-project' }, p.title),
-          el('h1', {}, `Day ${n} of ${p.days.length}`),
-          el('div', { class: 'sum-date' }, fmtDate(day.date, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })),
-          el('div', { class: 'sum-facts' },
-            el('div', {}, el('span', {}, 'Call'), el('strong', {}, fmtTime(day.call) || '—')),
-            el('div', {}, el('span', {}, 'Wrap'), el('strong', {}, fmtTime(day.wrap) || '—')),
-            el('div', { class: 'wide' }, el('span', {}, 'Location'), el('strong', {}, day.location || '—'))),
-          el('div', { class: 'sum-counts' }, [
-            plural(d.scenes.length, 'scene'),
-            d.eighths ? pagesLabel(d.eighths) : null,
-            plural(d.shots.length, 'shot'),
-            plural(d.cast.length, 'cast member'),
-            plural(d.crew.length, 'crew member'),
-          ].filter(Boolean).join(' · '))),
-        day.notes.trim() ? el('div', { class: 'sum-notes' }, el('h3', {}, 'Notes'), el('p', {}, day.notes)) : null,
+      el('article', { class: 'summary-paper call-sheet' },
+        el('header', { class: 'cs-top' },
+          el('div', { class: 'cs-title' },
+            el('div', { class: 'sum-project' }, p.title),
+            el('h1', {}, 'Call Sheet'),
+            el('div', { class: 'sum-date' }, fmtDate(day.date, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })),
+            el('div', { class: 'cs-daynum' }, `Day ${n} of ${p.days.length}`)),
+          el('div', { class: 'cs-calls' },
+            el('div', { class: 'cs-label' }, 'General crew call'),
+            field('crewCall', { type: 'time', cls: 'cs-big' }),
+            el('div', { class: 'cs-subcalls' },
+              el('label', {}, el('span', {}, 'Shooting call'), field('call', { type: 'time' })),
+              el('label', {}, el('span', {}, 'Est. wrap'), field('wrap', { type: 'time' })))),
+          el('div', { class: 'cs-weather' },
+            el('div', { class: 'cs-label' }, 'Weather'),
+            el('div', { class: 'cs-weather-place' }, field('weatherPlace', { placeholder: 'City for the forecast' }), forecastBtn),
+            field('weather', { multiline: true, placeholder: 'e.g. Partly cloudy · High 72° / Low 58°F' }),
+            el('div', { class: 'cs-sun' },
+              el('label', {}, el('span', {}, 'Sunrise'), field('sunrise', { placeholder: '6:41 AM' })),
+              el('label', {}, el('span', {}, 'Sunset'), field('sunset', { placeholder: '5:58 PM' }))))),
+
+        el('div', { class: 'cs-grid' },
+          box('Location', field('location', { multiline: true, placeholder: 'Address or set' })),
+          box('Parking', field('parking', { multiline: true, placeholder: 'Where crew and cast park' })),
+          box('Nearest hospital', field('hospital', { multiline: true, placeholder: 'Name, address, phone' }))),
+        el('div', { class: 'cs-notes' }, box('Notes', field('notes', { multiline: true, placeholder: 'Safety, special instructions, meals…' }))),
+
+        el('div', { class: 'sum-counts' }, [
+          plural(d.scenes.length, 'scene'), d.eighths ? pagesLabel(d.eighths) : null, plural(d.shots.length, 'shot'),
+          plural(d.cast.length, 'cast member'), plural(d.crew.length, 'crew member'),
+        ].filter(Boolean).join(' · ')),
 
         el('h3', {}, 'Scenes'),
-        table(['SC', 'Scene', 'Cast', 'Pages', 'Shots'], d.scenes.map((s) => [
+        table(['SC', 'Set & description', 'D/N', 'Cast', 'Pages', 'Shots'], d.scenes.map((s) => [
           s.number,
           el('div', {}, el('strong', {}, s.heading || 'Untitled scene'), s.synopsis ? el('div', { class: 'sum-sub' }, s.synopsis) : null),
-          sceneCast(p, s).map((c) => c.name).join(', ') || '—',
+          dayNight(s.heading),
+          sceneCast(p, s).map(castNo).join(', ') || '—',
           s.eighths ? window.ScriptParse.formatEighths(s.eighths) : '—',
           String(s.shots.filter((x) => x.dayId === day.id).length),
         ]), 'No scenes scheduled yet. Assign shots to this day in the Schedule view.'),
 
         el('h3', {}, 'Cast'),
-        table(['Character', 'Actor', 'Contact', 'Scenes'], d.cast.map(({ c, scenes }) => [
-          c.name || 'Unnamed', c.actor || '—', c.contact || '—', scenes.map((s) => s.number).join(', '),
+        table(['#', 'Character', 'Actor', 'Call', 'Scenes', 'Contact'], d.cast.map(({ c, scenes }) => [
+          String(castNo(c)), c.name || 'Unnamed', c.actor || '—', callInput(c.id, day.call), scenes.map((s) => s.number).join(', '), c.contact || '—',
         ]), 'No cast picked for these scenes. Choose cast per scene in the Shot List (Edit mode).'),
 
         el('h3', {}, 'Crew'),
-        table(['Role', 'Name', 'Contact', 'Needed for'], d.crew.map(({ k, scenes }) => [
-          k.role || '—', k.name || '—', k.contact || '—', k.allDays ? 'All day' : 'SC ' + scenes.map((s) => s.number).join(', '),
+        table(['Role', 'Name', 'Call', 'Contact'], d.crew.map(({ k }) => [
+          k.role || '—', k.name || '—', callInput(k.id, day.crewCall), k.contact || '—',
         ]), 'No crew picked. Mark core crew as "Every day" in Cast & Crew, and choose crew per scene.'),
 
         el('div', { class: 'sum-columns' },
@@ -929,15 +1195,22 @@
 
         d.shotNotes.length ? el('h3', {}, 'Shot notes') : null,
         d.shotNotes.length ? el('ul', { class: 'sum-list' }, ...d.shotNotes.map((x) => el('li', {}, el('strong', {}, x.code + ' '), x.shot.notes))) : null,
-        el('footer', { class: 'sum-foot' }, `${p.title} · Day ${n} summary · generated ${new Date().toLocaleDateString()}`)));
+        el('footer', { class: 'sum-foot' }, `${p.title} · Call sheet · Day ${n} · generated ${new Date().toLocaleDateString()}`)));
   }
 
   // ---------- Render ----------
-  function render({ keepScroll = false } = {}) {
+  let historyFor = null; // the project the undo history belongs to
+  function render({ keepScroll = false, remote = false } = {}) {
     const sheetEl = $('sheet');
     const top = sheetEl.scrollTop;
     renderSidebar();
     const p = active();
+    // Opening another project starts a fresh undo history; a collaborator's edit becomes the
+    // new starting point, so undo never reverses their work.
+    if ((p && p.id) !== historyFor) { historyFor = p && p.id; undoHistory.reset(); }
+    else if (remote) undoHistory.rebase();
+    undoUi.update();
+    comments.refresh();
     const shownView = view === 'summary' ? 'schedule' : view;
     document.querySelectorAll('#viewToggle button').forEach((b) => b.classList.toggle('active', b.dataset.view === shownView));
     $('app').classList.toggle('summary-mode', view === 'summary');
@@ -1046,10 +1319,23 @@
     if (pick.doc) {
       const doc = window.Screenplay.normalizeDoc(pick.doc);
       if (!window.Screenplay.scenes(doc).length) { alert('This script has no scene headings yet.'); return; }
-      openScriptPreview(window.ScriptParse.parseScript(window.Screenplay.toParseInput(doc)), doc.title);
+      const link = { scriptId: doc.id, title: doc.title, scenes: window.Screenplay.sceneLinks(doc) };
+      if (await offerLinkedProject(link)) return;
+      openScriptPreview(window.ScriptParse.parseScript(window.Screenplay.toParseInput(doc)), doc.title, link);
       return;
     }
     openScriptResult(pick.result);
+  }
+
+  // If a project here already came from this script, offer to review its changes instead
+  // of making another copy. Returns true if the user chose that.
+  async function offerLinkedProject(link) {
+    const existing = collab.localOnly(state.projects).find((x) => x.scriptLink && x.scriptLink.scriptId === link.scriptId);
+    if (!existing) return false;
+    if (!confirm(`"${existing.title}" was already made from this script.\n\nOK: open it and review what changed in the script.\nCancel: make a new shot sheet instead.`)) return false;
+    selectProject(existing.id);
+    await openLinkReview();
+    return true;
   }
 
   function openScriptResult(result) {
@@ -1064,7 +1350,8 @@
     openScriptPreview(parsed, result.script.name);
   }
 
-  function openScriptPreview(parsed, fileName) {
+  // link (from the Script Writer): { scriptId, title, scenes: [{ id, hash }] } — one per script scene.
+  function openScriptPreview(parsed, fileName, link) {
     const SP = window.ScriptParse;
     const check = (on) => el('input', { type: 'checkbox', checked: on });
     const title = el('input', { class: 'field', value: parsed.title });
@@ -1120,6 +1407,12 @@
     create.addEventListener('click', () => {
       const o = currentOpts();
       const project = F.normalizeProject(SP.buildProject(parsed, o), o.title);
+      // Remember where each scene came from, so later script changes can be flagged.
+      if (link && link.scenes.length === parsed.scenes.length) {
+        project.scriptLink = { scriptId: link.scriptId, title: link.title };
+        const included = [...o.include].sort((a, b) => a - b);
+        project.scenes.forEach((s, k) => { s.scriptScene = { ...link.scenes[included[k]] }; });
+      }
       const shots = allShots(project).length;
       m.close();
       addProject(project);
@@ -1160,7 +1453,7 @@
     const name = p ? safeFileName(p.title) : 'shot-sheets';
     let saved = null;
     if (kind === 'pdf' && view === 'summary' && dayById(p, summaryDayId)) {
-      saved = await api.exportPdf({ defaultName: `${name} - Day ${dayNum(p, summaryDayId)} summary.pdf` });
+      saved = await api.exportPdf({ defaultName: `${name} - Day ${dayNum(p, summaryDayId)} call sheet.pdf` });
     } else if (kind === 'pdf') {
       const prev = { view, editing };
       view = 'shots'; editing = false; render();
@@ -1186,6 +1479,12 @@
     $('newBtn').addEventListener('click', newProject);
     $('importBtn').addEventListener('click', importFiles);
     $('importScriptBtn').addEventListener('click', importScript);
+    $('commentsBtn').addEventListener('click', () => active() && comments.open());
+    // Coming back to the app: re-check linked scripts for changes.
+    window.addEventListener('focus', async () => {
+      const p = active();
+      if (p && p.scriptLink) { await loadScripts(); render({ keepScroll: true }); }
+    });
     $('resetBtn').addEventListener('click', resetChecks);
     $('editBtn').addEventListener('click', toggleEdit);
     $('sidebarToggle').addEventListener('click', toggleSidebar);
@@ -1231,6 +1530,9 @@
         toggleEdit,
         reset: resetChecks,
         toggleSidebar,
+        undo: () => active() && undoUi.run(false, true),
+        redo: () => active() && undoUi.run(true, true),
+        comments: () => active() && comments.open(),
       }[channel] || (() => {}))();
     });
     api.onFileOpened((file) => ingest([file]));
@@ -1261,6 +1563,7 @@
       const d = parseYmd(selectedDate);
       calMonth = { y: d.getFullYear(), m: d.getMonth() };
     }
+    await loadScripts(); // to check projects linked to Script Writer scripts
     wire();
     collab.mountToolbar(document.querySelector('.toolbar'), $('resetBtn'));
     render();
@@ -1270,7 +1573,9 @@
     const handoff = window.Common.takeHandoff('shotsheet');
     if (handoff) {
       try {
-        openScriptPreview(window.ScriptParse.parseScript(handoff.input), handoff.name);
+        if (!(handoff.link && await offerLinkedProject(handoff.link))) {
+          openScriptPreview(window.ScriptParse.parseScript(handoff.input), handoff.name, handoff.link);
+        }
       } catch (err) {
         alert(err.message);
       }

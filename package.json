@@ -15,7 +15,7 @@
     "dist:win": "electron-builder --win",
     "dist:mac": "electron-builder --mac",
     "dist": "electron-builder --win --mac",
-    "test": "node tests/sync-core.test.js && node tests/script-parse.test.js && node tests/shotsheet-formats.test.js && node tests/screenplay.test.js && node tests/updates.test.js"
+    "test": "node tests/sync-core.test.js && node tests/script-parse.test.js && node tests/shotsheet-formats.test.js && node tests/screenplay.test.js && node tests/updates.test.js && node tests/history.test.js && node tests/weather.test.js"
   },
   "build": {
     "appId": "com.callsheet.app",

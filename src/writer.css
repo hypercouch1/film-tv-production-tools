@@ -8,8 +8,9 @@
   border: 1px solid var(--line); border-radius: 7px; overflow: hidden;
 }
 .element-bar button {
-  background: none; border: 0; padding: 6px 10px; font-size: 12px; color: var(--muted);
+  background: none; border: 0; padding: 6px 8px; font-size: 12px; color: var(--muted);
 }
+.element-bar { flex-shrink: 1; min-width: 0; overflow: hidden; }
 .element-bar button + button { border-left: 1px solid var(--line); }
 .element-bar button:hover:not(:disabled) { color: var(--text); background: var(--panel-2); }
 .element-bar button.active { background: var(--yellow); color: var(--yellow-ink); font-weight: 700; }
@@ -99,6 +100,45 @@ textarea.el-text::placeholder { color: #aaa; text-transform: none; }
 .pb-top { position: relative; height: 1in; background: #fff; }
 .pb-num { position: absolute; top: 0.5in; right: 1in; font: 12pt/16px var(--script-font); color: #111; }
 
+/* A speech split across pages: the text box is kept (invisible) for measuring and editing,
+   and the two parts are shown around the page break with (MORE) and NAME (CONT'D). */
+.el.split > .el-text { position: absolute; left: 0; top: 0; opacity: 0; pointer-events: none; }
+.split-view { white-space: pre-wrap; overflow-wrap: break-word; cursor: text; }
+.sv-more, .sv-contd { margin-left: 1.2in; text-transform: uppercase; } /* character indent: 3.7in */
+.page-break.in-split { margin: 0 0 0 -2.5in; width: 8.5in; } /* full sheet width from inside the dialogue column */
+
+/* Revision marks: "*" in the right margin of lines changed since the chosen revision. */
+.el.rev-mark::after {
+  content: '*'; position: absolute; top: 0; left: 6.7in; font-weight: 700; color: #111;
+}
+.el-character.rev-mark::after { left: 4.5in; }
+.el-parenthetical.rev-mark::after { left: 5.1in; }
+.el-dialogue.rev-mark::after { left: 5.7in; }
+.paper .el.rev-mark { background: rgba(169, 200, 240, .18); }
+.pb-rev { position: absolute; top: 0.5in; left: 1.5in; font: 12pt/16px var(--script-font); color: #111; }
+
+/* Comment badges sit at the far left of the page; the line's type label makes way. */
+.paper .el > .cm-badge { position: absolute; top: -1px; left: -1.4in; }
+.paper .el-character > .cm-badge { left: -3.6in; }
+.paper .el-parenthetical > .cm-badge { left: -3.0in; }
+.paper .el-dialogue > .cm-badge { left: -2.4in; }
+.paper .el.has-comment:focus-within::before { display: none; }
+
+/* Revisions dialog */
+.rev-list { display: grid; gap: 6px; margin: 8px 0 4px; max-height: 300px; overflow-y: auto; }
+.rev-row {
+  display: grid; grid-template-columns: 14px 1fr auto; gap: 10px; align-items: center;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+}
+.rev-row.active { border-color: var(--yellow); }
+.rev-dot { width: 14px; height: 14px; border-radius: 3px; border: 1px solid rgba(0,0,0,.4); }
+.rev-name { font-weight: 600; font-size: 14px; }
+.rev-meta { font-size: 12px; color: var(--muted); }
+.rev-actions { display: flex; gap: 8px; }
+.rev-new { display: grid; grid-template-columns: 1fr 140px auto; gap: 8px; margin-bottom: 6px; }
+.st-rev { color: #a9c8f0; }
+.st-rev button { margin-left: 6px; }
+
 /* Status bar */
 .statusbar {
   display: flex; gap: 18px; align-items: center;
@@ -135,7 +175,9 @@ textarea.el-text::placeholder { color: #aaa; text-transform: none; }
   .print-page .el { margin-top: 12pt; }
   .print-page .el.first, .print-page .el-parenthetical, .print-page .el-dialogue { margin-top: 0; }
   .print-page .el-text { white-space: pre-wrap; line-height: 12pt; }
-  .print-num { position: absolute; top: 0.5in; right: 1in; }
+  .print-num { position: absolute; top: 0.5in; right: 1in; white-space: pre; }
+  .print-page .el-more { margin-left: 2.2in; margin-top: 0; }
+  .print-page .el.rev-mark::after { content: '*'; position: absolute; top: 0; font-weight: 700; }
   .title-page { text-align: center; }
   .tp-main { position: absolute; top: 3.5in; left: 1.5in; right: 1in; }
   .tp-main > div + div { margin-top: 12pt; }

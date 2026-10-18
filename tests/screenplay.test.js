@@ -102,5 +102,51 @@ console.log('  ✓ Final Draft export → import round trip');
   assert.deepStrictEqual(cs.sections[2].items, ['Places: *Maya*', 'Shot: CLOSE ON THE WATER', 'Cue *Maya*', 'Clear scene 3']);
   assert.throws(() => S.toCallsheet(S.normalizeDoc({ elements: [{ type: 'action', text: 'x' }] })), /no scene headings/);
   console.log('  ✓ sends to Shot Sheet and Call Sheet');
+
+  // Splitting long speeches: break after a sentence, at least two lines each side.
+  const speech = 'I waited. I waited all night for you to call and you never did. Not once. Do you know what that feels like? Sitting by the phone like a fool.';
+  const lines = S.wrapLines(speech, 35);
+  assert.ok(lines.every((l) => l.length <= 35));
+  assert.strictEqual(lines.join(' '), speech, 'wrapping keeps every word');
+  assert.strictEqual(lines.length, 5);
+  const split = S.splitSpeech(speech, 35, 4);
+  assert.ok(split, 'a 5-line speech with 4 lines of room is split');
+  assert.ok(split.firstLines >= 2 && split.firstLines <= 4, `kept ${split.firstLines} lines`);
+  assert.match(split.first, /[.?!]$/, 'breaks after a sentence');
+  assert.strictEqual(`${split.first} ${split.rest}`, speech, 'nothing is lost');
+  assert.strictEqual(split.first, 'I waited. I waited all night for you to call and you never did. Not once. Do you know what that feels like?');
+  assert.strictEqual(S.splitSpeech(speech, 35, 1), null, 'never leaves a single line behind');
+  assert.strictEqual(S.splitSpeech('No full stop here and it keeps going and going without any end at all in sight', 35, 2), null,
+    'no sentence break: move the whole speech');
+  assert.strictEqual(S.speakerOf(doc.elements, 9), 'LOU', 'dialogue after a parenthetical belongs to the character above');
+  assert.strictEqual(S.speakerOf(doc.elements, 14), 'MAYA', '(V.O.) is dropped for the CONT\'D name');
+  console.log('  ✓ long speeches split with (MORE) / (CONT\'D) at a sentence break');
+
+  // Revisions: what changed since a saved draft.
+  const draft = S.normalizeDoc(JSON.parse(JSON.stringify(doc)));
+  draft.revisions.push(S.makeRevision(draft, { color: S.nextRevisionColor(draft), author: 'Writer' }));
+  assert.strictEqual(draft.revisions[0].name, 'White Revision');
+  assert.strictEqual(S.nextRevisionColor(draft), 'Blue');
+  draft.elements[4].text = 'Lou wipes the counter slowly.';
+  draft.elements.splice(6, 0, { id: 'new1', type: 'action', text: 'A beat.' });
+  const removedLine = draft.elements.splice(10, 1)[0];
+  const ch = S.revisionChanges(draft, draft.revisions[0]);
+  assert.deepStrictEqual([...ch.changed], [draft.elements[4].id]);
+  assert.deepStrictEqual([...ch.added], ['new1']);
+  assert.deepStrictEqual(ch.removed.map((e) => e.text), [removedLine.text]);
+  const reloaded = S.normalizeDoc(JSON.parse(JSON.stringify(draft)));
+  assert.strictEqual(reloaded.revisions[0].elements.length, doc.elements.length, 'revisions survive save/load');
+  console.log('  ✓ revisions record drafts and show what changed since');
+
+  // Scene fingerprints change only when that scene changes.
+  const before = S.sceneLinks(doc);
+  const edited = S.normalizeDoc(JSON.parse(JSON.stringify(doc)));
+  edited.elements[6].text = 'You still make it far too strong.'; // scene 2 dialogue
+  const after = S.sceneLinks(edited);
+  assert.deepStrictEqual(after.map((s) => s.id), before.map((s) => s.id), 'scenes are identified by their heading line');
+  assert.deepStrictEqual(after.map((s, i) => s.hash === before[i].hash), [true, false, true]);
+  edited.elements.push({ id: 'blank', type: 'action', text: '' });
+  assert.strictEqual(S.sceneLinks(edited)[2].hash, before[2].hash, 'an added blank line is not a change');
+  console.log('  ✓ scene fingerprints detect which scenes changed');
   console.log('screenplay: all checks passed');
 })().catch((e) => { console.error(e); process.exit(1); });

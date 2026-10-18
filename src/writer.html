@@ -35,8 +35,14 @@
         <button class="icon-btn" id="homeBtn" title="Home (Ctrl/Cmd+H)">⌂</button>
         <button class="icon-btn" id="sidebarToggle" title="Toggle sidebar (Ctrl/Cmd+B)">☰</button>
         <span class="system-label">Script Writer</span>
+        <span class="undo-group">
+          <button class="icon-btn" id="undoBtn" title="Undo (Ctrl/Cmd+Z)">↶</button>
+          <button class="icon-btn" id="redoBtn" title="Redo (Ctrl+Y / Cmd+Shift+Z)">↷</button>
+        </span>
         <div class="element-bar" id="elementBar" title="Element type for the current line"></div>
         <div class="toolbar-spacer"></div>
+        <button class="icon-btn" id="commentBtn" title="Comment on the current line (Ctrl/Cmd+Alt+M)">💬</button>
+        <button class="ghost-btn" id="revisionsBtn" title="Save drafts and see what changed">Revisions</button>
         <button class="ghost-btn" id="titlePageBtn">Title page</button>
         <div class="menu-wrap">
           <button class="ghost-btn" data-menu="sendMenu">Send to ▾</button>
@@ -82,6 +88,8 @@
   <script src="sync-core.js"></script>
   <script src="cloud.js"></script>
   <script src="collab-ui.js"></script>
+  <script src="history.js"></script>
+  <script src="comments.js"></script>
   <script src="script-parse.js"></script>
   <script src="screenplay.js"></script>
   <script src="writer.js"></script>

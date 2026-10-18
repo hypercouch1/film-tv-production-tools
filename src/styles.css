@@ -97,6 +97,7 @@ input { font: inherit; color: inherit; }
   background: var(--panel);
 }
 .toolbar-spacer { flex: 1; }
+.toolbar button, .toolbar .system-label { white-space: nowrap; flex-shrink: 0; }
 .system-label {
   font-family: var(--display); font-size: 20px; letter-spacing: 1px; color: var(--muted);
   margin-left: 6px;

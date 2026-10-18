@@ -45,9 +45,45 @@
     if (sheet) sheet.updatedAt = Date.now();
     store.save();
     collab.changed();
+    undoHistory.record();
+    undoUi.update();
   }
 
   const active = () => state.sheets.find((s) => s.id === state.activeId);
+
+  // ---------- Undo / redo ----------
+  const undoHistory = window.History.createHistory({
+    getDoc: () => active(),
+    onApply: () => { save(); render({ keepScroll: true }); },
+  });
+  const undoUi = window.Common.wireUndo(undoHistory);
+
+  // ---------- Comments (on cues and sections) ----------
+  const comments = window.Comments.attach({
+    getDoc: () => active(),
+    save: () => save(),
+    rerender: () => render({ keepScroll: true }),
+    readOnly: () => collab.readOnly(),
+    describe: (target) => {
+      const sheet = active();
+      if (!sheet) return null;
+      for (const s of sheet.sections) {
+        if (s.id === target) return `Section: ${s.title}`;
+        const it = s.items.find((i) => i.id === target);
+        if (it) return `${s.title}: ${it.text.replace(/\*/g, '') || '(empty cue)'}`;
+      }
+      return null;
+    },
+    jump: (target) => {
+      const node = document.querySelector(`[data-item="${CSS.escape(target)}"]`) || document.getElementById('sec-' + target);
+      if (node) node.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    },
+  });
+  // A comment badge, or a small button to start one (shown on hover).
+  const commentControl = (target) => comments.badge(target) || el('button', {
+    class: 'cm-add', type: 'button', title: 'Add a comment',
+    onclick: (e) => { e.stopPropagation(); comments.open(target); },
+  }, '💬');
 
   // ---------- Collaboration ----------
   const collab = window.Collab.attach({
@@ -70,7 +106,7 @@
         s.items = (Array.isArray(s.items) ? s.items : []).filter(isObj);
         s.items.forEach((it) => { it.text = String(it.text == null ? '' : it.text); it.done = !!it.done; });
       });
-      return doc;
+      return window.Comments.clean(doc);
     },
     selectLocal: () => selectFirstLocal(),
     onRoleChange: (role) => { if (role === 'viewer') editing = false; },
@@ -168,10 +204,10 @@
           class: 'item' + (it.done ? ' checked' : '') + (cur === it ? ' current' : ''),
           'data-item': it.id,
           onclick: () => toggleItem(it),
-        }, el('span', { class: 'box' }), el('span', { class: 'item-text', html: fmt(it.text) })));
+        }, el('span', { class: 'box' }), el('span', { class: 'item-text', html: fmt(it.text) }), commentControl(it.id)));
       }
       wrap.append(el('section', { class: 'section', id: 'sec-' + s.id },
-        el('h2', { class: 'section-title' }, s.title.toUpperCase()), ul));
+        el('h2', { class: 'section-title' }, s.title.toUpperCase(), commentControl(s.id)), ul));
     }
   }
 
@@ -375,11 +411,18 @@
   }
 
   // ---------- Render ----------
-  function render({ keepScroll = false } = {}) {
+  let historyFor = null; // the sheet the undo history belongs to
+  function render({ keepScroll = false, remote = false } = {}) {
     const sheetEl = $('sheet');
     const top = sheetEl.scrollTop;
     renderSidebar();
     const sheet = active();
+    // Opening another sheet starts a fresh undo history; a collaborator's edit becomes the
+    // new starting point, so undo never reverses their work.
+    if ((sheet && sheet.id) !== historyFor) { historyFor = sheet && sheet.id; undoHistory.reset(); }
+    else if (remote) undoHistory.rebase();
+    undoUi.update();
+    comments.refresh();
     $('editBtn').textContent = editing ? 'Done' : 'Edit';
     $('editBtn').hidden = collab.readOnly();
     $('app').classList.toggle('editing', editing);
@@ -549,6 +592,7 @@
     $('newSheetBtn').addEventListener('click', newSheet);
     $('importBtn').addEventListener('click', importFiles);
     $('importScriptBtn').addEventListener('click', importScript);
+    $('commentsBtn').addEventListener('click', () => comments.open());
     $('resetBtn').addEventListener('click', resetChecks);
     $('editBtn').addEventListener('click', toggleEdit);
     $('sidebarToggle').addEventListener('click', () => { state.sidebarHidden = !state.sidebarHidden; save(); renderSidebar(); });
@@ -587,6 +631,9 @@
         toggleEdit,
         reset: resetChecks,
         toggleSidebar: () => { state.sidebarHidden = !state.sidebarHidden; save(); renderSidebar(); },
+        undo: () => active() && undoUi.run(false, true),
+        redo: () => active() && undoUi.run(true, true),
+        comments: () => active() && comments.open(),
       }[channel] || (() => {}))();
     });
     api.onFileOpened((file) => ingest([file]));
@@ -597,6 +644,7 @@
     // Starting with no sheets is fine: the empty screen offers New, Import and an example.
     if (stored && Array.isArray(stored.sheets)) {
       state = { sidebarHidden: false, ...stored };
+      state.sheets.forEach(window.Comments.clean);
       if (!active()) state.activeId = state.sheets.length ? state.sheets[0].id : null;
     } else {
       state = { sheets: [], activeId: null, sidebarHidden: false };

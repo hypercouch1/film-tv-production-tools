@@ -54,6 +54,10 @@
 
   const ids = (list, map) => (Array.isArray(list) ? list.map((x) => map[x] || null).filter(Boolean) : []);
 
+  // Call sheet details for a shoot day (all free text), besides date / call / wrap / location / notes.
+  // crewCall: general crew call; call: shooting call. calls: { [characterId or crewId]: 'HH:MM' }.
+  const DAY_EXTRA_KEYS = ['crewCall', 'parking', 'hospital', 'weather', 'sunrise', 'sunset', 'weatherPlace'];
+
   // Accepts the internal shape (shot.dayId + day.id) or the file shape (shot.day = 'YYYY-MM-DD').
   function normalizeProject(raw, fallbackTitle) {
     raw = raw || {};
@@ -77,6 +81,9 @@
         const day = {
           id: uid(), date: d.date, call: str(d.call), wrap: str(d.wrap),
           location: str(d.location), notes: str(d.notes), equipment: str(d.equipment),
+          ...DAY_EXTRA_KEYS.reduce((o, k) => ({ ...o, [k]: str(d[k]) }), {}),
+          calls: {}, // filled in below once character / crew ids are known
+          _rawCalls: d.calls,
         };
         if (d.id) idMap[d.id] = day.id;
         dateMap[d.date] = day.id;
@@ -94,6 +101,9 @@
       props: str(s && s.props),
       equipment: str(s && s.equipment),
       eighths: Number.isFinite(s && s.eighths) ? s.eighths : 0,
+      // The script scene this came from: its heading line id and a fingerprint of its content.
+      scriptScene: s && s.scriptScene && typeof s.scriptScene.id === 'string'
+        ? { id: s.scriptScene.id, hash: str(s.scriptScene.hash) } : null,
       shots: (Array.isArray(s && s.shots) ? s.shots : []).map((sh) => ({
         id: uid(),
         type: str(sh.type, SHOT_DEFAULTS.type),
@@ -109,8 +119,20 @@
         done: !!sh.done,
       })),
     }));
+    // Call times are keyed by person; remap them to the new ids.
+    for (const d of days) {
+      const raw = d._rawCalls && typeof d._rawCalls === 'object' ? d._rawCalls : {};
+      for (const [k, v] of Object.entries(raw)) {
+        const id = charMap[k] || crewMap[k];
+        if (id && typeof v === 'string') d.calls[id] = v;
+      }
+      delete d._rawCalls;
+    }
+    const link = raw.scriptLink && typeof raw.scriptLink.scriptId === 'string'
+      ? { scriptId: raw.scriptLink.scriptId, title: str(raw.scriptLink.title) } : null;
     return upgradeProject({
       id: uid(), title: str(raw.title, fallbackTitle || 'Untitled Project'), updatedAt: Date.now(), scenes, days, characters, crew,
+      scriptLink: link, comments: Array.isArray(raw.comments) ? raw.comments : [],
     });
   }
 
@@ -131,11 +153,22 @@
     p.scenes = items(p.scenes);
     p.characters.forEach((c) => texts(c, ['name', 'actor', 'contact']));
     p.crew.forEach((k) => { texts(k, ['role', 'name', 'contact']); k.allDays = !!k.allDays; });
-    p.days.forEach((d) => texts(d, ['call', 'wrap', 'location', 'notes', 'equipment']));
+    p.days.forEach((d) => {
+      texts(d, ['call', 'wrap', 'location', 'notes', 'equipment', ...DAY_EXTRA_KEYS]);
+      const calls = d.calls && typeof d.calls === 'object' && !Array.isArray(d.calls) ? d.calls : {};
+      d.calls = Object.fromEntries(Object.entries(calls).filter(([, v]) => typeof v === 'string'));
+    });
+    if (!p.scriptLink || typeof p.scriptLink.scriptId !== 'string') p.scriptLink = null;
+    // Comments: { id, target, text, author, authorId, at, resolved }
+    p.comments = items(p.comments).map((c) => ({
+      id: c.id, target: String(c.target || ''), text: String(c.text || ''), author: String(c.author || ''),
+      authorId: String(c.authorId || ''), at: Number(c.at) || Date.now(), resolved: !!c.resolved,
+    }));
     const byName = new Map(p.characters.map((c) => [c.name.trim().toLowerCase(), c]));
     for (const s of p.scenes) {
       texts(s, ['number', 'heading', 'synopsis', 'props', 'equipment']);
       if (!Number.isFinite(s.eighths)) s.eighths = 0;
+      if (!s.scriptScene || typeof s.scriptScene.id !== 'string') s.scriptScene = null;
       s.shots = items(s.shots);
       s.shots.forEach((sh) => {
         texts(sh, ['type', 'angle', 'move', 'lens', 'cam', 'fps', 'audio', 'desc', 'notes']);
@@ -204,7 +237,13 @@
       characters: (p.characters || []).map(({ id, name, actor, contact }) => ({ id, name, actor, contact })),
       crew: (p.crew || []).map(({ id, role, name, contact, allDays }) => ({ id, role, name, contact, allDays })),
       days: [...p.days].sort((a, b) => a.date.localeCompare(b.date))
-        .map(({ date, call, wrap, location, notes, equipment }) => ({ date, call, wrap, location, notes, equipment: equipment || '' })),
+        .map((d) => ({
+          date: d.date, call: d.call, wrap: d.wrap, location: d.location, notes: d.notes, equipment: d.equipment || '',
+          ...DAY_EXTRA_KEYS.reduce((o, k) => ({ ...o, [k]: d[k] || '' }), {}),
+          calls: d.calls || {},
+        })),
+      scriptLink: p.scriptLink || null,
+      comments: p.comments || [],
       scenes: p.scenes.map((s) => ({
         number: s.number,
         heading: s.heading,
@@ -214,6 +253,7 @@
         props: s.props || '',
         equipment: s.equipment || '',
         eighths: s.eighths || 0,
+        scriptScene: s.scriptScene || null,
         shots: s.shots.map(({ type, angle, move, lens, cam, fps, audio, desc, notes, dayId, done }) =>
           ({ type, angle, move, lens, cam, fps, audio, desc, notes, day: dateOf[dayId] || null, done })),
       })),

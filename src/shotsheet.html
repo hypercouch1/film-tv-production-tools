@@ -34,12 +34,17 @@
         <button class="icon-btn" id="homeBtn" title="Home (Ctrl/Cmd+H)">⌂</button>
         <button class="icon-btn" id="sidebarToggle" title="Toggle sidebar (Ctrl/Cmd+B)">☰</button>
         <span class="system-label">Shot Sheet</span>
+        <span class="undo-group">
+          <button class="icon-btn" id="undoBtn" title="Undo (Ctrl/Cmd+Z)">↶</button>
+          <button class="icon-btn" id="redoBtn" title="Redo (Ctrl+Y / Cmd+Shift+Z)">↷</button>
+        </span>
         <div class="seg" id="viewToggle">
           <button data-view="shots">Shot List</button>
           <button data-view="schedule">Schedule</button>
           <button data-view="people">Cast &amp; Crew</button>
         </div>
         <div class="toolbar-spacer"></div>
+        <button class="icon-btn" id="commentsBtn" title="Comments (Ctrl/Cmd+Alt+M)">💬</button>
         <button class="ghost-btn" id="resetBtn" title="Uncheck shots in this view (Ctrl/Cmd+Shift+R)">Reset</button>
         <div class="menu-wrap">
           <button class="ghost-btn" data-menu="exportMenu">Export ▾</button>
@@ -89,6 +94,9 @@
   <script src="sync-core.js"></script>
   <script src="cloud.js"></script>
   <script src="collab-ui.js"></script>
+  <script src="history.js"></script>
+  <script src="comments.js"></script>
+  <script src="weather.js"></script>
   <script src="script-parse.js"></script>
   <script src="screenplay.js"></script>
   <script src="shotsheet-formats.js"></script>

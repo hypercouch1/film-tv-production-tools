@@ -153,7 +153,22 @@ function buildMenu() {
         isMac ? { role: 'close' } : { role: 'quit' },
       ],
     },
-    { role: 'editMenu' },
+    {
+      // Undo/Redo go to the page, which keeps its own history (per project, collaboration-aware).
+      label: 'Edit',
+      submenu: [
+        { label: 'Undo', accelerator: 'CmdOrCtrl+Z', click: menuSend('undo') },
+        { label: 'Redo', accelerator: isMac ? 'Shift+Cmd+Z' : 'Ctrl+Y', click: menuSend('redo') },
+        ...(isMac ? [] : [{ label: 'Redo', accelerator: 'Ctrl+Shift+Z', click: menuSend('redo'), visible: false, acceleratorWorksWhenHidden: true }]),
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
+        { type: 'separator' },
+        { label: 'Comments', accelerator: 'CmdOrCtrl+Alt+M', click: menuSend('comments') },
+      ],
+    },
     {
       label: 'Sheet',
       submenu: [

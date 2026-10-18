@@ -120,6 +120,57 @@
 .role-pill { font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; }
 .invite-form { margin-top: 8px; }
 
+/* Comments */
+.cm-badge {
+  background: rgba(230, 207, 46, .16); border: 1px solid rgba(230, 207, 46, .55); color: var(--yellow);
+  border-radius: 999px; font-size: 11px; padding: 1px 8px; line-height: 16px; white-space: nowrap; cursor: pointer;
+}
+.cm-badge:hover { background: rgba(230, 207, 46, .3); }
+.cm-panel {
+  position: fixed; top: 0; right: 0; bottom: 0; width: 340px; z-index: 70;
+  display: flex; flex-direction: column;
+  background: var(--panel); border-left: 1px solid var(--line); box-shadow: -14px 0 34px rgba(0,0,0,.45);
+}
+.cm-head { display: flex; align-items: center; gap: 10px; padding: 14px 14px 10px; border-bottom: 1px solid var(--line); }
+.cm-head h2 { flex: 1; margin: 0; font-family: var(--display); font-weight: 400; font-size: 26px; letter-spacing: 1px; }
+.cm-toggle { font-size: 12px; color: var(--muted); white-space: nowrap; cursor: pointer; }
+.cm-body { flex: 1; overflow-y: auto; padding: 10px 14px; }
+.cm-empty { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.cm-group { margin-bottom: 14px; border-left: 2px solid var(--line); padding-left: 10px; }
+.cm-group.current { border-left-color: var(--yellow); }
+.cm-target {
+  display: block; width: 100%; text-align: left; background: none; border: 0; padding: 0 0 4px;
+  font-size: 12px; font-weight: 700; color: var(--tab); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cm-target:hover { color: var(--text); }
+.cm-item { padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,.04); }
+.cm-item.resolved { opacity: .55; }
+.cm-meta { font-size: 11px; color: var(--muted); }
+.cm-meta strong { color: var(--text); }
+.cm-text { font-size: 14px; white-space: pre-wrap; margin: 3px 0; line-height: 1.4; }
+.cm-actions { display: flex; gap: 10px; }
+.cm-actions .link-btn { font-size: 12px; padding: 0; }
+.cm-foot { padding: 10px 14px 14px; border-top: 1px solid var(--line); }
+.cm-foot .field { width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; color: var(--text); padding: 8px; font: 13px var(--body); resize: vertical; margin: 6px 0; }
+.cm-on { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media print { .cm-badge, .cm-panel { display: none !important; } }
+
+/* "Add a comment" button that appears on hover next to cues, shots and sections */
+.cm-add {
+  opacity: 0; background: none; border: 1px dashed var(--line); border-radius: 999px;
+  font-size: 11px; padding: 0 7px; line-height: 18px; cursor: pointer; margin-left: 8px; vertical-align: middle;
+}
+.item:hover .cm-add, .section-title:hover .cm-add, .shot-body:hover .cm-add, .cm-add:focus { opacity: .8; }
+.cm-add:hover { border-color: var(--yellow); }
+.section-title .cm-badge, .section-title .cm-add { font-family: var(--body); letter-spacing: 0; margin-left: 10px; vertical-align: middle; }
+.item > .cm-badge, .item > .cm-add { margin-left: auto; flex-shrink: 0; }
+.read-only .cm-add { display: none; }
+@media print { .cm-add { display: none !important; } }
+
+/* Undo / redo buttons */
+.undo-group { display: inline-flex; gap: 2px; }
+.undo-group .icon-btn:disabled { opacity: .35; cursor: default; }
+
 /* Script picker (Import script from Script Writer) */
 .pick-list { display: grid; gap: 6px; max-height: 320px; overflow-y: auto; margin-bottom: 8px; }
 .pick-row {

@@ -89,7 +89,25 @@
       },
       sceneNumbers: raw.sceneNumbers !== false,
       elements,
+      revisions: cleanRevisions(raw.revisions),
+      comments: cleanComments(raw.comments),
     };
+  }
+
+  const isItem = (x) => x && typeof x === 'object' && !Array.isArray(x) && typeof x.id === 'string';
+  function cleanRevisions(list) {
+    return (Array.isArray(list) ? list : []).filter((r) => isItem(r) && Array.isArray(r.elements)).map((r) => ({
+      id: r.id, name: String(r.name || 'Revision'), color: String(r.color || 'White'), author: String(r.author || ''),
+      at: Number(r.at) || Date.now(),
+      elements: r.elements.filter(isItem).map((e) => ({ id: e.id, type: TYPES.includes(e.type) ? e.type : 'action', text: String(e.text || '') })),
+    }));
+  }
+  // Comments are shared by all three systems: { id, target, text, author, authorId, at, resolved }.
+  function cleanComments(list) {
+    return (Array.isArray(list) ? list : []).filter(isItem).map((c) => ({
+      id: c.id, target: String(c.target || ''), text: String(c.text || ''), author: String(c.author || ''),
+      authorId: String(c.authorId || ''), at: Number(c.at) || Date.now(), resolved: !!c.resolved,
+    }));
   }
 
   // Fills in missing fields in place (used for shared docs arriving from the server).
@@ -98,12 +116,15 @@
     d.title = n.title;
     d.titlePage = n.titlePage;
     d.sceneNumbers = n.sceneNumbers;
-    if (!Array.isArray(d.elements) || !d.elements.length) d.elements = n.elements;
+    d.elements = (Array.isArray(d.elements) ? d.elements : []).filter((e) => e && typeof e === 'object');
+    if (!d.elements.length) d.elements = n.elements;
     for (const e of d.elements) {
       if (!TYPES.includes(e.type)) e.type = 'action';
-      if (typeof e.text !== 'string') e.text = String(e.text || '');
-      if (!e.id) e.id = uid();
+      if (typeof e.text !== 'string') e.text = String(e.text == null ? '' : e.text);
+      if (typeof e.id !== 'string' || !e.id) e.id = uid();
     }
+    d.revisions = n.revisions;
+    d.comments = n.comments;
     return d;
   }
 
@@ -345,9 +366,107 @@
     return { title: doc.title, sections };
   }
 
+  // ---------- Splitting long speeches across pages ----------
+  // Word-wraps text the way the editor's textarea does (break at spaces, long words broken).
+  function wrapLines(text, width) {
+    const out = [];
+    for (const para of String(text).split('\n')) {
+      let line = '';
+      for (const word of para.split(/ +/)) {
+        let w = word;
+        if (line && line.length + 1 + w.length > width) { out.push(line); line = ''; }
+        line = line ? line + ' ' + w : w;
+        while (line.length > width) { out.push(line.slice(0, width)); line = line.slice(width); }
+      }
+      out.push(line);
+    }
+    return out;
+  }
+
+  // Splits a speech so the first part fits in `fitLines` lines before "(MORE)", or returns
+  // null to move the whole speech to the next page. Screenplay convention: break only
+  // after a sentence (the next sentence starts the new page), with at least two lines
+  // left behind.
+  const SENTENCE_BREAK = /(?<=[.!?…]["'”’)\]]*|--|—)\s+/;
+  function splitSpeech(text, width, fitLines) {
+    const sentences = String(text).trim().split(SENTENCE_BREAK).filter(Boolean);
+    for (let n = sentences.length - 1; n >= 1; n--) {
+      const first = sentences.slice(0, n).join(' ');
+      const firstLines = wrapLines(first, width).length;
+      if (firstLines > fitLines) continue;
+      if (firstLines < 2) return null;
+      const rest = sentences.slice(n).join(' ');
+      return { first, rest, firstLines, restLines: wrapLines(rest, width).length };
+    }
+    return null;
+  }
+
+  // The character a dialogue line belongs to, for "NAME (CONT'D)" on the next page.
+  function speakerOf(elements, index) {
+    for (let i = index - 1; i >= 0; i--) {
+      const t = elements[i].type;
+      if (t === 'character') return cleanCharacter(elements[i].text) || 'CONT';
+      if (t !== 'parenthetical' && t !== 'dialogue') break;
+    }
+    return '';
+  }
+
+  // ---------- Revisions ----------
+  // Industry order of revision page colours.
+  const REVISION_COLORS = [
+    ['White', '#ffffff'], ['Blue', '#a9c8f0'], ['Pink', '#f5b5c8'], ['Yellow', '#f4e27a'], ['Green', '#a8d8a0'],
+    ['Goldenrod', '#e6b84c'], ['Buff', '#e9d3a8'], ['Salmon', '#f2a68c'], ['Cherry', '#d9707a'],
+  ];
+  const nextRevisionColor = (doc) => REVISION_COLORS[(doc.revisions || []).length % REVISION_COLORS.length][0];
+  const revisionHex = (name) => (REVISION_COLORS.find(([n]) => n === name) || REVISION_COLORS[0])[1];
+
+  // A saved draft: the script's lines at this moment.
+  function makeRevision(doc, { name, color, author }) {
+    return {
+      id: uid(),
+      name: name || `${color} Revision`,
+      color,
+      author: author || '',
+      at: Date.now(),
+      elements: doc.elements.map(({ id, type, text }) => ({ id, type, text })),
+    };
+  }
+
+  // Lines added or changed since a revision (by line id), and lines removed since.
+  function revisionChanges(doc, revision) {
+    const before = new Map((revision.elements || []).map((e) => [e.id, e]));
+    const changed = new Set();
+    const added = new Set();
+    for (const e of doc.elements) {
+      const old = before.get(e.id);
+      if (!old) { if (e.text.trim()) added.add(e.id); } else if (old.text !== e.text || old.type !== e.type) changed.add(e.id);
+    }
+    const now = new Set(doc.elements.map((e) => e.id));
+    const removed = (revision.elements || []).filter((e) => !now.has(e.id) && e.text.trim());
+    return { changed, added, removed };
+  }
+
+  // ---------- Scene fingerprints (to notice script changes in linked shot sheets) ----------
+  function hashText(s) {
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+    return h.toString(36);
+  }
+  // Empty lines don't count, so adding or removing a blank line isn't a "change".
+  function sceneHash(scene) {
+    const lines = scene.elements.map((e) => [e.type, displayText(e).trim()]).filter(([, t]) => t);
+    return hashText(scene.heading.trim() + '\n' + lines.map(([type, t]) => type + ':' + t).join('\n'));
+  }
+  // One entry per scene: the heading line's id and a fingerprint of the scene's content.
+  function sceneLinks(doc) {
+    return scenes(doc).map((s) => ({ id: doc.elements[s.index].id, hash: sceneHash(s) }));
+  }
+
   root.Screenplay = {
-    TYPES, LABELS, NEXT_ON_ENTER, NEXT_ON_TAB, PREV_ON_TAB, UPPERCASE, TRANSITIONS, TIMES,
+    TYPES, LABELS, NEXT_ON_ENTER, NEXT_ON_TAB, PREV_ON_TAB, UPPERCASE, TRANSITIONS, TIMES, REVISION_COLORS,
     autoType, displayText, wrapParens, cleanCharacter, newDoc, normalizeDoc, upgradeDoc,
     fromImport, toParseInput, paginate, scenes, characters, stats, suggestions, toFountain, toFdx, toCallsheet,
+    wrapLines, splitSpeech, speakerOf, nextRevisionColor, revisionHex, makeRevision, revisionChanges,
+    sceneHash, sceneLinks,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

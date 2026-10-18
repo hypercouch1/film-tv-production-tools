@@ -6,6 +6,7 @@
   let state = { scripts: [], activeId: null, sidebarHidden: false };
   let currentId = null; // element with the cursor
   let search = '';
+  let compare = null;   // { docId, revisionId }: show changes since this revision
 
   // Shared (cloud) scripts live on the server, so only local scripts are saved here.
   const store = window.Common.createStore('scripts', () => ({ ...state, scripts: collab.localOnly(state.scripts) }));
@@ -15,7 +16,40 @@
     if (d) d.updatedAt = Date.now();
     store.save();
     collab.changed();
+    history.record();
+    undoUi.update();
   }
+
+  // ---------- Undo / redo ----------
+  const history = window.History.createHistory({
+    getDoc: () => active(),
+    onApply: () => {
+      save();
+      renderPaper(active());
+      renderNav();
+      updateStatus();
+      renderSidebar();
+      renderElementBar();
+    },
+  });
+  // Every edit in the script goes through the app's history, so Ctrl/⌘+Z is always app-level here.
+  const undoUi = window.Common.wireUndo(history, { textFieldsUndoNatively: false });
+
+  // ---------- Comments ----------
+  const comments = window.Comments.attach({
+    getDoc: () => active(),
+    save: () => save(),
+    rerender: () => updateBadges(),
+    readOnly: () => readOnly(),
+    describe: (target) => {
+      const d = active();
+      const item = d && d.elements.find((e) => e.id === target);
+      if (!item) return null;
+      const text = S.displayText(item).trim();
+      return `${S.LABELS[item.type]}: ${text.length > 48 ? text.slice(0, 48) + '…' : text || '(empty line)'}`;
+    },
+    jump: (target) => focusElement(target, 0, true),
+  });
 
   // ---------- Collaboration ----------
   const collab = window.Collab.attach({
@@ -29,6 +63,7 @@
     save: () => store.save(),
     normalize: (doc) => S.upgradeDoc(doc),
     selectLocal: () => selectFirstLocal(),
+    onRoleChange: () => {},
   });
   const readOnly = () => collab.readOnly();
 
@@ -42,6 +77,7 @@
     collab.leave();
     state.activeId = id;
     currentId = null;
+    compare = null;
     store.save();
     render({ fresh: true });
   }
@@ -86,9 +122,11 @@
   // ---------- Paper (one auto-growing textarea per element, reused between renders) ----------
   const nodes = new Map(); // element id -> DOM node
 
+  // Size a line's text box to its content, in whole 16px lines (the browser can report a
+  // pixel extra, which would make page breaks drift from the PDF).
   function grow(ta) {
     ta.style.height = '0px';
-    ta.style.height = ta.scrollHeight + 'px';
+    ta.style.height = Math.max(16, Math.round(ta.scrollHeight / 16) * 16) + 'px';
   }
 
   function nodeFor(item) {
@@ -99,10 +137,34 @@
       el('span', { class: 'el-num left' }), ta, el('span', { class: 'el-num right' }));
     ta.addEventListener('input', () => onInput(node.dataset.item, ta));
     ta.addEventListener('keydown', (e) => onKeyDown(e, node.dataset.item, ta));
-    ta.addEventListener('focus', () => { currentId = node.dataset.item; renderElementBar(); updateStatus(); highlightScene(); });
+    ta.addEventListener('focus', () => {
+      currentId = node.dataset.item;
+      // A speech split across pages is edited as one piece, then split again afterwards.
+      if (node.classList.contains('split')) updatePageBreaks();
+      renderElementBar(); updateStatus(); highlightScene();
+      if (comments.isOpen) comments.setTarget(currentId);
+    });
     ta.addEventListener('blur', () => onBlur(node.dataset.item, ta));
     nodes.set(item.id, node);
     return node;
+  }
+
+  // Comment badges and revision marks ("*" in the right margin for changed lines).
+  function updateBadges() {
+    const doc = active();
+    if (!doc) return;
+    const rev = compare && compare.docId === doc.id && (doc.revisions || []).find((r) => r.id === compare.revisionId);
+    const changes = rev ? S.revisionChanges(doc, rev) : null;
+    for (const item of doc.elements) {
+      const node = nodes.get(item.id);
+      if (!node) continue;
+      const old = node.querySelector(':scope > .cm-badge');
+      if (old) old.remove();
+      const b = comments.badge(item.id);
+      if (b) node.append(b);
+      node.classList.toggle('has-comment', !!b);
+      node.classList.toggle('rev-mark', !!changes && (changes.changed.has(item.id) || changes.added.has(item.id)));
+    }
   }
 
   function renderPaper(doc, { fresh = false } = {}) {
@@ -137,6 +199,7 @@
       if (!keep.has(id)) { node.remove(); nodes.delete(id); }
     }
     paper.querySelectorAll('textarea').forEach(grow);
+    updateBadges();
     updatePageBreaks();
   }
 
@@ -148,51 +211,107 @@
   const PAGE_BODY = 9 * IN;
   const LINE = 16;
   const GAP_BEFORE = { heading: LINE, action: LINE, character: LINE, transition: LINE, shot: LINE, parenthetical: 0, dialogue: 0 };
-  let layout = { pageOf: [], pages: 0 };
+  const DIALOGUE_CHARS = 35; // 3.5in of 12pt Courier
+  let layout = { pageOf: [], endPageOf: [], pages: 0, fill: [], splits: new Map() };
+
+  const focusedId = () => {
+    const a = document.activeElement;
+    const node = a && a.closest && a.closest('.paper .el');
+    return node ? node.dataset.item : null;
+  };
 
   function measurePages(doc) {
     const pageOf = [];
-    const fill = []; // empty space left at the bottom of each page
+    const endPageOf = [];
+    const fill = [];           // empty space left at the bottom of each page
+    const splits = new Map();  // element index -> { first, rest, speaker } for speeches split across pages
+    const editing = focusedId();
     let page = 1;
     let used = 0;
+    const heightOf = (it) => {
+      const n = it && nodes.get(it.id);
+      const t = n && n.querySelector('textarea');
+      return t ? t.offsetHeight : LINE;
+    };
     doc.elements.forEach((item, i) => {
-      const node = nodes.get(item.id);
-      const h = node ? node.offsetHeight : LINE;
+      const h = heightOf(item);
       const gap = used === 0 ? 0 : GAP_BEFORE[item.type] || 0;
-      // Keep a scene heading or character name with at least the next line.
-      const keep = item.type === 'heading' || item.type === 'character' ? LINE * 2 : 0;
+      // Keep a scene heading or character name on the same page as the start of what
+      // follows (its blank line plus at least two lines of it).
+      const next = doc.elements[i + 1];
+      const keep = (item.type === 'heading' || item.type === 'character') && next
+        ? (GAP_BEFORE[next.type] || 0) + Math.min(heightOf(next), LINE * 2) : 0;
+      pageOf[i] = page;
       if (used > 0 && used + gap + h + keep > PAGE_BODY) {
+        // A long speech continues on the next page: "(MORE)" here, "NAME (CONT'D)" there.
+        // (Not while it's being edited; it's split again when the cursor leaves it.)
+        if (item.type === 'dialogue' && item.id !== editing) {
+          const fitLines = Math.floor((PAGE_BODY - used - gap) / LINE) - 1;
+          const sp = S.splitSpeech(S.displayText(item), DIALOGUE_CHARS, fitLines);
+          if (sp) {
+            splits.set(i, { ...sp, speaker: S.speakerOf(doc.elements, i) });
+            fill[page] = PAGE_BODY - (used + gap + (sp.firstLines + 1) * LINE);
+            page++;
+            used = (1 + sp.restLines) * LINE;
+            endPageOf[i] = page;
+            return;
+          }
+        }
         fill[page] = PAGE_BODY - used;
         page++;
+        pageOf[i] = page;
         used = h;
       } else {
         used += gap + h;
       }
-      pageOf[i] = page;
+      endPageOf[i] = page;
     });
     fill[page] = Math.max(0, PAGE_BODY - used);
-    return { pageOf, pages: doc.elements.length ? page : 0, fill };
+    return { pageOf, endPageOf, pages: doc.elements.length ? page : 0, fill, splits };
   }
+
+  const pageBreak = (fillPx, nextPage, extraClass = '') => el('div', { class: 'page-break ' + extraClass, 'aria-hidden': 'true' },
+    el('div', { class: 'pb-bottom', style: `height:${Math.max(0, fillPx) + IN}px` }),
+    el('div', { class: 'pb-gap' }),
+    el('div', { class: 'pb-top' }, el('span', { class: 'pb-num' }, nextPage + '.'), revisionHeader()));
 
   function updatePageBreaks() {
     const doc = active();
     if (!doc) return;
     const paper = $('paper');
-    paper.querySelectorAll('.page-break').forEach((n) => n.remove());
+    paper.querySelectorAll('.page-break, .split-view').forEach((n) => n.remove());
+    paper.querySelectorAll('.el.split').forEach((n) => n.classList.remove('split'));
     layout = measurePages(doc);
-    const { pageOf, fill } = layout;
+    const { pageOf, endPageOf, fill, splits } = layout;
     doc.elements.forEach((item, i) => {
-      if (i === 0 || pageOf[i] === pageOf[i - 1]) return;
       const node = nodes.get(item.id);
       if (!node) return;
-      const prevPage = pageOf[i - 1];
-      paper.insertBefore(el('div', { class: 'page-break', 'aria-hidden': 'true' },
-        el('div', { class: 'pb-bottom', style: `height:${Math.max(0, fill[prevPage]) + IN}px` }),
-        el('div', { class: 'pb-gap' }),
-        el('div', { class: 'pb-top' }, el('span', { class: 'pb-num' }, pageOf[i] + '.'))), node);
+      if (i > 0 && pageOf[i] !== endPageOf[i - 1]) paper.insertBefore(pageBreak(fill[endPageOf[i - 1]], pageOf[i]), node);
+      const sp = splits.get(i);
+      if (sp) {
+        // Show the speech in two parts around the page break; clicking either part edits it.
+        node.classList.add('split');
+        const part = (text, cls, caret) => el('div', {
+          class: cls,
+          onmousedown: (e) => { e.preventDefault(); focusElement(item.id, caret); },
+        }, text);
+        node.append(el('div', { class: 'split-view' },
+          part(sp.first, 'sv-text', sp.first.length),
+          el('div', { class: 'sv-more' }, '(MORE)'),
+          pageBreak(fill[pageOf[i]], endPageOf[i], 'in-split'),
+          el('div', { class: 'sv-contd' }, `${sp.speaker} (CONT'D)`),
+          part(sp.rest, 'sv-text', item.text.length)));
+      }
     });
     // Pad the last page out to a full sheet.
     paper.style.paddingBottom = (fill[layout.pages] || 0) + IN + 'px';
+  }
+
+  // "Blue Rev. 10/18/26" at the top of each page while showing changes since a revision.
+  function revisionHeader() {
+    const doc = active();
+    const rev = compare && doc && compare.docId === doc.id && (doc.revisions || []).find((r) => r.id === compare.revisionId);
+    return rev ? el('span', { class: 'pb-rev' }, `${rev.color} Rev. ${new Date().toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: '2-digit' })}`) : null;
   }
 
   let laterTimer = null;
@@ -249,13 +368,18 @@
     if (layout.pages) st.pages = layout.pages; // measured on screen, matches the PDF
     const cur = currentElement();
     $('statusbar').innerHTML = '';
-    $('statusbar').append(
+    const rev = compareRevision();
+    const ch = rev ? S.revisionChanges(doc, rev) : null;
+    $('statusbar').append(...[
       el('span', { class: 'st-type' }, cur ? S.LABELS[cur.type] : ''),
       el('span', { class: 'st-hint' }, cur && !readOnly() ? HINTS[cur.type] : readOnly() ? 'View only' : ''),
       el('span', { class: 'st-spacer' }),
+      rev ? el('span', { class: 'st-rev' }, `Changes since ${rev.name}: ${ch.changed.size + ch.added.size} lines, ${ch.removed.length} removed`,
+        el('button', { class: 'link-btn', onclick: () => setCompare(null) }, 'Hide')) : null,
+      comments.openCount() ? el('button', { class: 'link-btn', onclick: () => comments.open() }, `💬 ${comments.openCount()} open`) : null,
       el('span', {}, `${st.pages} page${st.pages === 1 ? '' : 's'}`),
       el('span', {}, `${st.scenes} scene${st.scenes === 1 ? '' : 's'}`),
-      el('span', {}, `${st.words.toLocaleString()} words`));
+      el('span', {}, `${st.words.toLocaleString()} words`)].filter(Boolean));
   }
 
   // ---------- Editing ----------
@@ -321,6 +445,7 @@
     // Close this line's suggestions (unless a click on them is in progress), but never a
     // box that has since opened for the next line.
     setTimeout(() => { if (suggest.itemId === id && document.activeElement !== ta) hideSuggestions(); }, 150);
+    refreshLater(); // a long speech may split across pages again now
     const item = active() && active().elements.find((e) => e.id === id);
     if (!item || readOnly()) return;
     if (item.type === 'parenthetical' && item.text.trim() && item.text !== S.wrapParens(item.text)) {
@@ -470,6 +595,80 @@
     return false;
   }
 
+  // ---------- Revisions ----------
+  const compareRevision = () => {
+    const doc = active();
+    return compare && doc && compare.docId === doc.id ? (doc.revisions || []).find((r) => r.id === compare.revisionId) : null;
+  };
+
+  function setCompare(revisionId) {
+    const doc = active();
+    compare = revisionId && doc ? { docId: doc.id, revisionId } : null;
+    updateBadges();
+    updatePageBreaks();
+    updateStatus();
+  }
+
+  function openRevisions() {
+    const doc = active();
+    if (!doc) return;
+    const ro = readOnly();
+    const body = el('div', {});
+    const m = window.Common.modal('Revisions', body, { wide: true });
+    const draw = () => {
+      body.innerHTML = '';
+      const nextColor = S.nextRevisionColor(doc);
+      const color = el('select', { class: 'field' }, ...S.REVISION_COLORS.map(([n]) => el('option', { value: n }, n)));
+      color.value = nextColor;
+      const name = el('input', { class: 'field', value: `${nextColor} Revision`, placeholder: 'Name' });
+      color.addEventListener('change', () => { if (/Revision$/.test(name.value)) name.value = `${color.value} Revision`; });
+      const saveBtn = el('button', { class: 'primary-btn', type: 'button' }, 'Save revision');
+      saveBtn.addEventListener('click', () => {
+        if (JSON.stringify(doc).length > 1200000) { alert('This script is getting too large to keep more revisions. Delete an old revision first.'); return; }
+        const who = window.Cloud && window.Cloud.user ? window.Cloud.user.name : '';
+        doc.revisions = doc.revisions || [];
+        doc.revisions.push(S.makeRevision(doc, { name: name.value.trim(), color: color.value, author: who }));
+        save();
+        toast(`Saved ${name.value.trim() || color.value + ' Revision'}`);
+        draw();
+      });
+      const cur = compareRevision();
+      body.append(
+        el('p', { class: 'muted small' }, 'Save a draft of the script as it is now. Later, choose "Show changes" to mark every line changed since that draft with * in the margin, as in production revisions. The marks also appear in the PDF.'),
+        ro ? null : el('div', { class: 'rev-new' }, name, color, saveBtn),
+        el('div', { class: 'rev-list' }, ...(doc.revisions || []).slice().reverse().map((r) => {
+          const ch = S.revisionChanges(doc, r);
+          const showing = cur && cur.id === r.id;
+          return el('div', { class: 'rev-row' + (showing ? ' active' : '') },
+            el('span', { class: 'rev-dot', style: `background:${S.revisionHex(r.color)}` }),
+            el('div', {},
+              el('div', { class: 'rev-name' }, r.name),
+              el('div', { class: 'rev-meta' }, [
+                r.author, new Date(r.at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }),
+                `${ch.changed.size + ch.added.size} changed · ${ch.removed.length} removed since`,
+              ].filter(Boolean).join(' · '))),
+            el('div', { class: 'rev-actions' },
+              el('button', { class: 'ghost-btn', type: 'button', onclick: () => { setCompare(showing ? null : r.id); draw(); } }, showing ? 'Hide changes' : 'Show changes'),
+              ro ? null : el('button', { class: 'ghost-btn', type: 'button', onclick: () => {
+                if (!confirm(`Restore "${r.name}"? The script goes back to that draft. You can undo this.`)) return;
+                doc.elements = r.elements.map((e) => ({ ...e }));
+                structuralChange();
+                draw();
+              } }, 'Restore'),
+              ro ? null : el('button', { class: 'icon-btn del', type: 'button', title: 'Delete revision', onclick: () => {
+                if (!confirm(`Delete "${r.name}"?`)) return;
+                doc.revisions.splice(doc.revisions.indexOf(r), 1);
+                if (showing) setCompare(null);
+                save();
+                draw();
+              } }, '✕')));
+        })),
+        (doc.revisions || []).length ? null : el('p', { class: 'muted small' }, 'No revisions saved yet.'),
+        el('div', { class: 'modal-foot' }, el('button', { class: 'ghost-btn', type: 'button', onclick: () => m.close() }, 'Done')));
+    };
+    draw();
+  }
+
   // ---------- Title page ----------
   function openTitlePage() {
     const doc = active();
@@ -508,21 +707,40 @@
           tp.draftDate ? el('div', { class: 'tp-draft' }, tp.draftDate) : null),
         tp.contact ? el('div', { class: 'tp-contact' }, tp.contact) : null));
     }
-    // Same page breaks as the editor shows.
+    // Same page breaks (and split speeches) as the editor shows.
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     updatePageBreaks();
-    const { pageOf } = layout;
+    const { pageOf, endPageOf, splits } = layout;
+    const rev = compare && compare.docId === doc.id && (doc.revisions || []).find((r) => r.id === compare.revisionId);
+    const changes = rev ? S.revisionChanges(doc, rev) : null;
+    const revLabel = rev ? `${rev.color} Rev. ${new Date().toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: '2-digit' })}` : '';
     let page = null;
+    const newPage = (n) => {
+      const header = [revLabel, n > 1 ? n + '.' : ''].filter(Boolean).join('    ');
+      page = el('section', { class: 'print-page' }, header ? el('div', { class: 'print-num' }, header) : null);
+      view.append(page);
+    };
+    const add = (type, text, opts = {}) => page.append(el('div', {
+      class: 'el el-' + type + (page.querySelector('.el') ? '' : ' first') + (opts.marked ? ' rev-mark' : ''),
+    },
+    opts.num ? el('span', { class: 'el-num left' }, opts.num) : null,
+    el('div', { class: 'el-text' }, text || ' '),
+    opts.num ? el('span', { class: 'el-num right' }, opts.num) : null));
     let sceneNo = 0;
     doc.elements.forEach((item, i) => {
-      if (!page || pageOf[i] !== pageOf[i - 1]) {
-        page = el('section', { class: 'print-page' }, pageOf[i] > 1 ? el('div', { class: 'print-num' }, pageOf[i] + '.') : null);
-        view.append(page);
-      }
+      if (!page || pageOf[i] !== endPageOf[i - 1]) newPage(pageOf[i]);
       const num = item.type === 'heading' && doc.sceneNumbers ? String(++sceneNo) : '';
-      page.append(el('div', { class: 'el el-' + item.type + (page.children.length <= 1 ? ' first' : '') },
-        num ? el('span', { class: 'el-num left' }, num) : null,
-        el('div', { class: 'el-text' }, S.displayText(item) || ' '),
-        num ? el('span', { class: 'el-num right' }, num) : null));
+      const marked = !!changes && (changes.changed.has(item.id) || changes.added.has(item.id));
+      const sp = splits.get(i);
+      if (sp) {
+        add('dialogue', sp.first, { marked });
+        add('more', '(MORE)');
+        newPage(endPageOf[i]);
+        add('character', `${sp.speaker} (CONT'D)`);
+        add('dialogue', sp.rest, { marked });
+      } else {
+        add(item.type, S.displayText(item), { num, marked });
+      }
     });
   }
 
@@ -553,8 +771,10 @@
     if (!doc) return;
     let payload;
     try {
+      // The shot sheet remembers which script (and scene versions) it came from, so it can
+      // flag scenes that change in the script later.
       payload = target === 'shotsheet'
-        ? { to: 'shotsheet', name: doc.title, input: S.toParseInput(doc) }
+        ? { to: 'shotsheet', name: doc.title, input: S.toParseInput(doc), link: { scriptId: doc.id, title: doc.title, scenes: S.sceneLinks(doc) } }
         : { to: 'callsheet', name: doc.title, sheet: S.toCallsheet(doc) };
       if (target === 'shotsheet' && !S.scenes(doc).length) throw new Error('This script has no scene headings yet.');
     } catch (err) {
@@ -610,6 +830,12 @@
     $('deleteLabel').textContent = collab.isCloud(doc) ? (doc._cloud.role === 'owner' ? 'Delete for everyone' : 'Leave shared script') : 'Delete script';
     $('app').classList.toggle('read-only', readOnly());
     renderPaper(doc, { fresh: !!(opts.fresh || opts.opened) });
+    // A newly opened script starts a fresh undo history; a collaborator's edit becomes the
+    // new starting point, so undo never reverses their work.
+    if (opts.fresh || opts.opened) history.reset();
+    else if (opts.remote) history.rebase();
+    undoUi.update();
+    comments.refresh();
     renderNav();
     renderElementBar();
     updateStatus();
@@ -632,6 +858,8 @@
     if (!d) return;
     const copy = S.normalizeDoc({ ...JSON.parse(JSON.stringify(window.SyncCore.stripLocal(d))), id: null, title: d.title + ' (copy)' });
     copy.elements.forEach((e) => (e.id = uid()));
+    copy.revisions = []; // they refer to the original's lines
+    copy.comments = [];
     addScript(copy);
     toast('Duplicated');
   }
@@ -667,6 +895,9 @@
     $('importBtn').addEventListener('click', async () => openImported(await api.importScript()));
     $('sidebarToggle').addEventListener('click', toggleSidebar);
     $('titlePageBtn').addEventListener('click', openTitlePage);
+    $('revisionsBtn').addEventListener('click', openRevisions);
+    $('commentBtn').addEventListener('mousedown', (e) => e.preventDefault()); // keep the current line
+    $('commentBtn').addEventListener('click', () => comments.open(currentId || undefined));
     $('search').addEventListener('input', (e) => { search = e.target.value; renderSidebar(); });
     window.Common.wireDropdowns();
     document.querySelectorAll('[data-export]').forEach((b) => b.addEventListener('click', () => exportAs(b.dataset.export)));
@@ -696,6 +927,9 @@
         export: () => exportAs(arg === 'native' ? 'fountain' : arg),
         home: () => window.Common.goHome(store),
         toggleSidebar,
+        undo: () => active() && undoUi.run(false, true),
+        redo: () => active() && undoUi.run(true, true),
+        comments: () => active() && comments.open(currentId || undefined),
       }[channel] || (() => {}))();
     });
     api.onFileOpened((file) => openImported({ script: fileToScript(file) }));

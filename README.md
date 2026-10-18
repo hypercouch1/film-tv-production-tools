@@ -100,6 +100,42 @@ The sync server can also require a minimum app version (`MIN_CLIENT_VERSION` in 
 
 The **Build apps** workflow runs the tests, builds the Mac and Windows apps, and publishes a GitHub Release with the installers and the release notes. Installed copies then see the update notice.
 
+## Working on projects
+
+- **Undo / redo:** **Ctrl/⌘+Z** undoes and **Ctrl+Y** or **⌘+Shift+Z** redoes, or use ↶ ↷ in the toolbar. Each project has its own history. In shared projects, undo only reverses your own edits.
+  - In Call Sheet and Shot Sheet, Ctrl/⌘+Z while typing in a field undoes that field's typing.
+- **Comments:** comment on script lines, shots, scenes, and call sheet cues and sections. Hover over an item and click 💬, or use the 💬 toolbar button (**Ctrl/⌘+Alt+M**). Comments are saved inside the project, so they sync in shared projects. You can resolve, reopen and delete them.
+
+## Script revisions and page breaks
+
+- **Revisions** (Script Writer toolbar): save the script as a named draft, using the standard colours White, Blue, Pink, Yellow, Green, Goldenrod, Buff, Salmon, Cherry.
+  - **Show changes** marks lines changed since that draft with `*` in the right margin. The PDF prints the marks and a revision header on each page.
+  - **Restore** goes back to a draft, and can be undone.
+- **Page breaks:** a speech that runs past the bottom of a page splits after a sentence, with (MORE) and NAME (CONT'D), keeping at least two lines on the first page. If there's no sentence break, it moves to the next page whole. While you're typing in a split speech it's shown in one piece, and it re-splits when you leave it.
+
+## Call sheets (Shot Sheet)
+
+In Schedule, choose a shoot day, then **Call sheet**. It's an industry-style sheet:
+- general crew call, shooting call and estimated wrap
+- weather with sunrise and sunset
+- location, parking and nearest hospital
+- notes
+- scenes with day/night and cast numbers
+- cast and crew with call times
+- equipment and props
+
+Every field is edited on the sheet itself. **Get forecast** looks up the weather for the place typed in the Weather box using Open-Meteo (free, no account, up to about 16 days ahead). **Export PDF** prints it.
+
+## Script ↔ Shot Sheet link
+
+- **Linked:** shot sheets made from a Script Writer script (**Send to → Shot Sheet**, or **Import script** → choose the script) remember which script scene each scene came from.
+- **Changes flagged:** when the script changes, a banner and "Script changed" badges show what's different. **Review changes** can then:
+  - update a scene's heading, synopsis, cast and length, keeping its shots
+  - mark a change as reviewed
+  - add new scenes, with or without starter shots
+  - delete or keep scenes removed from the script
+- **On this computer only:** this works for scripts saved on this computer.
+
 ## Empty lists
 
 Each system can have no projects at all. Deleting the last call sheet, shot sheet or script leaves the list empty instead of creating a new one. The empty screen offers **New**, **Import**, and **Load example** (a sample to explore).
