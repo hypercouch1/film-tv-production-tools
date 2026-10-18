@@ -1024,9 +1024,17 @@
   // ---------- Script import ----------
   const SCRIPT_EXTS = ['pdf', 'fdx', 'fountain', 'spmd', 'txt'];
 
+  // Pick one of your Script Writer scripts, or a PDF / Final Draft / Fountain file.
   async function importScript() {
-    const result = await api.importScript();
-    if (result) openScriptResult(result);
+    const pick = await window.Common.pickScript();
+    if (!pick) return;
+    if (pick.doc) {
+      const doc = window.Screenplay.normalizeDoc(pick.doc);
+      if (!window.Screenplay.scenes(doc).length) { alert('This script has no scene headings yet.'); return; }
+      openScriptPreview(window.ScriptParse.parseScript(window.Screenplay.toParseInput(doc)), doc.title);
+      return;
+    }
+    openScriptResult(pick.result);
   }
 
   function openScriptResult(result) {
@@ -1239,6 +1247,16 @@
     collab.mountToolbar(document.querySelector('.toolbar'), $('resetBtn'));
     render();
     collab.init();
+    window.Common.initUpdates();
+    // A script sent from the Script Writer ("Send to → Shot Sheet") opens the import preview.
+    const handoff = window.Common.takeHandoff('shotsheet');
+    if (handoff) {
+      try {
+        openScriptPreview(window.ScriptParse.parseScript(handoff.input), handoff.name);
+      } catch (err) {
+        alert(err.message);
+      }
+    }
     const pending = await api.takePendingFile();
     if (pending) ingest([pending]);
   }

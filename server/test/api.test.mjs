@@ -49,7 +49,9 @@ function live(projectId, token) {
 const step = (name) => console.log('  ✓ ' + name);
 
 // ---- Accounts ----
-assert.equal((await api('GET', '/api/health')).ok, true);
+const health = await api('GET', '/api/health');
+assert.equal(health.ok, true);
+assert.match(health.minClientVersion, /^\d+\.\d+\.\d+$/, 'health reports the oldest supported app version');
 const users = {};
 for (const n of ['alice', 'bob', 'carol']) {
   const r = await api('POST', '/api/signup', { email: `${n}.${run}@example.com`, name: n[0].toUpperCase() + n.slice(1), password: 'correct horse' });
@@ -77,6 +79,13 @@ assert.equal((await api('GET', '/api/projects?kind=callsheet', null, A)).project
 assert.equal((await api('GET', '/api/projects', null, B)).projects.length, 0);
 assert.equal((await api('GET', `/api/projects/${pid}/members`, null, B)).status, 404);
 step('create project; only members can see it');
+
+const script = await api('POST', '/api/projects', { kind: 'script', doc: { title: 'Draft', elements: [{ id: 'e1', type: 'heading', text: 'INT. ROOM - DAY' }] } }, A);
+assert.equal(script.status, 200, script.error);
+assert.equal((await api('GET', '/api/projects?kind=script', null, A)).projects[0].title, 'Draft');
+assert.equal((await api('POST', '/api/projects', { kind: 'spreadsheet', doc: {} }, A)).status, 400);
+assert.equal((await api('DELETE', `/api/projects/${script.project.id}`, null, A)).deleted, true);
+step('Script Writer scripts can be shared; unknown project types are refused');
 
 assert.equal((await api('POST', `/api/projects/${pid}/members`, { email: `nobody.${run}@example.com` }, A)).status, 404);
 assert.equal((await api('POST', `/api/projects/${pid}/members`, { email: `bob.${run}@example.com`, role: 'editor' }, A)).status, 200);

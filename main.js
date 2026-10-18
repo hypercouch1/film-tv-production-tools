@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { createUpdater } = require('./updates.js');
 
 const isMac = process.platform === 'darwin';
 let win = null;
@@ -28,14 +29,14 @@ function migrateFromOldName() {
 migrateFromOldName();
 
 // Each system keeps its own store file in the user data folder.
-const STORES = ['callsheets', 'shotsheets'];
+const STORES = ['callsheets', 'shotsheets', 'scripts'];
 const storePath = (key) => {
   if (!STORES.includes(key)) throw new Error('Unknown store: ' + key);
   return path.join(app.getPath('userData'), key + '.json');
 };
 
 // Which page handles a double-clicked file, by extension.
-const PAGE_FOR_EXT = { callsheet: 'callsheet.html', shotsheet: 'shotsheet.html' };
+const PAGE_FOR_EXT = { callsheet: 'callsheet.html', shotsheet: 'shotsheet.html', fountain: 'writer.html', fdx: 'writer.html' };
 const OPENABLE = Object.keys(PAGE_FOR_EXT).map((e) => '.' + e);
 const isOpenable = (a) => OPENABLE.some((ext) => a.toLowerCase().endsWith(ext));
 
@@ -136,8 +137,45 @@ function buildMenu() {
       ],
     },
     { role: 'windowMenu' },
+    {
+      label: 'Help',
+      submenu: [
+        { label: 'Check for Updates…', click: () => checkForUpdatesInteractive() },
+        { label: 'Release Notes', click: () => shell.openExternal(updater.releasesUrl) },
+      ],
+    },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+// ---- Update notices ----
+// The GitHub repo whose Releases are checked, from package.json "repository".
+const pkg = require('./package.json');
+const repoSlug = String((pkg.repository && pkg.repository.url) || pkg.repository || '')
+  .replace(/^.*github\.com[/:]/, '').replace(/\.git$/, '');
+const updater = createUpdater({
+  repo: repoSlug,
+  onChange: (info) => { if (win) win.webContents.send('update:status', info); },
+});
+
+async function checkForUpdatesInteractive() {
+  const info = await updater.check();
+  if (info.error) {
+    dialog.showMessageBox(win, { type: 'warning', message: "Couldn't check for updates", detail: `${info.error}\n\nCheck your internet connection and try again.` });
+  } else if (info.newer) {
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'info',
+      message: `Production Tools ${info.latest} is available`,
+      detail: `You have version ${info.current}.`,
+      buttons: ['Download', "What's new", 'Later'],
+      defaultId: 0,
+      cancelId: 2,
+    });
+    if (response === 0) shell.openExternal(info.downloadUrl);
+    if (response === 1) shell.openExternal(info.url);
+  } else {
+    dialog.showMessageBox(win, { type: 'info', message: "You're up to date", detail: `Production Tools ${info.current} is the latest version.` });
+  }
 }
 
 // ---- IPC ----
@@ -235,6 +273,16 @@ ipcMain.handle('script:import', async () => {
 ipcMain.handle('script:read', (_e, filePath) => scriptResult(readScript(String(filePath || ''))));
 
 // Called by a page after startup: hands over a double-clicked file meant for it.
+ipcMain.handle('update:get', () => updater.get());
+ipcMain.handle('update:check', () => updater.check());
+// Only GitHub links (release pages and downloads) are opened from the update banner.
+ipcMain.handle('update:open', (_e, url) => {
+  try {
+    const u = new URL(String(url));
+    if (u.protocol === 'https:' && /(^|\.)github\.com$/.test(u.hostname)) shell.openExternal(u.href);
+  } catch { /* not a URL */ }
+});
+
 ipcMain.handle('file:takePending', (e) => {
   if (!pendingOpenFile) return null;
   const page = path.basename(decodeURIComponent(new URL(e.sender.getURL()).pathname));
@@ -269,6 +317,11 @@ if (!gotLock) {
   app.whenReady().then(() => {
     buildMenu();
     createWindow();
+    // Look for a newer release shortly after launch, then every 6 hours.
+    if (repoSlug) {
+      setTimeout(() => updater.check(), 4000);
+      setInterval(() => updater.check(), 6 * 60 * 60 * 1000);
+    }
     const fileArg = process.argv.slice(1).find(isOpenable);
     if (fileArg) sendOpenFile(fileArg);
     app.on('activate', () => {

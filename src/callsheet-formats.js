@@ -142,6 +142,13 @@
         return fromJSON(content, name);
       case 'csv':
         return fromCSV(content, name);
+      case 'fountain':
+      case 'spmd':
+      case 'fdx': {
+        // A screenplay: one section per scene with cues (needs screenplay.js on the page).
+        const doc = window.Screenplay.fromImport(ext === 'fdx' ? { kind: 'fdx', xml: content, name } : { kind: 'text', text: content, name });
+        return [normalizeSheet(window.Screenplay.toCallsheet(doc), doc.title)];
+      }
       default: {
         const trimmed = content.trim();
         if (trimmed.startsWith('{') || trimmed.startsWith('[')) {

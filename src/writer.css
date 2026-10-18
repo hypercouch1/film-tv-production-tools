@@ -1,0 +1,142 @@
+/* Script Writer: a screenplay page with standard US formatting.
+   Courier 12pt = 10 characters and 6 lines per inch (16px at 96dpi). */
+:root { --script-font: 'Courier Prime', 'Courier New', Courier, monospace; }
+
+/* Toolbar: element type picker */
+.element-bar {
+  display: inline-flex; margin-left: 14px;
+  border: 1px solid var(--line); border-radius: 7px; overflow: hidden;
+}
+.element-bar button {
+  background: none; border: 0; padding: 6px 10px; font-size: 12px; color: var(--muted);
+}
+.element-bar button + button { border-left: 1px solid var(--line); }
+.element-bar button:hover:not(:disabled) { color: var(--text); background: var(--panel-2); }
+.element-bar button.active { background: var(--yellow); color: var(--yellow-ink); font-weight: 700; }
+.element-bar button:disabled { opacity: .5; cursor: default; }
+
+/* Layout */
+.writer { flex: 1; display: flex; min-height: 0; }
+.scene-nav {
+  width: 230px; flex-shrink: 0; overflow-y: auto;
+  border-right: 1px solid var(--line); background: var(--panel); padding: 8px 6px 20px;
+}
+.nav-head { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); padding: 8px 10px; }
+.nav-scene {
+  display: grid; grid-template-columns: 26px 1fr auto; gap: 6px; align-items: baseline;
+  width: 100%; text-align: left; background: none; border: 0; border-radius: 6px;
+  padding: 6px 8px; font-size: 12px; color: var(--text);
+}
+.nav-scene:hover { background: var(--panel-2); }
+.nav-scene.active { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--yellow); }
+.nav-num { font-family: var(--display); font-size: 16px; color: var(--muted); }
+.nav-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; }
+.nav-page { color: var(--muted); font-size: 11px; }
+
+.desk { flex: 1; overflow: auto; background: #2a2622; padding: 28px 24px 120px; }
+.paper {
+  width: 8.5in; min-height: 11in; margin: 0 auto;
+  box-sizing: border-box; padding: 1in 1in 1in 1.5in;
+  background: #fff; color: #111;
+  box-shadow: 0 18px 50px rgba(0,0,0,.55);
+  font: 12pt/16px var(--script-font);
+  cursor: text;
+}
+
+/* Elements */
+.el { position: relative; margin-top: 16px; width: 6in; }
+.paper > .el:first-child, .page-break + .el { margin-top: 0; }
+.el-text {
+  display: block; width: 100%; box-sizing: border-box;
+  border: 0; outline: none; resize: none; overflow: hidden;
+  background: transparent; color: inherit; padding: 0; margin: 0;
+  font: inherit; line-height: 16px; min-height: 16px;
+  white-space: pre-wrap; overflow-wrap: break-word;
+}
+textarea.el-text::placeholder { color: #aaa; text-transform: none; }
+.el-heading .el-text, .el-character .el-text, .el-transition .el-text, .el-shot .el-text { text-transform: uppercase; }
+.el-heading .el-text { font-weight: 700; }
+.el-character { margin-left: 2.2in; width: 3.8in; }
+.el-parenthetical { margin-left: 1.6in; width: 2.4in; margin-top: 0; }
+.el-dialogue { margin-left: 1in; width: 3.5in; margin-top: 0; }
+.el-transition .el-text { text-align: right; }
+
+/* Current line: a soft highlight and its element type in the left margin */
+.paper .el:focus-within { background: rgba(230, 207, 46, .10); box-shadow: 0 0 0 4px rgba(230, 207, 46, .10); }
+/* The label sits in the left margin, just left of the scene numbers: its distance from
+   the element is the element's indent plus 0.75in. */
+.paper .el:focus-within::before {
+  position: absolute; right: calc(100% + 0.75in); top: 0;
+  font: 10px/16px var(--body); color: #9a8f6a; text-transform: uppercase; letter-spacing: .6px; white-space: nowrap;
+}
+.paper .el-character:focus-within::before { right: calc(100% + 2.95in); }
+.paper .el-parenthetical:focus-within::before { right: calc(100% + 2.35in); }
+.paper .el-dialogue:focus-within::before { right: calc(100% + 1.75in); }
+.paper .el-heading:focus-within::before { content: 'Scene'; }
+.paper .el-action:focus-within::before { content: 'Action'; }
+.paper .el-character:focus-within::before { content: 'Character'; }
+.paper .el-parenthetical:focus-within::before { content: 'Paren'; }
+.paper .el-dialogue:focus-within::before { content: 'Dialogue'; }
+.paper .el-transition:focus-within::before { content: 'Transition'; }
+.paper .el-shot:focus-within::before { content: 'Shot'; }
+
+/* Scene numbers in both margins */
+.el-num { display: none; position: absolute; top: 0; font-weight: 700; color: #111; }
+.numbered .el-heading .el-num, .print-page .el-heading .el-num { display: block; }
+.el-num.left { right: calc(100% + 0.45in); }
+.el-num.right { left: calc(100% + 0.35in); }
+
+/* Page breaks */
+.page-break {
+  position: relative; height: 0; margin: 24px -1in 24px -1.5in;
+  border-top: 1px dashed #c9c3b8;
+}
+.page-break::after {
+  content: attr(data-page); position: absolute; right: 1in; top: -9px;
+  background: #fff; padding: 0 6px; color: #999; font: 12pt var(--script-font);
+}
+
+/* Status bar */
+.statusbar {
+  display: flex; gap: 18px; align-items: center;
+  padding: 6px 16px; border-top: 1px solid var(--line); background: var(--panel);
+  font-size: 12px; color: var(--muted);
+}
+.st-type { color: var(--yellow); font-weight: 700; min-width: 90px; }
+.st-spacer { flex: 1; }
+
+/* Suggestions */
+.suggest {
+  position: fixed; z-index: 60; min-width: 220px; max-width: 420px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 12px 30px rgba(0,0,0,.5); padding: 4px; font: 13px var(--script-font);
+}
+.suggest-item { padding: 6px 10px; border-radius: 5px; cursor: pointer; color: var(--text); }
+.suggest-item.active, .suggest-item:hover { background: var(--yellow); color: var(--yellow-ink); }
+
+.read-only .paper { cursor: default; }
+.read-only .paper .el:focus-within { background: none; box-shadow: none; }
+
+/* Print: real pages laid out from the pagination */
+#printView { display: none; }
+@media print {
+  body.print-script { background: #fff !important; overflow: visible; }
+  body.print-script > *:not(#printView) { display: none !important; }
+  body.print-script #printView { display: block; }
+  .print-page {
+    position: relative; width: 8.5in; height: 11in; box-sizing: border-box;
+    padding: 1in 1in 1in 1.5in; overflow: hidden; background: #fff; color: #000;
+    font: 12pt/12pt var(--script-font); break-after: page;
+  }
+  .print-page:last-child { break-after: auto; }
+  .print-page .el { margin-top: 12pt; }
+  .print-page .el.first, .print-page .el-parenthetical, .print-page .el-dialogue { margin-top: 0; }
+  .print-page .el-text { white-space: pre-wrap; line-height: 12pt; }
+  .print-num { position: absolute; top: 0.5in; right: 1in; }
+  .title-page { text-align: center; }
+  .tp-main { position: absolute; top: 3.5in; left: 1.5in; right: 1in; }
+  .tp-main > div + div { margin-top: 12pt; }
+  .tp-title { font-weight: 700; text-decoration: underline; margin-bottom: 24pt; }
+  .tp-draft { margin-top: 36pt !important; }
+  .tp-contact { position: absolute; left: 1.5in; bottom: 1in; text-align: left; white-space: pre-wrap; }
+}

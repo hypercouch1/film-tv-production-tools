@@ -7,7 +7,7 @@ import '../../src/sync-core.js';
 
 const { applyAll, clone } = globalThis.SyncCore;
 
-const KINDS = ['callsheet', 'shotsheet'];
+const KINDS = ['callsheet', 'shotsheet', 'script'];
 const ROLES = ['editor', 'viewer'];
 const SESSION_DAYS = 30;
 const MAX_DOC_BYTES = 1_500_000;
@@ -120,7 +120,10 @@ async function route(req, env, url) {
   const method = req.method;
   let m;
 
-  if (pathname === '/' || pathname === '/api/health') return json({ ok: true, service: 'production-hub' });
+  // minClientVersion: apps older than this show an "update required" notice (set in wrangler.toml).
+  if (pathname === '/' || pathname === '/api/health') {
+    return json({ ok: true, service: 'production-hub', minClientVersion: env.MIN_CLIENT_VERSION || '1.0.0' });
+  }
 
   // Accounts
   if (pathname === '/api/signup' && method === 'POST') {

@@ -463,7 +463,31 @@
   }
 
   async function importFiles() {
-    ingest(await api.importFiles({ label: 'Call Sheets', extensions: ['callsheet', 'json', 'csv', 'md', 'markdown', 'txt'] }));
+    ingest(await api.importFiles({ label: 'Call Sheets', extensions: ['callsheet', 'json', 'csv', 'md', 'markdown', 'txt', 'fountain', 'fdx'] }));
+  }
+
+  // A screenplay (from the Script Writer or a PDF / Final Draft / Fountain file) becomes
+  // a call sheet with one section per scene and cues for places, characters and transitions.
+  function addFromScript(doc) {
+    try {
+      const sheet = window.Formats.normalizeSheet(window.Screenplay.toCallsheet(doc), doc.title);
+      addSheet(sheet);
+      toast(`Created "${sheet.title}" with ${sheet.sections.length} scenes`);
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  async function importScript() {
+    const pick = await window.Common.pickScript();
+    if (!pick) return;
+    if (pick.doc) return addFromScript(window.Screenplay.normalizeDoc(pick.doc));
+    if (pick.result.error) return alert(pick.result.error);
+    try {
+      addFromScript(window.Screenplay.fromImport(pick.result.script));
+    } catch (err) {
+      alert(`${pick.result.script.name}: ${err.message}`);
+    }
   }
 
   async function exportAs(kind) {
@@ -505,6 +529,7 @@
   function wire() {
     $('newSheetBtn').addEventListener('click', newSheet);
     $('importBtn').addEventListener('click', importFiles);
+    $('importScriptBtn').addEventListener('click', importScript);
     $('resetBtn').addEventListener('click', resetChecks);
     $('editBtn').addEventListener('click', toggleEdit);
     $('sidebarToggle').addEventListener('click', () => { state.sidebarHidden = !state.sidebarHidden; save(); renderSidebar(); });
@@ -535,6 +560,7 @@
         new: newSheet,
         duplicate: duplicateSheet,
         import: importFiles,
+        importScript,
         export: () => exportAs(arg === 'native' ? 'callsheet' : arg),
         home: () => window.Common.goHome(store),
         toggleEdit,
@@ -559,6 +585,14 @@
     collab.mountToolbar(document.querySelector('.toolbar'), $('resetBtn'));
     render();
     collab.init();
+    window.Common.initUpdates();
+    // A script sent from the Script Writer ("Send to → Call Sheet").
+    const handoff = window.Common.takeHandoff('callsheet');
+    if (handoff) {
+      const sheet = window.Formats.normalizeSheet(handoff.sheet, handoff.name);
+      addSheet(sheet);
+      toast(`Created "${sheet.title}" from the script — ${sheet.sections.length} scenes`);
+    }
     const pending = await api.takePendingFile();
     if (pending) ingest([pending]);
   }

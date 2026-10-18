@@ -1,4 +1,4 @@
-// Helpers shared by every system page (home, call sheet, shot sheet).
+// Helpers shared by every system page (home, call sheet, shot sheet, script writer).
 (function () {
   // Outside Electron (plain browser preview) fall back to localStorage and downloads.
   const api = window.api || {
@@ -15,6 +15,10 @@
     takePendingFile: async () => null,
     importScript: async () => ({ error: 'Script import needs the desktop app.' }),
     readDroppedScript: async () => ({ error: 'Script import needs the desktop app.' }),
+    getUpdateInfo: async () => null,
+    checkForUpdates: async () => null,
+    onUpdate: () => {},
+    openRelease: (url) => window.open(url, '_blank'),
     onMenu: () => {},
     onFileOpened: () => {},
     platform: 'web',
@@ -161,8 +165,108 @@
     return { close };
   }
 
+  // ---- Handing a script from one system to another (survives the page change) ----
+  function setHandoff(payload) {
+    try { sessionStorage.setItem('handoff', JSON.stringify(payload)); } catch { /* storage unavailable */ }
+  }
+  function takeHandoff(to) {
+    try {
+      const h = JSON.parse(sessionStorage.getItem('handoff'));
+      if (!h || h.to !== to) return null;
+      sessionStorage.removeItem('handoff');
+      return h;
+    } catch { return null; }
+  }
+
+  // ---- Choosing a script to import: one from the Script Writer, or a file ----
+  // Resolves to { doc } (a Script Writer document) or { result } (from the file dialog).
+  async function pickScript() {
+    let docs = [];
+    try {
+      const data = await api.loadStore('scripts');
+      docs = (data && Array.isArray(data.scripts) ? data.scripts : []).slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    } catch { /* no scripts yet */ }
+    const fromFile = async () => {
+      const result = await api.importScript();
+      return result ? { result } : null;
+    };
+    if (!docs.length) return fromFile();
+    return new Promise((resolve) => {
+      const list = el('div', { class: 'pick-list' }, ...docs.map((d) => el('button', {
+        class: 'pick-row', type: 'button',
+        onclick: () => { m.close(); resolve({ doc: d }); },
+      },
+      el('strong', {}, d.title || 'Untitled Script'),
+      el('span', {}, `${(d.elements || []).filter((e) => e.type === 'heading').length} scenes · edited ${relTime(d.updatedAt || Date.now())}`))));
+      const file = el('button', { class: 'ghost-btn wide', type: 'button', onclick: async () => { m.close(); resolve(await fromFile()); } },
+        'Choose a file instead (PDF, Final Draft, Fountain)…');
+      const m = modal('Import script', el('div', {},
+        el('p', { class: 'muted small' }, 'From your Script Writer scripts:'), list, file));
+    });
+  }
+
+  // ---- Update notices ----
+  // Compares "1.2.0" style versions: negative if a < b.
+  function compareVersions(a, b) {
+    const pa = String(a).replace(/^v/, '').split(/[.-]/).map((x) => parseInt(x, 10) || 0);
+    const pb = String(b).replace(/^v/, '').split(/[.-]/).map((x) => parseInt(x, 10) || 0);
+    for (let i = 0; i < Math.max(pa.length, pb.length, 3); i++) {
+      if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) - (pb[i] || 0);
+    }
+    return 0;
+  }
+
+  const dismissedKey = 'update.dismissed';
+  function showUpdateBanner({ required, current, latest, url, downloadUrl, minVersion }) {
+    let banner = document.getElementById('updateBanner');
+    if (banner) banner.remove();
+    if (!required) {
+      try { if (localStorage.getItem(dismissedKey) === latest) return; } catch { /* storage unavailable */ }
+    }
+    const close = () => {
+      try { localStorage.setItem(dismissedKey, latest); } catch { /* storage unavailable */ }
+      banner.remove();
+    };
+    banner = el('div', { class: 'update-banner' + (required ? ' required' : ''), id: 'updateBanner', role: 'status' },
+      el('div', { class: 'update-text' },
+        el('strong', {}, required ? 'Update required' : `Production Tools ${latest} is available`),
+        el('span', {}, required
+          ? `This version (${current}) is too old to sync shared projects. Version ${minVersion} or newer is needed.`
+          : `You have ${current}.`)),
+      url ? el('button', { class: 'ghost-btn', onclick: () => api.openRelease(url) }, "What's new") : null,
+      el('button', { class: 'primary-btn', onclick: () => api.openRelease(downloadUrl || url) }, 'Download'),
+      required ? null : el('button', { class: 'icon-btn', title: 'Remind me about the next version', onclick: close }, '✕'));
+    document.body.append(banner);
+  }
+
+  // Every page calls this once: shows a banner when GitHub has a newer release, or when
+  // the sync server says this version is too old.
+  async function initUpdates() {
+    let info = null;
+    try { info = await api.getUpdateInfo(); } catch { /* offline */ }
+    const show = (i) => {
+      info = i || info;
+      if (info && info.newer) showUpdateBanner({ current: info.current, latest: info.latest, url: info.url, downloadUrl: info.downloadUrl });
+    };
+    show(info);
+    api.onUpdate(show);
+    const server = window.Cloud && window.Cloud.serverUrl();
+    if (!server || !info || !info.current) return;
+    try {
+      const res = await fetch(server + '/api/health');
+      const health = await res.json();
+      if (health.minClientVersion && compareVersions(info.current, health.minClientVersion) < 0) {
+        showUpdateBanner({
+          required: true, current: info.current, minVersion: health.minClientVersion,
+          latest: info.latest, url: info.url, downloadUrl: info.downloadUrl || info.releasesUrl,
+        });
+      }
+    } catch { /* offline: nothing to check */ }
+  }
+
   window.Common = {
     api, uid, $, mod, esc, fmt, el, toast, relTime, safeFileName,
     parseCSV, csvField, createStore, goHome, wireDropdowns, onFileDrop, modal,
+    setHandoff, takeHandoff, compareVersions, initUpdates, pickScript,
   };
 })();

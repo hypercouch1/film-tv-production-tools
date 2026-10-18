@@ -1,3 +1,42 @@
+# Production Tools 1.2.0
+
+This release adds a screenplay editor, and the app now tells you when a new version is available.
+
+## New
+
+### Script Writer
+- **New system:** a fourth tile on the home screen, for writing screenplays with the formatting done for you.
+- **Formatting as you type:** scene headings, action, character names, parentheticals, dialogue, transitions and shots are laid out with standard margins and indents in Courier.
+  - **Enter** moves to the element that usually comes next.
+  - **Tab** switches the current line's element (action → character, dialogue → parenthetical, and so on).
+  - **Auto-detection:** typing `INT.` or `EXT.` starts a scene heading, and parentheticals are wrapped in brackets for you.
+- **Suggestions:** as you type, it suggests character names, locations and times of day.
+- **Layout:** page breaks, scene numbers, a scene list for jumping around, and a title page.
+- **Import scripts you already have:** PDF, Final Draft (.fdx) and Fountain.
+- **Export:** a print-ready PDF, Fountain, or Final Draft.
+- **Send to Shot Sheet or Call Sheet** in one click. Shot Sheet opens its scene breakdown, and Call Sheet builds a section of cues for each scene.
+- **Sharing:** share a script and write together live, just like call sheets and shot sheets.
+
+### Call Sheet and Shot Sheet
+- **Import script…** in both lists your Script Writer scripts, or takes a PDF, Final Draft or Fountain file.
+- **Call Sheet files:** Call Sheet can now also import `.fountain` and `.fdx` files directly.
+
+### Update notices
+- **New-version notice:** when a newer version is published, a notice shows the version with **What's new** and **Download** buttons. **Help → Check for Updates…** checks straight away.
+- **Too-old versions:** if the sync server stops supporting an old version, the app says so, so shared projects don't silently stop syncing.
+
+## Fixes
+- **Share:** after **Share**, the People dialog now opens once the project has loaded, so you can invite people straight away. Before, it sometimes didn't appear.
+- **Fountain imports:** these now keep the title page author, contact and draft date.
+- **Final Draft imports:** these keep "Shot" lines as shots.
+
+## For maintainers
+- **Server:** redeploy it for this release (`npm run deploy` in `server/`). It adds the `script` project type and reports `minClientVersion` from `MIN_CLIENT_VERSION` in `wrangler.toml`.
+- **Release workflow:** pushing a `v*` tag now runs the tests, builds both apps, and publishes a GitHub Release with the installers and this file as the notes. This is what installed apps check for updates.
+- **Tests:** new suites for the screenplay module (formatting rules, Fountain and Final Draft round trips, pagination, sending to other systems) and the update checker.
+
+---
+
 # Production Tools 1.1.0
 
 Changes on the `online` branch since **v1.0.0**.

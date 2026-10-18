@@ -27,8 +27,30 @@
       </svg>`,
   };
 
+  LOGOS.writer = `
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <path d="M14 6h26l12 12v40H14z" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linejoin="round"/>
+        <path d="M40 6v12h12" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linejoin="round"/>
+        <line x1="21" y1="26" x2="45" y2="26" stroke="#e6cf2e" stroke-width="3" stroke-linecap="round"/>
+        <line x1="29" y1="34" x2="41" y2="34" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+        <line x1="25" y1="41" x2="45" y2="41" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+        <line x1="21" y1="49" x2="38" y2="49" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+      </svg>`;
+
   // Add new systems here: they show up as tiles on the home screen.
   const SYSTEMS = [
+    {
+      id: 'writer',
+      name: 'Script Writer',
+      tagline: 'Write screenplays, formatted automatically',
+      page: 'writer.html',
+      store: 'scripts',
+      accent: '#e6cf2e',
+      stats: (d) => {
+        const n = d && d.scripts ? d.scripts.length : 0;
+        return n ? `${n} script${n === 1 ? '' : 's'}` : 'No scripts yet';
+      },
+    },
     {
       id: 'callsheet',
       name: 'Call Sheet',
@@ -133,6 +155,7 @@
     window.Cloud.onAuth(greet);
     greet();
     window.Cloud.refreshMe();
+    window.Common.initUpdates();
 
     document.addEventListener('keydown', (e) => {
       const sys = SYSTEMS[Number(e.key) - 1];

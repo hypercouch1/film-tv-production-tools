@@ -229,6 +229,8 @@
             first = false;
             o.getState().activeId = id;
             o.render({ opened: true });
+            // Just shared: now that the project is loaded, show who to invite.
+            if (c.membersAfterOpen === id) { c.membersAfterOpen = null; c.openMembers(); }
           } else {
             o.render({ keepScroll: true, remote: true });
           }
@@ -286,8 +288,8 @@
         arr.splice(arr.indexOf(doc), 1);
         o.save();
         c.shared.unshift(project);
+        c.membersAfterOpen = project.id;
         c.open(project.id);
-        c.openMembers();
       } catch (err) {
         alert(err.message);
       }

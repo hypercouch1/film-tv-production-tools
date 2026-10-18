@@ -103,7 +103,7 @@
     const body = xml.replace(/<TitlePage>[\s\S]*?<\/TitlePage>/i, '');
     const TYPE = {
       'scene heading': 'heading', character: 'character', dialogue: 'dialogue', parenthetical: 'parenthetical',
-      transition: 'transition', action: 'action', general: 'action', shot: 'action',
+      transition: 'transition', action: 'action', general: 'action', shot: 'shot',
     };
     const elements = [];
     for (const m of body.matchAll(/<Paragraph\b([^>]*)>([\s\S]*?)<\/Paragraph>/g)) {
@@ -125,11 +125,21 @@
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/\[\[[\s\S]*?\]\]/g, '');
     let title = null;
+    const titlePage = {};
     // Fountain title page: "Key: value" lines at the top, ended by a blank line.
     const tp = src.match(/^((?:[A-Za-z ]+:.*\n(?:[ \t]+.*\n)*)+)\n/);
     if (tp && /^(title|credit|author|authors|source|draft date|contact)\s*:/im.test(tp[1])) {
-      const t = tp[1].match(/^title\s*:\s*(.*)\n?((?:[ \t]+.*\n?)*)/im);
-      if (t) title = collapse((t[1] + ' ' + t[2]).replace(/[_*]/g, '')) || null;
+      const field = (key, joiner = ' ') => {
+        const m = tp[1].match(new RegExp(`^${key}\\s*:\\s*(.*)\\n?((?:[ \\t]+.*\\n?)*)`, 'im'));
+        if (!m) return null;
+        const lines = [m[1], ...m[2].split('\n')].map((l) => l.trim().replace(/[_*]/g, '')).filter(Boolean);
+        return lines.join(joiner) || null;
+      };
+      title = field('title');
+      titlePage.credit = field('credit');
+      titlePage.author = field('authors?');
+      titlePage.draftDate = field('draft date');
+      titlePage.contact = field('contact', '\n');
       src = src.slice(tp[0].length);
     }
     const lines = src.split('\n');
@@ -166,7 +176,7 @@
       }
       prevBlank = false;
     }
-    return { elements, title, positioned: false };
+    return { elements, title, titlePage, positioned: false };
   }
 
   // ---------- Scenes ----------
@@ -208,11 +218,13 @@
     return end > 60 ? cut.slice(0, end + 1) : cut.replace(/\s+\S*$/, '') + '…';
   }
 
-  // input: { kind: 'pdf', lines } | { kind: 'fdx', xml } | { kind: 'text', text }, plus optional name
+  // input: { kind: 'pdf', lines } | { kind: 'fdx', xml } | { kind: 'text', text }
+  //      | { kind: 'elements', elements, title } (from the Script Writer), plus optional name
   function parseScript(input) {
     const parsed = input.kind === 'pdf' ? fromPdfLines(input.lines)
       : input.kind === 'fdx' ? fromFdx(input.xml)
-        : fromText(input.text);
+        : input.kind === 'elements' ? { elements: input.elements, title: input.title || null, positioned: false }
+          : fromText(input.text);
     const { elements, positioned } = parsed;
 
     const scenes = [];

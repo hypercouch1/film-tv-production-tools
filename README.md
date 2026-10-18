@@ -6,6 +6,7 @@ The app was previously called **Call Sheet**. On first launch under the new name
 
 | System | What it does |
 |---|---|
+| **Script Writer** | Write screenplays with the formatting done for you |
 | **Call Sheet** | Cue checklists for running a live show |
 | **Shot Sheet** | Shot lists for film, with a shoot-day calendar |
 
@@ -66,6 +67,36 @@ The `online` branch adds accounts and live collaboration. It needs the small Clo
 Click a tile (or press **1**, **2**) to open a system. **Ctrl/⌘+H** or the ⌂ button returns home. Upcoming shoot days from every Shot Sheet project are listed under the tiles.
 
 To add a new system, add an entry to `SYSTEMS` in `src/home.js` (and a logo in `LOGOS`). Then add its page under `src/`. If it needs saved data, add its store name to `STORES` in `main.js`.
+
+## Script Writer
+
+- **Automatic formatting:** each line is a screenplay element: Scene Heading, Action, Character, Parenthetical, Dialogue, Transition or Shot. The page lays it out with standard margins and indents in Courier.
+  - **Enter** starts the element that usually comes next: a heading leads to action, a character to dialogue, dialogue to action.
+  - **Tab** / **Shift+Tab** switch the current line's element, for example action to character, or dialogue to parenthetical. **Ctrl/⌘+1–7** pick one directly, as does the toolbar.
+  - **Auto-detection:** typing `INT.` or `EXT.` makes a scene heading, and `CUT TO:` makes a transition. Parentheticals are wrapped in brackets for you.
+  - **Suggestions:** as you type, it suggests character names, locations and times of day (`DAY`, `NIGHT`, `CONTINUOUS`…), plus transitions. Press Enter or Tab to accept one.
+  - **Layout:** page breaks are shown as you write. Scene numbers appear in both margins (switch them off in ⋯). The scene list on the left jumps to any scene.
+- **Title page:** title, credit, author, draft and contact.
+- **Import scripts you already have:** PDF, Final Draft (`.fdx`) or Fountain. Use **Import script**, drag the file in, or open a `.fountain`/`.fdx` file with the app.
+- **Export:** a print-ready PDF (with title page and page numbers), Fountain, or Final Draft.
+- **Send to:**
+  - **Shot Sheet:** opens the scene breakdown and starter-shot preview.
+  - **Call Sheet:** one section per scene, with cues for places, each character's first line, transitions and shots.
+  - Both systems also have **Import script…**, which lists your Script Writer scripts or takes a file.
+- **Sharing:** scripts can be shared and edited live like other projects. This needs the server deployed with the `script` project type (server 1.2.0 or later).
+
+## Updates
+
+The app checks GitHub Releases shortly after it starts, then every 6 hours. When a newer version exists, a notice shows the new version, with **What's new** and **Download** buttons. Dismissing it hides it until the next version comes out. **Help → Check for Updates…** checks straight away.
+
+The sync server can also require a minimum app version (`MIN_CLIENT_VERSION` in `server/wrangler.toml`). Older apps then show an **Update required** notice, because they can't sync shared projects.
+
+### Releasing a new version
+
+1. Update `version` in `package.json` and write `RELEASE_NOTES.md`.
+2. Commit, then tag and push the tag (e.g. `v1.2.0`) from GitHub Desktop or the command line.
+
+The **Build apps** workflow runs the tests, builds the Mac and Windows apps, and publishes a GitHub Release with the installers and the release notes. Installed copies then see the update notice.
 
 ## Call Sheet
 

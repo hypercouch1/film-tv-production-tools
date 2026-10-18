@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self' https: wss: http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:*">
+  <title>Script Writer</title>
+  <link rel="stylesheet" href="../node_modules/@fontsource/bebas-neue/index.css">
+  <link rel="stylesheet" href="../node_modules/@fontsource/courier-prime/400.css">
+  <link rel="stylesheet" href="../node_modules/@fontsource/courier-prime/700.css">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="collab.css">
+  <link rel="stylesheet" href="writer.css">
+</head>
+<body>
+  <div class="app" id="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-head">
+        <span class="sidebar-title">Scripts</span>
+        <button class="icon-btn" id="newBtn" title="New script (Ctrl/Cmd+N)">+</button>
+      </div>
+      <input class="search" id="search" type="search" placeholder="Search…">
+      <div class="sidebar-lists">
+        <div class="list-heading">On this computer</div>
+        <ul class="sheet-list" id="list"></ul>
+        <div id="sharedList"></div>
+      </div>
+      <div class="sidebar-foot">
+        <button class="ghost-btn" id="importBtn" title="Open a script you already have (Ctrl/Cmd+O)">Import script (PDF, FDX, Fountain)…</button>
+      </div>
+    </aside>
+
+    <main class="stage">
+      <div class="toolbar">
+        <button class="icon-btn" id="homeBtn" title="Home (Ctrl/Cmd+H)">⌂</button>
+        <button class="icon-btn" id="sidebarToggle" title="Toggle sidebar (Ctrl/Cmd+B)">☰</button>
+        <span class="system-label">Script Writer</span>
+        <div class="element-bar" id="elementBar" title="Element type for the current line"></div>
+        <div class="toolbar-spacer"></div>
+        <button class="ghost-btn" id="titlePageBtn">Title page</button>
+        <div class="menu-wrap">
+          <button class="ghost-btn" data-menu="sendMenu">Send to ▾</button>
+          <div class="menu" id="sendMenu" hidden>
+            <button data-send="shotsheet">Shot Sheet (scenes &amp; starter shots)</button>
+            <button data-send="callsheet">Call Sheet (cues per scene)</button>
+          </div>
+        </div>
+        <div class="menu-wrap">
+          <button class="ghost-btn" data-menu="exportMenu">Export ▾</button>
+          <div class="menu" id="exportMenu" hidden>
+            <button data-export="pdf">PDF (.pdf)</button>
+            <button data-export="fountain">Fountain (.fountain)</button>
+            <button data-export="fdx">Final Draft (.fdx)</button>
+          </div>
+        </div>
+        <div class="menu-wrap">
+          <button class="ghost-btn" data-menu="moreMenu">⋯</button>
+          <div class="menu" id="moreMenu" hidden>
+            <button data-more="numbers" id="numbersToggle">Hide scene numbers</button>
+            <button data-more="duplicate">Duplicate script</button>
+            <button data-more="delete" class="danger" id="deleteLabel">Delete script</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="writer">
+        <nav class="scene-nav" id="sceneNav"></nav>
+        <div class="desk" id="desk">
+          <div class="paper" id="paper"></div>
+        </div>
+      </div>
+      <div class="statusbar" id="statusbar"></div>
+    </main>
+  </div>
+
+  <div class="suggest" id="suggest" hidden></div>
+  <div id="printView"></div>
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="config.js"></script>
+  <script src="common.js"></script>
+  <script src="sync-core.js"></script>
+  <script src="cloud.js"></script>
+  <script src="collab-ui.js"></script>
+  <script src="script-parse.js"></script>
+  <script src="screenplay.js"></script>
+  <script src="writer.js"></script>
+</body>
+</html>

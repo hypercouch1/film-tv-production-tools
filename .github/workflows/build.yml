@@ -1,5 +1,7 @@
 # Builds the Mac and Windows apps on GitHub's machines.
-# Run it from the repo's Actions tab ("Run workflow"); download the results from the run's Artifacts section.
+# - "Run workflow" from the Actions tab: download the apps from the run's Artifacts section.
+# - Pushing a version tag (e.g. v1.2.0): also publishes a GitHub Release with the installers
+#   and RELEASE_NOTES.md. The app's update notice checks these releases.
 name: Build apps
 
 on:
@@ -32,6 +34,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm test
       - run: npx electron-builder ${{ matrix.args }} --publish never
         env:
           # No Apple Developer certificate: build an unsigned (ad-hoc signed) app.
@@ -40,3 +43,22 @@ jobs:
         with:
           name: ${{ matrix.name }}
           path: ${{ matrix.files }}
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Production Tools ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
+          files: artifacts/*
+          fail_on_unmatched_files: true
