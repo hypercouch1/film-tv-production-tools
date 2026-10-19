@@ -129,7 +129,15 @@ Every field is edited on the sheet itself. **Get forecast** looks up the weather
 ## Script ↔ Shot Sheet link
 
 - **Linked:** shot sheets made from a Script Writer script (**Send to → Shot Sheet**, or **Import script** → choose the script) remember which script scene each scene came from.
-- **Changes flagged:** when the script changes, a banner and "Script changed" badges show what's different. **Review changes** can then:
+- **Update automatically** (on by default, a tick box in the banner): opening the shot sheet, or coming back to the app, picks up script changes straight away.
+  - New script scenes are added in script order, with starter shots.
+  - Changed scenes get the new heading, synopsis, cast and length.
+  - Scene numbers follow the script.
+  - Your shots are never touched.
+  - Scenes deleted from the script are only flagged, never deleted.
+  - Scenes you unticked at import or deleted from the shot sheet aren't added back. **Review changes** lists them under "Left out" if you want them later.
+  - **Ctrl/⌘+Z** undoes an automatic update. It stays undone until the script changes again.
+- **Changes flagged:** with automatic updates off, a banner and "Script changed" badges show what's different. **Review changes** can then:
   - update a scene's heading, synopsis, cast and length, keeping its shots
   - mark a change as reviewed
   - add new scenes, with or without starter shots

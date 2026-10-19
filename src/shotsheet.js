@@ -343,8 +343,11 @@
     const linked = new Set(p.scenes.filter((s) => s.scriptScene).map((s) => s.scriptScene.id));
     const changed = p.scenes.filter((s) => s.scriptScene && hashOf.has(s.scriptScene.id) && hashOf.get(s.scriptScene.id) !== s.scriptScene.hash);
     const removed = p.scenes.filter((s) => s.scriptScene && !hashOf.has(s.scriptScene.id));
-    const added = links.map((l, index) => ({ ...l, index })).filter((l) => !linked.has(l.id));
-    return { script, links, changed, removed, added, total: changed.length + removed.length + added.length };
+    const ignored = new Set(p.scriptLink.ignored || []);
+    const unlinked = links.map((l, index) => ({ ...l, index })).filter((l) => !linked.has(l.id));
+    const added = unlinked.filter((l) => !ignored.has(l.id));
+    const leftOut = unlinked.filter((l) => ignored.has(l.id)); // unticked at import, or deleted here
+    return { script, links, changed, removed, added, leftOut, total: changed.length + removed.length + added.length };
   }
 
   function scriptBadge(s) {
@@ -359,7 +362,7 @@
     const st = linkStatus(p);
     if (!st) return null;
     if (st.missing) return el('div', { class: 'link-banner muted' }, `Linked to the script "${p.scriptLink.title}", which isn't on this computer.`);
-    if (!st.total) return el('div', { class: 'link-banner ok' }, `✓ Up to date with the script "${st.script.title}".`);
+    if (!st.total) return el('div', { class: 'link-banner ok' }, el('span', {}, `✓ Up to date with the script "${st.script.title}".`), autoToggle(p));
     const parts = [
       st.changed.length && `${st.changed.length} scene${st.changed.length === 1 ? '' : 's'} changed`,
       st.added.length && `${st.added.length} new`,
@@ -367,6 +370,7 @@
     ].filter(Boolean).join(', ');
     return el('div', { class: 'link-banner' },
       el('span', {}, `The script "${st.script.title}" has changed: ${parts}.`),
+      autoToggle(p),
       el('button', { class: 'primary-btn', type: 'button', onclick: openLinkReview }, 'Review changes'));
   }
 
@@ -391,7 +395,8 @@
   function addFromScript(p, l, st, withShots) {
     const one = F.normalizeProject(SP().buildProject({ ...st.parsed, scenes: [scriptScene(st, l.index)] },
       { establishing: withShots, master: withShots, coverage: withShots })).scenes[0];
-    one.scriptScene = { id: l.id, hash: l.hash };
+    one.scriptScene = { id: l.id, hash: l.hash, number: one.number };
+    p.scriptLink.ignored = (p.scriptLink.ignored || []).filter((id) => id !== l.id);
     one.castIds = [];
     one.cast = scriptScene(st, l.index).cast;
     // Place it after the scene that comes before it in the script.
@@ -400,6 +405,73 @@
     p.scenes.forEach((s, i) => { if (s.scriptScene && prevIds.has(s.scriptScene.id)) at = i + 1; });
     p.scenes.splice(at, 0, one);
     F.upgradeProject(p);
+  }
+
+  // Linked scenes follow the script's scene numbers, so a scene inserted in the script
+  // renumbers the ones after it here too. Only a number the script itself changed is
+  // applied; a number you typed here stays until the script's number changes again.
+  // Returns how many numbers changed.
+  function renumberFromScript(p, st) {
+    const indexOf = new Map(st.links.map((l, i) => [l.id, i]));
+    let n = 0;
+    for (const s of p.scenes) {
+      const ps = s.scriptScene && indexOf.has(s.scriptScene.id) && scriptScene(st, indexOf.get(s.scriptScene.id));
+      if (!ps || !ps.number) continue;
+      const last = s.scriptScene.number == null ? s.number : s.scriptScene.number;
+      s.scriptScene.number = ps.number;
+      if (ps.number !== last && s.number !== ps.number) { s.number = ps.number; n++; }
+    }
+    return n;
+  }
+
+  // Deleting a linked scene here means "not in this shot sheet": remember it, so updating
+  // from the script doesn't bring it back.
+  function forgetScriptScene(p, s) {
+    if (p.scriptLink && s.scriptScene) p.scriptLink.ignored = [...new Set([...(p.scriptLink.ignored || []), s.scriptScene.id])];
+  }
+
+  // With "Update automatically" on, new and changed script scenes are applied as soon as
+  // the shot sheet sees them (opening it, or coming back to the app). Shots are never
+  // touched, and scenes removed from the script are only flagged: deleting them could
+  // lose shots, so that stays a choice. Undo reverses the whole update, and it stays undone
+  // until the script changes again (the script version last applied is kept per project).
+  // project id → script fingerprint; kept for the session, so going to the Script Writer
+  // and back doesn't redo an update you undid.
+  const autoSeen = {
+    key: (id) => 'scriptSeen:' + id,
+    get(id) { try { return sessionStorage.getItem(this.key(id)); } catch { return null; } },
+    set(id, v) { try { sessionStorage.setItem(this.key(id), v); } catch { /* ignore */ } },
+    delete(id) { try { sessionStorage.removeItem(this.key(id)); } catch { /* ignore */ } },
+  };
+  function autoSync(p) {
+    if (!p || !p.scriptLink || !p.scriptLink.auto || collab.readOnly()) return;
+    const st = linkStatus(p);
+    if (!st || st.missing) return;
+    const print = st.links.map((l) => l.id + ':' + l.hash).join(',');
+    if (autoSeen.get(p.id) === print) return;
+    autoSeen.set(p.id, print);
+    const changed = st.changed.length, added = st.added.length;
+    st.changed.forEach((s) => updateFromScript(p, s, st));
+    st.added.forEach((l) => addFromScript(p, l, st, true));
+    const renumbered = renumberFromScript(p, st);
+    if (!changed && !added && !renumbered) return;
+    save();
+    const parts = [
+      added && `${added} new scene${added === 1 ? '' : 's'} added`,
+      changed && `${changed} scene${changed === 1 ? '' : 's'} updated`,
+      !added && !changed && 'scene numbers updated',
+    ].filter(Boolean).join(', ');
+    toast(`From the script: ${parts}. Ctrl/⌘+Z to undo.`);
+  }
+
+  function autoToggle(p) {
+    if (collab.readOnly()) return null;
+    const box = el('input', { type: 'checkbox', checked: !!p.scriptLink.auto, onchange: () => {
+      p.scriptLink.auto = box.checked;
+      if (box.checked) autoSeen.delete(p.id); // apply anything waiting right away
+      save(); render({ keepScroll: true });
+    } });
+    return el('label', { class: 'link-auto', title: 'Add new script scenes and apply script changes automatically. Your shots are never changed.' }, box, ' Update automatically');
   }
 
   async function openLinkReview() {
@@ -419,8 +491,15 @@
     function draw() {
       const now = linkStatus(active());
       body.innerHTML = '';
+      const leftOut = now.leftOut.length ? [el('h3', { class: 'panel-title' }, 'Left out of this shot sheet'),
+        el('p', { class: 'muted small' }, 'Scenes you unticked when importing or deleted here. Automatic updates skip them.'),
+        ...now.leftOut.map((l) => {
+          const ps = scriptScene(now, l.index);
+          return row(ps ? `SC ${ps.number} — ${ps.heading}` : 'Scene', ps && ps.synopsis,
+            btn('Add scene', () => { addFromScript(active(), l, now, withShots.checked); done('Scene added'); }));
+        })] : [];
       if (!now.total) {
-        body.append(el('p', {}, `Everything matches the script "${now.script.title}".`),
+        body.append(el('p', {}, `Everything matches the script "${now.script.title}".`), ...leftOut,
           el('div', { class: 'modal-foot' }, btn('Done', () => m.close(), true)));
         return;
       }
@@ -451,6 +530,7 @@
             }),
             btn('Keep (unlink)', () => { s.scriptScene = null; done('Scene kept'); }))));
       }
+      body.append(...leftOut);
       body.append(el('div', { class: 'modal-foot spread' },
         ro ? el('span') : btn('Update all and add new scenes', () => {
           const pr = active();
@@ -608,6 +688,7 @@
           el('button', { class: 'icon-btn', title: 'Move down', onclick: () => moveScene(sIdx, 1) }, '↓'),
           el('button', { class: 'icon-btn del', title: 'Delete scene', onclick: () => {
             if (s.shots.length && !confirm(`Delete scene ${s.number} and its ${s.shots.length} shots?`)) return;
+            forgetScriptScene(p, s);
             p.scenes.splice(sIdx, 1); save(); render({ keepScroll: true });
           } }, '✕')),
         el('div', { class: 'edit-row scene-extra' },
@@ -1209,6 +1290,7 @@
     // new starting point, so undo never reverses their work.
     if ((p && p.id) !== historyFor) { historyFor = p && p.id; undoHistory.reset(); }
     else if (remote) undoHistory.rebase();
+    if (!remote) autoSync(p); // after the undo baseline, so the update can be undone
     undoUi.update();
     comments.refresh();
     const shownView = view === 'summary' ? 'schedule' : view;
@@ -1409,9 +1491,11 @@
       const project = F.normalizeProject(SP.buildProject(parsed, o), o.title);
       // Remember where each scene came from, so later script changes can be flagged.
       if (link && link.scenes.length === parsed.scenes.length) {
-        project.scriptLink = { scriptId: link.scriptId, title: link.title };
         const included = [...o.include].sort((a, b) => a - b);
-        project.scenes.forEach((s, k) => { s.scriptScene = { ...link.scenes[included[k]] }; });
+        // Unticked scenes are left out on purpose, so automatic updates don't add them.
+        const ignored = link.scenes.filter((_, i) => !o.include.has(i)).map((l) => l.id);
+        project.scriptLink = { scriptId: link.scriptId, title: link.title, auto: true, ignored };
+        project.scenes.forEach((s, k) => { s.scriptScene = { ...link.scenes[included[k]], number: s.number }; });
       }
       const shots = allShots(project).length;
       m.close();

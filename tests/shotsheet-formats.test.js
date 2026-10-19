@@ -67,9 +67,14 @@ const cs2 = F.normalizeProject(JSON.parse(F.toShotsheet(cs)));
 const day2 = cs2.days[0];
 assert.deepStrictEqual([day2.crewCall, day2.parking, day2.hospital, day2.weather, day2.sunrise, day2.sunset], ['06:30', 'Lot B', 'St. Mary’s, 555-0100', 'Clear 72°', '6:41 AM', '5:58 PM']);
 assert.deepStrictEqual(day2.calls, { [cs2.characters[0].id]: '08:00', [cs2.crew[0].id]: '06:00' }, 'call times follow their people; unknown ids dropped');
-assert.deepStrictEqual(cs2.scriptLink, { scriptId: 'script-1', title: 'Night Diner' });
+assert.deepStrictEqual(cs2.scriptLink, { scriptId: 'script-1', title: 'Night Diner', auto: true, ignored: [] }, 'older links update automatically');
 assert.deepStrictEqual(cs2.scenes[0].scriptScene, { id: 'h1', hash: 'abc' });
 assert.strictEqual(cs2.comments[0].text, 'Check the lens');
+const off = F.normalizeProject(JSON.parse(F.toShotsheet({ ...cs,
+  scriptLink: { scriptId: 's', title: 'T', auto: false, ignored: ['h2', 7] },
+  scenes: [{ ...cs.scenes[0], scriptScene: { id: 'h1', hash: 'abc', number: '4' } }] })));
+assert.deepStrictEqual(off.scriptLink, { scriptId: 's', title: 'T', auto: false, ignored: ['h2'] });
+assert.deepStrictEqual(off.scenes[0].scriptScene, { id: 'h1', hash: 'abc', number: '4' });
 console.log('  ✓ call sheet details, script link and comments survive export/import');
 
 assert.deepStrictEqual(F.listItems('mug, keys\nnewspaper; ,'), ['mug', 'keys', 'newspaper']);

@@ -38,7 +38,8 @@ This release adds a screenplay editor, and the app now tells you when a new vers
 
 ### Script ↔ Shot Sheet link
 - **What's linked:** a shot sheet made from a Script Writer script stays linked to it.
-- **What it shows:** when the script changes, the shot sheet shows which scenes changed, which are new and which were removed. **Review changes** updates scenes (shots are kept), adds new scenes with starter shots, or handles removed ones.
+- **Automatic updates:** add a scene in the script and it appears in the shot sheet, with starter shots and the right scene number. Edits to existing scenes are applied too. Your shots are never changed, scenes deleted from the script are only flagged, and you can undo an update. Untick **Update automatically** to review changes by hand instead.
+- **What it shows:** the shot sheet shows which scenes changed, which are new and which were removed. **Review changes** updates scenes (shots are kept), adds new scenes with starter shots, or handles removed ones.
 - **No duplicates:** sending the same script again offers to update the existing shot sheet instead of making a duplicate.
 
 ### Script Writer

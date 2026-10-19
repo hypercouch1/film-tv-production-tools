@@ -365,6 +365,9 @@ textarea.cs-input { min-height: 2.6em; }
 }
 .link-banner.ok { background: none; border-color: var(--line); color: var(--muted); font-size: 13px; padding: 6px 12px; }
 .link-banner.muted { color: var(--muted); }
+.link-banner > span:first-child { flex: 1; }
+.link-auto { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); white-space: nowrap; cursor: pointer; }
+@media print { .link-banner { display: none; } }
 .script-badge {
   font-family: var(--body); letter-spacing: 0; font-size: 11px; margin-left: 10px; vertical-align: middle;
   background: rgba(169, 200, 240, .18); border: 1px solid #a9c8f0; color: #cfe0f7; border-radius: 999px; padding: 1px 8px; cursor: pointer;

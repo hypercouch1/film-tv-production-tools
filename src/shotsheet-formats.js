@@ -103,7 +103,7 @@
       eighths: Number.isFinite(s && s.eighths) ? s.eighths : 0,
       // The script scene this came from: its heading line id and a fingerprint of its content.
       scriptScene: s && s.scriptScene && typeof s.scriptScene.id === 'string'
-        ? { id: s.scriptScene.id, hash: str(s.scriptScene.hash) } : null,
+        ? { id: s.scriptScene.id, hash: str(s.scriptScene.hash), ...(typeof s.scriptScene.number === 'string' ? { number: s.scriptScene.number } : {}) } : null,
       shots: (Array.isArray(s && s.shots) ? s.shots : []).map((sh) => ({
         id: uid(),
         type: str(sh.type, SHOT_DEFAULTS.type),
@@ -129,7 +129,7 @@
       delete d._rawCalls;
     }
     const link = raw.scriptLink && typeof raw.scriptLink.scriptId === 'string'
-      ? { scriptId: raw.scriptLink.scriptId, title: str(raw.scriptLink.title) } : null;
+      ? { scriptId: raw.scriptLink.scriptId, title: str(raw.scriptLink.title), auto: raw.scriptLink.auto !== false, ignored: raw.scriptLink.ignored } : null;
     return upgradeProject({
       id: uid(), title: str(raw.title, fallbackTitle || 'Untitled Project'), updatedAt: Date.now(), scenes, days, characters, crew,
       scriptLink: link, comments: Array.isArray(raw.comments) ? raw.comments : [],
@@ -159,6 +159,10 @@
       d.calls = Object.fromEntries(Object.entries(calls).filter(([, v]) => typeof v === 'string'));
     });
     if (!p.scriptLink || typeof p.scriptLink.scriptId !== 'string') p.scriptLink = null;
+    else {
+      p.scriptLink.auto = p.scriptLink.auto !== false; // keep in step with the script automatically
+      p.scriptLink.ignored = idList(p.scriptLink.ignored); // script scenes left out on purpose
+    }
     // Comments: { id, target, text, author, authorId, at, resolved }
     p.comments = items(p.comments).map((c) => ({
       id: c.id, target: String(c.target || ''), text: String(c.text || ''), author: String(c.author || ''),
@@ -169,6 +173,7 @@
       texts(s, ['number', 'heading', 'synopsis', 'props', 'equipment']);
       if (!Number.isFinite(s.eighths)) s.eighths = 0;
       if (!s.scriptScene || typeof s.scriptScene.id !== 'string') s.scriptScene = null;
+      else if (s.scriptScene.number != null && typeof s.scriptScene.number !== 'string') delete s.scriptScene.number;
       s.shots = items(s.shots);
       s.shots.forEach((sh) => {
         texts(sh, ['type', 'angle', 'move', 'lens', 'cam', 'fps', 'audio', 'desc', 'notes']);
