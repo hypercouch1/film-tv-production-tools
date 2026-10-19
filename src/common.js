@@ -19,6 +19,7 @@
     checkForUpdates: async () => null,
     onUpdate: () => {},
     openRelease: (url) => window.open(url, '_blank'),
+    installUpdate: async () => false,
     onMenu: () => {},
     onFileOpened: () => {},
     platform: 'web',
@@ -254,37 +255,56 @@
     return 0;
   }
 
+  // The banner appears when a newer version is ready to install (it downloads itself in the
+  // background), or, where the app can't update itself, when there's one to download.
+  // While an automatic download is still running there's nothing to do, so no banner.
   const dismissedKey = 'update.dismissed';
-  function showUpdateBanner({ required, current, latest, url, downloadUrl, minVersion }) {
+  function showUpdateBanner({ required, current, latest, url, downloadUrl, minVersion, ready, reason }) {
     let banner = document.getElementById('updateBanner');
     if (banner) banner.remove();
     if (!required) {
-      try { if (localStorage.getItem(dismissedKey) === latest) return; } catch { /* storage unavailable */ }
+      try { if (localStorage.getItem(dismissedKey) === latest + (ready ? ':ready' : '')) return; } catch { /* storage unavailable */ }
     }
     const close = () => {
-      try { localStorage.setItem(dismissedKey, latest); } catch { /* storage unavailable */ }
+      try { localStorage.setItem(dismissedKey, latest + (ready ? ':ready' : '')); } catch { /* storage unavailable */ }
       banner.remove();
     };
+    const restart = el('button', { class: 'primary-btn', onclick: async () => {
+      restart.disabled = true; restart.textContent = 'Restarting…';
+      if (!(await api.installUpdate())) { restart.disabled = false; restart.textContent = 'Restart to update'; }
+    } }, 'Restart to update');
     banner = el('div', { class: 'update-banner' + (required ? ' required' : ''), id: 'updateBanner', role: 'status' },
       el('div', { class: 'update-text' },
-        el('strong', {}, required ? 'Update required' : `Production Tools ${latest} is available`),
+        el('strong', {}, required ? 'Update required' : ready ? `Production Tools ${latest} is ready to install` : `Production Tools ${latest} is available`),
         el('span', {}, required
           ? `This version (${current}) is too old to sync shared projects. Version ${minVersion} or newer is needed.`
-          : `You have ${current}.`)),
+          : ready ? 'Restart now, or it installs the next time you quit.' : `You have ${current}.${reason ? ' ' + reason : ''}`)),
       url ? el('button', { class: 'ghost-btn', onclick: () => api.openRelease(url) }, "What's new") : null,
-      el('button', { class: 'primary-btn', onclick: () => api.openRelease(downloadUrl || url) }, 'Download'),
-      required ? null : el('button', { class: 'icon-btn', title: 'Remind me about the next version', onclick: close }, '✕'));
+      ready ? restart : el('button', { class: 'primary-btn', onclick: () => api.openRelease(downloadUrl || url) }, 'Download'),
+      required ? null : el('button', { class: 'icon-btn', title: ready ? 'Install when I quit' : 'Remind me about the next version', onclick: close }, '✕'));
     document.body.append(banner);
+  }
+
+  function bannerFor(info) {
+    const inst = info.install || {};
+    const ready = !!(inst.auto && inst.state === 'ready');
+    const waiting = inst.auto && inst.state !== 'error' && !ready; // downloading in the background
+    return { ready, waiting, reason: inst.state === 'error' ? '' : inst.reason };
   }
 
   // Every page calls this once: shows a banner when GitHub has a newer release, or when
   // the sync server says this version is too old.
   async function initUpdates() {
     let info = null;
+    let required = null;
     try { info = await api.getUpdateInfo(); } catch { /* offline */ }
     const show = (i) => {
       info = i || info;
-      if (info && info.newer) showUpdateBanner({ current: info.current, latest: info.latest, url: info.url, downloadUrl: info.downloadUrl });
+      if (!info) return;
+      const { ready, waiting, reason } = bannerFor(info);
+      const base = { current: info.current, latest: info.latest, url: info.url, downloadUrl: info.downloadUrl, ready, reason };
+      if (required) showUpdateBanner({ ...base, required: true, minVersion: required, downloadUrl: info.downloadUrl || info.releasesUrl });
+      else if (info.newer && !waiting) showUpdateBanner(base);
     };
     show(info);
     api.onUpdate(show);
@@ -294,10 +314,8 @@
       const res = await fetch(server + '/api/health');
       const health = await res.json();
       if (health.minClientVersion && compareVersions(info.current, health.minClientVersion) < 0) {
-        showUpdateBanner({
-          required: true, current: info.current, minVersion: health.minClientVersion,
-          latest: info.latest, url: info.url, downloadUrl: info.downloadUrl || info.releasesUrl,
-        });
+        required = health.minClientVersion;
+        show(info);
       }
     } catch { /* offline: nothing to check */ }
   }

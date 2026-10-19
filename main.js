@@ -202,7 +202,7 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-// ---- Update notices ----
+// ---- Updates ----
 // The GitHub repo whose Releases are checked, from package.json "repository".
 const pkg = require('./package.json');
 const repoSlug = String((pkg.repository && pkg.repository.url) || pkg.repository || '')
@@ -216,11 +216,28 @@ async function checkForUpdatesInteractive() {
   const info = await updater.check();
   if (info.error) {
     dialog.showMessageBox(win, { type: 'warning', message: "Couldn't check for updates", detail: `${info.error}\n\nCheck your internet connection and try again.` });
+  } else if (info.newer && info.install.auto && info.install.state === 'ready') {
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'info',
+      message: `Production Tools ${info.latest} is ready to install`,
+      detail: `You have version ${info.current}. Restart now, or it installs the next time you quit.`,
+      buttons: ['Restart to update', "What's new", 'Later'],
+      defaultId: 0,
+      cancelId: 2,
+    });
+    if (response === 0) updater.installNow();
+    if (response === 1) openInBrowser(info.url);
+  } else if (info.newer && info.install.auto && info.install.state === 'downloading') {
+    dialog.showMessageBox(win, {
+      type: 'info',
+      message: `Downloading Production Tools ${info.latest}…`,
+      detail: `${info.install.progress || 0}% done. You'll be asked to restart when it's ready.`,
+    });
   } else if (info.newer) {
     const { response } = await dialog.showMessageBox(win, {
       type: 'info',
       message: `Production Tools ${info.latest} is available`,
-      detail: `You have version ${info.current}.`,
+      detail: `You have version ${info.current}.` + (info.install.error ? `\n\nThe automatic update didn't work (${info.install.error}).` : info.install.reason ? `\n\n${info.install.reason}` : ''),
       buttons: ['Download', "What's new", 'Later'],
       defaultId: 0,
       cancelId: 2,
@@ -329,6 +346,7 @@ handle('script:read', (_e, filePath) => scriptResult(readScript(String(filePath 
 // Called by a page after startup: hands over a double-clicked file meant for it.
 handle('update:get', () => updater.get());
 handle('update:check', () => updater.check());
+handle('update:install', () => updater.installNow());
 // Only GitHub links (release pages and downloads) are opened from the update banner.
 handle('update:open', (_e, url) => {
   try {

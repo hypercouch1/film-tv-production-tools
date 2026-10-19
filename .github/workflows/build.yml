@@ -1,7 +1,7 @@
 # Builds the Mac and Windows apps on GitHub's machines.
 # - "Run workflow" from the Actions tab: download the apps from the run's Artifacts section.
 # - Pushing a version tag (e.g. v1.2.0): also publishes a GitHub Release with the installers
-#   and RELEASE_NOTES.md. The app's update notice checks these releases.
+#   and RELEASE_NOTES.md. Installed apps update themselves from these releases.
 name: Build apps
 
 on:
@@ -23,13 +23,19 @@ jobs:
           - os: macos-latest
             args: --mac
             name: mac-app
+            # latest-mac.yml / latest.yml tell installed apps about the update (and its checksum).
             files: |
               dist/*.dmg
               dist/*.zip
+              dist/*.blockmap
+              dist/latest-mac.yml
           - os: windows-latest
             args: --win
             name: windows-app
-            files: dist/*.exe
+            files: |
+              dist/*.exe
+              dist/*.blockmap
+              dist/latest.yml
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5

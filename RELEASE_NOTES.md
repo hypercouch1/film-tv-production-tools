@@ -1,3 +1,24 @@
+# Production Tools 1.2.3
+
+## The app now updates itself
+
+After this version, you won't need to download updates by hand any more.
+- **Windows (installed version):** new versions download in the background. A banner says when one is ready. Click **Restart to update**, or it installs the next time you quit.
+- **Mac:** the same, as long as Production Tools is in your **Applications** folder. If you run it from somewhere else (for example straight from the disk image), the app tells you and keeps offering a **Download** button.
+- **Portable Windows version:** this can't replace itself, so it still shows a **Download** button. Use the installer to get automatic updates.
+- **Checking downloads:** every update comes from this project's GitHub Releases and is checked against its published checksum before it's installed.
+
+> **This one time:** download and install 1.2.3 by hand. After that, updates install themselves.
+
+## Shot sheets follow their script
+- **New scenes:** add a scene in the Script Writer and it appears in the linked shot sheet automatically, in the right place, with starter shots and the script's scene numbers.
+- **Edited scenes:** edits to existing scenes (heading, synopsis, cast, length) are applied too. Your shots are never changed.
+- **Removed scenes:** scenes removed from the script are only flagged, never deleted.
+- **Left-out scenes:** scenes you left out or deleted from the shot sheet aren't added back. **Review changes** lists them if you want them later.
+- **Undo and off switch:** **Ctrl/⌘+Z** undoes an automatic update. Untick **Update automatically** in the shot sheet's script banner to review changes by hand instead.
+
+---
+
 # Production Tools 1.2.2
 
 This release adds a screenplay editor, and the app now tells you when a new version is available.
@@ -38,7 +59,6 @@ This release adds a screenplay editor, and the app now tells you when a new vers
 
 ### Script ↔ Shot Sheet link
 - **What's linked:** a shot sheet made from a Script Writer script stays linked to it.
-- **Automatic updates:** add a scene in the script and it appears in the shot sheet, with starter shots and the right scene number. Edits to existing scenes are applied too. Your shots are never changed, scenes deleted from the script are only flagged, and you can undo an update. Untick **Update automatically** to review changes by hand instead.
 - **What it shows:** the shot sheet shows which scenes changed, which are new and which were removed. **Review changes** updates scenes (shots are kept), adds new scenes with starter shots, or handles removed ones.
 - **No duplicates:** sending the same script again offers to update the existing shot sheet instead of making a duplicate.
 

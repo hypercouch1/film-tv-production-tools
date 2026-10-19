@@ -87,7 +87,19 @@ To add a new system, add an entry to `SYSTEMS` in `src/home.js` (and a logo in `
 
 ## Updates
 
-The app checks GitHub Releases shortly after it starts, then every 6 hours. When a newer version exists, a notice shows the new version, with **What's new** and **Download** buttons. Dismissing it hides it until the next version comes out. **Help → Check for Updates…** checks straight away.
+The app checks GitHub Releases shortly after it starts, then every 6 hours. **Help → Check for Updates…** checks straight away.
+
+- **Windows, installed version:** [electron-updater](https://www.electron.build/auto-update) downloads the new installer in the background, using `latest.yml` from the release. A banner then offers **Restart to update**; otherwise it installs when the app quits. Code signing isn't needed.
+- **Mac:** Apple's updater only works for signed apps, so `updates.js` does it directly:
+  1. downloads the release's `-mac.zip`
+  2. checks its SHA-512 against `latest-mac.yml` from the same release
+  3. unpacks it next to the installed app and checks its bundle id and version
+  4. swaps the two once the app quits, putting the old one back if the swap fails
+
+  This needs the app in a folder it can write to (normally /Applications). Run from the disk image or a read-only folder, it shows a **Download** button instead.
+- **Portable Windows version, or any failed automatic update:** a notice with **What's new** and **Download**. Dismissing it hides it until the next version.
+
+Release file names have no spaces (`Production-Tools-Setup-1.2.3.exe` and so on). GitHub would otherwise rename them, and they'd no longer match the names in `latest.yml`.
 
 The sync server can also require a minimum app version (`MIN_CLIENT_VERSION` in `server/wrangler.toml`). Older apps then show an **Update required** notice, because they can't sync shared projects.
 
@@ -98,7 +110,7 @@ The sync server can also require a minimum app version (`MIN_CLIENT_VERSION` in 
 
    The tag and `package.json` must match: the app reports `package.json`'s version, and compares it with the newest release tag. The workflow refuses to publish a release when they differ.
 
-The **Build apps** workflow runs the tests, builds the Mac and Windows apps, and publishes a GitHub Release with the installers and the release notes. Installed copies then see the update notice.
+The **Build apps** workflow runs the tests, builds the Mac and Windows apps, and publishes a GitHub Release with the installers, the update files (`latest.yml`, `latest-mac.yml`, `*.blockmap`) and the release notes. Installed copies then update themselves.
 
 ## Working on projects
 

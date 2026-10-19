@@ -16,6 +16,7 @@ if (location.protocol === 'file:') contextBridge.exposeInMainWorld('api', {
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
   onUpdate: (cb) => ipcRenderer.on('update:status', (_e, info) => cb(info)),
   openRelease: (url) => ipcRenderer.invoke('update:open', url),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
   onMenu: (cb) => ipcRenderer.on('menu', (_e, channel, arg) => cb(channel, arg)),
   onFileOpened: (cb) => ipcRenderer.on('file:opened', (_e, file) => cb(file)),
   platform: process.platform,

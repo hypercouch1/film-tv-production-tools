@@ -1,7 +1,7 @@
 {
   "name": "production-tools",
   "productName": "Production Tools",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Scripts, call sheets, shot lists and shoot scheduling for film and TV production",
   "main": "main.js",
   "author": "Matthew Sosdorf",
@@ -20,6 +20,13 @@
   "build": {
     "appId": "com.callsheet.app",
     "productName": "Production Tools",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "hypercouch1",
+        "repo": "film-tv-production-tools"
+      }
+    ],
     "files": [
       "main.js",
       "preload.js",
@@ -58,9 +65,17 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Production-Tools-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Production-Tools-${version}-portable.${ext}"
+    },
+    "dmg": {
+      "artifactName": "Production-Tools-${version}-${arch}.${ext}"
     },
     "mac": {
+      "artifactName": "Production-Tools-${version}-${arch}-mac.${ext}",
       "target": [
         {
           "target": "dmg",
@@ -81,6 +96,7 @@
   "dependencies": {
     "@fontsource/bebas-neue": "^5.3.0",
     "@fontsource/courier-prime": "^5.3.0",
+    "electron-updater": "6.8.9",
     "pdfjs-dist": "^4.10.38"
   },
   "devDependencies": {
