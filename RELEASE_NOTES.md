@@ -1,3 +1,11 @@
+# Production Tools 1.2.5
+
+## Smoother editing together
+- **Long text stays in view:** when someone else edits a shared project while you're typing, the field you're in no longer jumps back to its start. Before, a long line would scroll back to the beginning and hide what you were typing.
+- **The page stays put:** your view no longer moves when others add or remove things above you. The field you're typing in stays at the same spot on screen. When you're not typing, whatever is at the top of your view stays there.
+
+---
+
 # Production Tools 1.2.4
 
 ## Shared projects reconnect reliably

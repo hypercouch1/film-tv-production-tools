@@ -15,32 +15,76 @@
   };
   const avatar = (name, key, cls = '') => el('span', { class: 'avatar ' + cls, style: `background:${avatarColor(key || name)}`, title: name }, initials(name));
 
-  // ---------- Keep the cursor where it was when the page re-renders ----------
+  // ---------- Keep the cursor and the view where they were when the page re-renders ----------
+  // A collaborator's edit re-renders the page, which can recreate the field you're typing in
+  // and move everything below anything they added. So, around each remote update:
+  // - the focused field gets its cursor and its own scroll position back (a long line would
+  //   otherwise jump back to its start, hiding what you're typing), and
+  // - the page scrolls so the field you're in (or, if none, the item at the top of the view)
+  //   stays at the same spot on screen, even when things are added or removed above it.
   const CONTROLS = 'input, textarea, select';
+  const SCROLLERS = '#sheet, .desk'; // the main scrolling area of each page
+  const ANCHORS = '[data-item], [data-shot], .section[id]';
+  const keyFor = (anchor) => (anchor.dataset.item ? `[data-item="${CSS.escape(anchor.dataset.item)}"]`
+    : anchor.dataset.shot ? `[data-shot="${CSS.escape(anchor.dataset.shot)}"]`
+      : '#' + CSS.escape(anchor.id));
+
   function captureFocus() {
     const a = document.activeElement;
     if (!a || !a.matches || !a.matches(CONTROLS)) return null;
     let selection = null;
-    try { if (a.selectionStart != null) selection = [a.selectionStart, a.selectionEnd]; } catch { /* not a text field */ }
-    if (a.id) return { id: a.id, selection };
+    try { if (a.selectionStart != null) selection = [a.selectionStart, a.selectionEnd, a.selectionDirection]; } catch { /* not a text field */ }
+    const view = { selection, scrollLeft: a.scrollLeft, scrollTop: a.scrollTop };
+    if (a.id) return { id: a.id, ...view };
     const anchor = a.closest('[data-item], [data-shot], [id]');
     if (!anchor) return null;
-    const key = anchor.dataset.item ? `[data-item="${CSS.escape(anchor.dataset.item)}"]`
-      : anchor.dataset.shot ? `[data-shot="${CSS.escape(anchor.dataset.shot)}"]`
-        : '#' + CSS.escape(anchor.id);
-    return { key, index: [...anchor.querySelectorAll(CONTROLS)].indexOf(a), selection };
+    return { key: keyFor(anchor), index: [...anchor.querySelectorAll(CONTROLS)].indexOf(a), ...view };
   }
+  // Returns the field that has the focus afterwards (the same one, or its replacement).
   function restoreFocus(f) {
-    if (!f) return;
+    if (!f) return null;
     let n = null;
     if (f.id) n = document.getElementById(f.id);
     else {
       const anchor = document.querySelector(f.key);
       n = anchor ? anchor.querySelectorAll(CONTROLS)[f.index] : null;
     }
-    if (!n || n === document.activeElement || n.offsetParent === null) return;
-    n.focus({ preventScroll: true });
-    if (f.selection) try { n.setSelectionRange(...f.selection); } catch { /* not a text field */ }
+    if (!n || n.offsetParent === null) return null;
+    if (n !== document.activeElement) {
+      n.focus({ preventScroll: true });
+      if (f.selection) try { n.setSelectionRange(...f.selection); } catch { /* not a text field */ }
+    }
+    n.scrollLeft = f.scrollLeft;
+    n.scrollTop = f.scrollTop;
+    return n;
+  }
+
+  function captureView() {
+    const focus = captureFocus();
+    const active = focus && document.activeElement;
+    let scroller = active && active.closest(SCROLLERS);
+    let anchorKey = null;
+    let top = 0;
+    if (scroller) {
+      top = active.getBoundingClientRect().top;
+    } else {
+      // Not typing in the sheet: keep the first item in view where it is.
+      scroller = [...document.querySelectorAll(SCROLLERS)].find((s) => s.offsetParent !== null);
+      if (scroller) {
+        const edge = scroller.getBoundingClientRect().top;
+        const first = [...scroller.querySelectorAll(ANCHORS)].find((n) => n.getBoundingClientRect().bottom > edge + 1);
+        if (first) { anchorKey = keyFor(first); top = first.getBoundingClientRect().top; } else scroller = null;
+      }
+    }
+    return { focus, scroller, anchorKey, top };
+  }
+  function restoreView(v) {
+    const field = restoreFocus(v.focus);
+    if (!v.scroller || !v.scroller.isConnected) return;
+    const target = v.anchorKey ? v.scroller.querySelector(v.anchorKey) : field && field.closest(SCROLLERS) === v.scroller ? field : null;
+    if (!target) return;
+    const delta = target.getBoundingClientRect().top - v.top;
+    if (Math.abs(delta) >= 1) v.scroller.scrollTop += delta;
   }
 
   const { modal } = window.Common;
@@ -217,7 +261,8 @@
         getLocal: () => cloudDoc(),
         onDoc: (raw) => {
           if (c.session !== session) return;
-          const focus = captureFocus();
+          const opening = first;
+          const view = opening ? null : captureView();
           const doc = o.normalize(raw);
           doc.id = id;
           doc.updatedAt = Date.now();
@@ -234,7 +279,7 @@
           } else {
             o.render({ keepScroll: true, remote: true });
           }
-          restoreFocus(focus);
+          if (view) restoreView(view);
         },
         onStatus: (s) => { if (c.session === session) { c.status = s; c.updateToolbar(); } },
         onPresence: (users, me) => { if (c.session === session) { c.presence = users; c.me = me; c.updateToolbar(); } },
