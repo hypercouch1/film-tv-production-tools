@@ -1,3 +1,14 @@
+# Production Tools 1.2.4
+
+## Shared projects reconnect reliably
+- **After idle:** after the computer sleeps, the network changes, or the app sits idle, shared projects now reconnect by themselves. Before, the connection could die without the app noticing. It kept showing **Live** while your changes waited unsent.
+- **How it notices:** the app now checks that the server is still answering. It replaces a dead connection within about half a minute, and straight away when you switch back to the app or your internet comes back.
+- **Sign-ins:** you stay signed in as long as you use the app at least once every 30 days. Before, you were signed out 30 days after signing in, however often you used it.
+
+> If you have 1.2.3, this update installs itself. It's the first one to.
+
+---
+
 # Production Tools 1.2.3
 
 ## The app now updates itself

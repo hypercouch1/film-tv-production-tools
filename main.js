@@ -77,6 +77,9 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // Keep timers running at normal speed while minimised or hidden, so live projects'
+      // keep-alive pings carry on and the connection stays up.
+      backgroundThrottling: false,
     },
   });
   // A file opened before the window existed (macOS open-file) decides the first page.

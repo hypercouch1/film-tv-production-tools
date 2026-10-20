@@ -95,11 +95,18 @@ async function authUser(req, env, url) {
   const token = tokenFrom(req, url);
   if (!token) throw new HttpError(401, 'Please sign in.');
   const tokenHash = await sha256Hex(token);
+  const now = Date.now();
   const row = await env.DB.prepare(
-    'SELECT u.id, u.email, u.name FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?'
-  ).bind(tokenHash, Date.now()).first();
+    'SELECT u.id, u.email, u.name, s.expires_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?'
+  ).bind(tokenHash, now).first();
   if (!row) throw new HttpError(401, 'Your session has expired. Please sign in again.');
-  return { ...row, sessionHash: tokenHash };
+  // Sessions last SESSION_DAYS from last use, not from sign-in: renewed at most once a day.
+  if (row.expires_at - now < (SESSION_DAYS - 1) * 86400000) {
+    await env.DB.prepare('UPDATE sessions SET expires_at = ? WHERE token_hash = ?')
+      .bind(now + SESSION_DAYS * 86400000, tokenHash).run();
+  }
+  const { expires_at: _expires, ...u } = row;
+  return { ...u, sessionHash: tokenHash };
 }
 
 // Disconnects a user's live connections in every project they belong to.

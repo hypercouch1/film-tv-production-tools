@@ -51,6 +51,10 @@
     return data;
   }
 
+  const PING_MS = 25000;          // keep-alive interval; the server answers each with 'pong'
+  const PONG_GRACE_MS = 10000;    // silence beyond a ping interval plus this = dead connection
+  const CONNECT_TIMEOUT_MS = 15000;
+
   // ---------- Live session for one shared project ----------
   // Keeps the server's confirmed copy (base) plus local batches it hasn't confirmed
   // yet (pending). Remote edits are applied to base and pending is replayed on top,
@@ -67,8 +71,51 @@
       this.clientId = null;
       this.closed = false;
       this.failures = 0;
+      this.heardAt = 0; // last message from the server (pongs included)
+      // Coming back (network returns, window shown or focused, computer wakes): check the
+      // connection now rather than waiting for the next ping or retry.
+      this.wake = () => this.checkAlive();
+      window.addEventListener('online', this.wake);
+      window.addEventListener('focus', this.wake);
+      document.addEventListener('visibilitychange', this.wake);
       // Start after the caller has stored the session, since handlers may refer to it.
       queueMicrotask(() => this.connect());
+    }
+
+    // After sleep or a network change, a connection can be dead without the browser
+    // noticing for a long time: it still looks open, so nothing reconnects and edits sit
+    // unsent. Every ping gets a pong, so silence means the connection is gone.
+    checkAlive() {
+      if (this.closed || document.visibilityState === 'hidden') return;
+      const ws = this.ws;
+      if (!ws || ws.readyState > 1) {
+        // Closed and waiting to retry: try now, from the start of the backoff.
+        if (this.state !== 'gone') { clearTimeout(this.timer); this.failures = Math.min(this.failures, 1); this.connect(); }
+        return;
+      }
+      if (ws.readyState !== 1) return; // still connecting
+      // Looks open; make sure with a quick ping.
+      const asked = Date.now();
+      try { ws.send('ping'); } catch { return this.reconnectNow(); }
+      clearTimeout(this.probe);
+      this.probe = setTimeout(() => { if (this.ws === ws && this.heardAt < asked) this.reconnectNow(); }, PONG_GRACE_MS);
+    }
+
+    // Drop the current connection without waiting for it to close, and start a new one.
+    reconnectNow() {
+      if (this.closed) return;
+      const old = this.ws;
+      this.ws = null;
+      clearInterval(this.pinger);
+      clearTimeout(this.probe);
+      clearTimeout(this.timer);
+      if (old) {
+        old.onclose = old.onmessage = old.onerror = null;
+        try { old.close(4000, 'No answer'); } catch { /* already closed */ }
+      }
+      this.status('offline');
+      this.failures = Math.max(this.failures, 1);
+      this.connect();
     }
 
     status(s) {
@@ -84,16 +131,43 @@
       let ws;
       try { ws = new WebSocket(url, ['production-tools', 'auth.' + (token || '')]); } catch { return this.retry(); }
       this.ws = ws;
-      ws.onopen = () => { this.failures = 0; };
-      ws.onmessage = (e) => this.receive(e.data);
+      clearInterval(this.pinger);
+      clearTimeout(this.connectTimer);
+      // A connection attempt that hangs (e.g. on a network that's half up) counts as failed.
+      this.connectTimer = setTimeout(() => { if (this.ws === ws && ws.readyState === 0) this.dropAndRetry(ws); }, CONNECT_TIMEOUT_MS);
+      ws.onopen = () => { this.failures = 0; this.heardAt = Date.now(); clearTimeout(this.connectTimer); };
+      ws.onmessage = (e) => { this.heardAt = Date.now(); this.receive(e.data); };
       ws.onclose = (e) => {
-        clearInterval(this.pinger);
+        clearTimeout(this.connectTimer);
         if (this.ws !== ws || this.closed) return;
+        clearInterval(this.pinger);
         if (e.code === 4001 || e.code === 4003 || e.code === 4004) return; // 'gone' message already handled
         this.status('offline');
         this.retry();
       };
-      this.pinger = setInterval(() => { if (ws.readyState === 1) ws.send('ping'); }, 25000);
+      // Keep-alive, and a check that the server still answers. Timers in a hidden window
+      // can run late, so a long gap since the last tick isn't counted against the server.
+      let lastTick = Date.now();
+      this.pinger = setInterval(() => {
+        const now = Date.now();
+        const late = now - lastTick > PING_MS * 2;
+        lastTick = now;
+        if (ws.readyState !== 1) return;
+        if (late) {
+          if (document.visibilityState !== 'hidden') return this.checkAlive(); // probably just woke up
+        } else if (now - this.heardAt > PING_MS + PONG_GRACE_MS) {
+          return this.reconnectNow(); // the last ping got no answer
+        }
+        try { ws.send('ping'); } catch { this.reconnectNow(); }
+      }, PING_MS);
+    }
+
+    dropAndRetry(ws) {
+      ws.onclose = ws.onmessage = ws.onerror = null;
+      try { ws.close(); } catch { /* not open */ }
+      if (this.ws === ws) this.ws = null;
+      this.status('offline');
+      this.retry();
     }
 
     async retry() {
@@ -113,6 +187,7 @@
 
     gone(message) {
       this.closed = true;
+      this.stopWatching();
       this.status('gone');
       this.h.onGone && this.h.onGone(message);
     }
@@ -204,9 +279,18 @@
       if (this.closed) return;
       this.captureLocal();
       this.closed = true;
+      this.stopWatching();
+      try { this.ws && this.ws.close(1000); } catch { /* already closed */ }
+    }
+
+    stopWatching() {
       clearInterval(this.pinger);
       clearTimeout(this.timer);
-      try { this.ws && this.ws.close(1000); } catch { /* already closed */ }
+      clearTimeout(this.probe);
+      clearTimeout(this.connectTimer);
+      window.removeEventListener('online', this.wake);
+      window.removeEventListener('focus', this.wake);
+      document.removeEventListener('visibilitychange', this.wake);
     }
   }
 
