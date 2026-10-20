@@ -77,6 +77,16 @@ assert.deepStrictEqual(off.scriptLink, { scriptId: 's', title: 'T', auto: false,
 assert.deepStrictEqual(off.scenes[0].scriptScene, { id: 'h1', hash: 'abc', number: '4' });
 console.log('  ✓ call sheet details, script link and comments survive export/import');
 
+// Several roles per crew member, kept in the one role field.
+assert.deepStrictEqual(F.crewRoles({ role: 'Director, Producer ,, director' }), ['Director', 'Producer'], 'trimmed, no blanks or repeats');
+assert.deepStrictEqual(F.crewRoles({ role: 'Gaffer' }), ['Gaffer'], 'single roles unchanged');
+assert.deepStrictEqual(F.crewRoles({}), []);
+const multi = F.setCrewRoles({ role: 'Director' }, ['Director', ' Editor', 'Writer, Producer', '']);
+assert.strictEqual(multi.role, 'Director, Editor, Writer, Producer');
+const rolesBack = F.normalizeProject(JSON.parse(F.toShotsheet(F.normalizeProject({ crew: [{ id: 'k', role: multi.role, name: 'Sam' }], scenes: [] }))));
+assert.deepStrictEqual(F.crewRoles(rolesBack.crew[0]), ['Director', 'Editor', 'Writer', 'Producer'], 'roles survive export/import');
+console.log('  ✓ crew members can have several roles');
+
 assert.deepStrictEqual(F.listItems('mug, keys\nnewspaper; ,'), ['mug', 'keys', 'newspaper']);
 const gear = F.shotEquipment([
   { code: '1A', shot: { move: 'Crane', cam: 'A', fps: '24', audio: 'MOS', lens: '24mm' } },

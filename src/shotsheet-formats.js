@@ -52,6 +52,23 @@
     'Hair & Makeup', 'Stunt Coordinator', 'Location Manager', 'Production Assistant', 'Catering', 'Driver',
   ];
 
+  // A crew member can have several roles ("Director, Producer"). They're kept as one
+  // comma-separated `role` string, so files, exports and older versions of the app (in
+  // shared projects) all keep working and show every role.
+  function crewRoles(k) {
+    const seen = new Set();
+    return str(k && k.role).split(',').map((r) => r.trim()).filter((r) => {
+      const key = r.toLowerCase();
+      if (!r || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+  function setCrewRoles(k, roles) {
+    k.role = crewRoles({ role: roles.join(',') }).join(', ');
+    return k;
+  }
+
   const ids = (list, map) => (Array.isArray(list) ? list.map((x) => map[x] || null).filter(Boolean) : []);
 
   // Call sheet details for a shoot day (all free text), besides date / call / wrap / location / notes.
@@ -414,7 +431,7 @@
   }
 
   window.ShotFormats = {
-    OPTIONS, SHOT_DEFAULTS, CREW_ROLES, newShot, shotLetter, normalizeProject, upgradeProject, listItems, shotEquipment,
+    OPTIONS, SHOT_DEFAULTS, CREW_ROLES, crewRoles, setCrewRoles, newShot, shotLetter, normalizeProject, upgradeProject, listItems, shotEquipment,
     importFile, toShotsheet, toBackup, toCSV, toICS,
   };
 })();

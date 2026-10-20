@@ -282,6 +282,21 @@ textarea.field { resize: vertical; }
 .people-check { font-size: 13px; color: var(--muted); white-space: nowrap; cursor: pointer; }
 .people-check input { accent-color: var(--yellow); }
 .people-row .field:disabled { opacity: .7; }
+/* Crew roles as chips */
+.role-chips {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 36px; padding: 4px 6px;
+  border: 1px solid var(--line); border-radius: 6px; background: rgba(255,255,255,.03); cursor: text;
+}
+.role-chips:focus-within { border-color: var(--yellow, #e8c547); }
+.role-chips.read-only { cursor: default; border-color: transparent; background: none; }
+.role-chip {
+  display: inline-flex; align-items: center; gap: 2px; font-size: 13px; line-height: 1.2;
+  padding: 2px 4px 2px 8px; border-radius: 999px; background: rgba(232,197,71,.15); color: #f3dc8a; white-space: nowrap;
+}
+.role-chips.read-only .role-chip { padding-right: 8px; }
+.role-x { background: none; border: 0; color: inherit; opacity: .7; cursor: pointer; font-size: 14px; padding: 0 4px; line-height: 1; }
+.role-x:hover { opacity: 1; }
+.role-add { flex: 1 1 48px; min-width: 48px; width: 48px; background: none; border: 0; color: inherit; font: inherit; font-size: 14px; outline: none; padding: 3px 2px; }
 @media (max-width: 1000px) {
   .cast-row, .crew-row { grid-template-columns: 1fr 1fr; }
   .people-cols { display: none; }

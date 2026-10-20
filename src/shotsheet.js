@@ -1062,10 +1062,53 @@
         ro ? el('span') : el('button', { class: 'icon-btn del', title: 'Remove character', onclick: () => removeItem(p.characters, c, 'castIds', c.name || 'this character') }, '✕'));
     });
 
+    // Roles as chips: type or pick one and press Enter (or a comma) to add it; × removes one.
+    function roleEditor(k) {
+      const roles = F.crewRoles(k);
+      const refocus = () => {
+        const again = document.querySelector(`.crew-row[data-item="${k.id}"] .role-add`);
+        if (again) again.focus();
+      };
+      const set = (next, { focus = true } = {}) => { F.setCrewRoles(k, next); save(); render({ keepScroll: true }); if (focus) refocus(); };
+      const add = el('input', {
+        class: 'role-add', list: 'crewRoles', placeholder: roles.length ? '+ Role' : 'Role(s)',
+        title: 'Type a role and press Enter. Add as many as this person does.',
+        onkeydown: (e) => {
+          if ((e.key === 'Enter' || e.key === ',') && add.value.trim()) { e.preventDefault(); commit(); }
+          else if (e.key === 'Backspace' && !add.value && roles.length) { e.preventDefault(); set(roles.slice(0, -1)); }
+        },
+        // Picking a suggestion from the list adds it straight away.
+        oninput: (e) => { if (e.inputType === 'insertReplacementText' || e.inputType == null) commit(); },
+        // Leaving the box keeps what was typed, and the field clicked into keeps the focus.
+        onblur: () => {
+          if (!add.value.trim()) return;
+          setTimeout(() => {
+            const to = document.activeElement;
+            const row = to && to.closest && to.closest('[data-item]');
+            const at = row ? { id: row.dataset.item, i: [...row.querySelectorAll('input, textarea, select')].indexOf(to) } : null;
+            commit({ focus: false });
+            const again = at && document.querySelector(`[data-item="${CSS.escape(at.id)}"]`);
+            const n = again && again.querySelectorAll('input, textarea, select')[at.i];
+            if (n) n.focus();
+          });
+        },
+      });
+      function commit(opts) {
+        const text = add.value.trim();
+        if (!text) return;
+        add.value = '';
+        set([...roles, ...text.split(',')], opts);
+      }
+      return el('div', { class: 'role-chips' + (ro ? ' read-only' : ''), onclick: (e) => { if (e.target === e.currentTarget && !ro) add.focus(); } },
+        ...roles.map((r, i) => el('span', { class: 'role-chip' }, r,
+          ro ? null : el('button', { type: 'button', class: 'role-x', title: `Remove ${r}`, onclick: () => set(roles.filter((_, j) => j !== i)) }, '×'))),
+        ro ? (roles.length ? null : el('span', { class: 'muted small' }, '—')) : add);
+    }
+
     const crewRows = p.crew.map((k) => {
       const scenes = p.scenes.filter((s) => s.crewIds.includes(k.id));
       return el('div', { class: 'people-row crew-row', 'data-item': k.id },
-        input(k, 'role', 'Role', { list: 'crewRoles' }),
+        roleEditor(k),
         input(k, 'name', 'Name'),
         input(k, 'contact', 'Phone or email'),
         el('label', { class: 'people-check', title: 'Needed on every shoot day (director, DP, sound…)' },
@@ -1088,7 +1131,7 @@
         el('div', { class: 'people-head' },
           el('h2', { class: 'section-title' }, `CREW (${p.crew.length})`),
           ro ? null : el('button', { class: 'ghost-btn', onclick: () => addItem(p.crew, { id: uid(), role: '', name: '', contact: '', allDays: false }) }, '+ Add crew member')),
-        el('div', { class: 'people-row people-cols crew-row' }, ...['Role', 'Name', 'Contact', '', 'Scenes', 'Shoot days', ''].map((h) => el('span', {}, h))),
+        el('div', { class: 'people-row people-cols crew-row' }, ...['Roles', 'Name', 'Contact', '', 'Scenes', 'Shoot days', ''].map((h) => el('span', {}, h))),
         ...(crewRows.length ? crewRows : [el('div', { class: 'list-note' }, 'No crew yet.')])));
   }
 
