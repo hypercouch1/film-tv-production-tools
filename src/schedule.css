@@ -1,0 +1,106 @@
+/* Schedule page: stripboard, Day Out of Days, availability (calendar and call sheets use shotsheet.css). */
+
+/* ---------- Stripboard ---------- */
+.stripboard { display: grid; gap: 14px; padding-bottom: 40px; }
+.strip-help { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.legend { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+.strip-day { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); overflow: hidden; }
+.strip-day.past { opacity: .75; }
+.strip-day.unscheduled { border-style: dashed; background: transparent; }
+.strip-day.drop-over, .strip.drop-over { outline: 2px solid var(--yellow); outline-offset: -2px; }
+.strip-day-head {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 9px 14px;
+  background: #0c0a08; border-bottom: 3px solid #000; font-size: 13px;
+}
+.strip-day.unscheduled .strip-day-head { background: transparent; border-bottom: 1px dashed var(--line); }
+.strip-day-num { font-family: var(--display); font-size: 22px; letter-spacing: 1px; color: var(--yellow); }
+.strip-day-pages { margin-left: auto; font-weight: 600; color: var(--tab); }
+.strip-day-head .link-btn { font-size: 13px; }
+.clash { color: #ffb3ad; font-weight: 600; font-size: 13px; }
+.strip-empty { padding: 12px 14px; }
+.add-day-btn { justify-self: start; }
+
+.strip {
+  display: grid; align-items: center; gap: 10px;
+  grid-template-columns: 16px 56px 34px 22px minmax(160px, 1fr) 52px 90px 92px 110px;
+  padding: 6px 12px; border-bottom: 1px solid rgba(0, 0, 0, .35); color: #1a1712; font-size: 13px;
+  cursor: grab; user-select: none;
+}
+.strip:last-child { border-bottom: 0; }
+.strip.dragging { opacity: .4; }
+.strip.split { background-image: repeating-linear-gradient(135deg, transparent 0 10px, rgba(0, 0, 0, .06) 10px 20px); }
+.strip-grip { color: rgba(0, 0, 0, .4); }
+.strip-code { font-family: var(--display); font-size: 20px; letter-spacing: .5px; }
+.strip-ie, .strip-dn { font-weight: 700; font-size: 12px; }
+.strip-set { font-weight: 700; text-transform: uppercase; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.strip-syn { font-weight: 400; text-transform: none; margin-left: 8px; opacity: .75; }
+.strip-pages, .strip-cast, .strip-shots { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.strip-move { font: 12px var(--body); background: rgba(255, 255, 255, .55); border: 1px solid rgba(0, 0, 0, .2); border-radius: 4px; padding: 2px 4px; color: #1a1712; }
+.read-only .strip { cursor: default; }
+.read-only .strip-move { display: none; }
+
+/* Strip colours (industry convention): INT day white, EXT day yellow, INT night blue, EXT night green. */
+.strip-int-d, .strip-x-d { background-color: #f1eee7; }
+.strip-ext-d, .strip-ie-d { background-color: #f3e27a; }
+.strip-int-n, .strip-x-n { background-color: #a9c8f0; }
+.strip-ext-n, .strip-ie-n { background-color: #a6dba0; }
+.legend.strip-int-d, .legend.strip-ext-d, .legend.strip-int-n, .legend.strip-ext-n { color: #1a1712; }
+
+@media (max-width: 1100px) {
+  .strip { grid-template-columns: 16px 50px 30px 20px minmax(120px, 1fr) 44px 70px; }
+  .strip-shots, .strip-move { display: none; }
+}
+
+/* ---------- Day Out of Days ---------- */
+.dood-wrap { overflow-x: auto; padding-bottom: 40px; }
+.dood-wrap .section-title { margin-top: 18px; }
+.dood { border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+.dood th, .dood td { border: 1px solid var(--line); padding: 5px 7px; text-align: center; white-space: nowrap; }
+.dood th { font-weight: 600; color: var(--tab); background: var(--panel); position: sticky; top: 0; }
+.dood .dood-name { text-align: left; min-width: 180px; position: sticky; left: 0; background: var(--panel); z-index: 1; }
+.dood .dood-day { min-width: 42px; font-size: 12px; }
+.dood .dood-tot { color: var(--muted); }
+.dood-cell { font-weight: 700; font-size: 12px; }
+.c-sw, .c-swf { background: rgba(230, 207, 46, .28); color: var(--yellow); }
+.c-w { background: rgba(230, 207, 46, .14); }
+.c-wf { background: rgba(230, 207, 46, .28); color: var(--yellow); }
+.c-h { color: var(--muted); background: repeating-linear-gradient(135deg, transparent 0 4px, rgba(255, 255, 255, .04) 4px 8px); }
+.dood-cell.off { background: rgba(255, 107, 99, .08); }
+.dood-cell.conflict { background: rgba(226, 51, 43, .55); color: #fff; }
+
+/* ---------- Availability ---------- */
+.avail-wrap { padding-bottom: 40px; }
+.avail-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.avail-head .cal-title { font-family: var(--display); font-size: 24px; letter-spacing: 1px; }
+.avail-actions { margin-left: auto; display: flex; gap: 8px; }
+.avail-scroll { overflow-x: auto; margin-top: 8px; }
+.avail { border-collapse: collapse; font-size: 12px; }
+.avail th, .avail td { border: 1px solid var(--line); text-align: center; padding: 3px; }
+.avail .av-name { text-align: left; min-width: 170px; padding: 5px 8px; position: sticky; left: 0; background: var(--panel); z-index: 1; }
+.avail .av-date { width: 30px; min-width: 30px; color: var(--muted); font-weight: 600; }
+.avail .av-date.weekend { color: #6d767e; }
+.avail .av-date.today { color: var(--yellow); }
+.avail .av-date.shoot { color: var(--text); background: rgba(155, 123, 224, .25); }
+.av-day { font-size: 10px; color: #c7b6f2; min-height: 12px; }
+.avail .av-cell { height: 30px; }
+.avail .av-cell.shoot { background: rgba(155, 123, 224, .1); }
+.avail .av-cell.editable { cursor: pointer; }
+.avail .av-cell.editable:hover { background: rgba(255, 255, 255, .06); }
+.avail .av-cell.off { background: rgba(255, 107, 99, .18); color: #ffb3ad; font-weight: 700; }
+.avail .av-cell.clash { background: rgba(226, 51, 43, .6); color: #fff; }
+.av-group td { text-align: left; font-family: var(--display); letter-spacing: 1px; font-size: 16px; color: var(--muted); padding: 8px; background: transparent; }
+.avail .av-note { min-width: 180px; }
+.avail .av-note .field { font-size: 12px; padding: 4px 6px; }
+.av-src { font-size: 11px; color: #a9c8f0; }
+
+/* ---------- Print ---------- */
+@media print {
+  .strip-move, .strip-grip, .add-day-btn, .strip-help, .avail-head .icon-btn, .avail-actions { display: none !important; }
+  .strip { color: #000; grid-template-columns: 50px 30px 20px minmax(160px, 1fr) 44px 80px 80px; }
+  .strip-day { break-inside: avoid; border-color: #999; }
+  .strip-day-head { background: #eee; color: #000; border-bottom-color: #999; }
+  .strip-day-num { color: #000; }
+  .dood th, .dood td, .avail th, .avail td { border-color: #999; color: #000; background: #fff; }
+  .dood-cell.conflict, .avail .av-cell.clash { background: #f2b8b5 !important; }
+  .avail .av-cell.off { background: #f8dcda !important; }
+}

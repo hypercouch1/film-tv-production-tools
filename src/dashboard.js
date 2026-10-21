@@ -100,7 +100,7 @@
         stats: tv ? `${withScripts} of ${plural(prod.episodes.length, 'episode')} written` : scripts.length ? scripts[0].title || 'Untitled script' : 'No script yet' },
       { id: 'shotsheet', name: 'Shot Sheet', tag: 'Scenes and shots, linked to the script', page: 'shotsheet.html', accent: '#3aa7c9',
         stats: scenes.length ? `${plural(scenes.length, 'scene')} · ${plural(shotCount, 'shot')}` : 'No scenes yet' },
-      { id: 'schedule', name: 'Schedule', tag: 'Shoot days and what gets shot when', page: 'shotsheet.html', params: { view: 'schedule' }, accent: '#9b7be0',
+      { id: 'schedule', name: 'Schedule', tag: 'Calendar, stripboard, day out of days and availability', page: 'schedule.html', accent: '#9b7be0',
         stats: days.length ? `${plural(days.length, 'shoot day')}${next ? ' · next ' + new Date(next.date + 'T00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : ''}` : 'No shoot days yet' },
       { id: 'people', name: 'Cast & Crew', tag: 'Characters, actors, crew and contacts', page: 'shotsheet.html', params: { view: 'people' }, accent: '#5fbf8f',
         stats: `${plural(prod.characters.length, 'character')} · ${prod.crew.length} crew` },
@@ -198,7 +198,7 @@
       const shotsThatDay = prod.scenes.reduce((m, s) => m + s.shots.filter((x) => x.dayId === d.id).length, 0);
       const time = d.call ? new Date(`2000-01-01T${d.call}`).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '';
       list.append(el('li', {},
-        el('a', { href: P.link('shotsheet.html', { view: 'schedule', date: d.date }) },
+        el('a', { href: P.link('schedule.html', { date: d.date }) },
           el('div', { class: 'up-date' },
             el('span', { class: 'up-mon' }, date.toLocaleDateString(undefined, { month: 'short' }).toUpperCase()),
             el('span', { class: 'up-day' }, String(date.getDate()))),

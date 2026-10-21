@@ -5,7 +5,11 @@
   const safeFileName = (s) => window.Common.safeFileName(s, 'shot-sheet');
 
   let state = { projects: [], activeId: null, sidebarHidden: false };
-  let view = 'shots';          // 'shots' | 'schedule' | 'people' | 'summary'
+  // This file runs two pages: the Shot Sheet (shot list, cast & crew) and the Schedule
+  // (calendar, stripboard, day out of days, availability and call sheets).
+  const MODE = document.body.dataset.mode === 'schedule' ? 'schedule' : 'shots';
+  const VIEWS = MODE === 'schedule' ? ['schedule', 'strips', 'dood', 'availability', 'summary'] : ['shots', 'people'];
+  let view = VIEWS[0];         // 'shots' | 'people' | 'schedule' (calendar) | 'strips' | 'dood' | 'availability' | 'summary'
   let summaryDayId = null;     // shoot day shown in the 'summary' view
   let editing = false;
   let dayFilter = 'all';       // 'all' | 'none' | <dayId>
@@ -193,7 +197,7 @@
   // The production this page belongs to, and for TV its episodes (each has its own shot list).
   function renderSidebar() {
     const p = active();
-    $('app').classList.toggle('sidebar-hidden', state.sidebarHidden);
+    $('app').classList.toggle('sidebar-hidden', MODE === 'schedule' || state.sidebarHidden);
     $('sidebarTitle').textContent = p ? p.title || 'Untitled' : 'Production';
     $('sidebarSub').textContent = p ? window.Production.typeLabel(p) + (collab.isCloud(p) ? ' · shared' : '') : '';
     const list = $('list');
@@ -227,7 +231,7 @@
   function renderHeader(p) {
     const vis = visibleShots(p);
     const done = vis.filter((x) => x.shot.done).length;
-    document.title = `${p.title} — Shot Sheet`;
+    document.title = `${p.title} — ${MODE === 'schedule' ? 'Schedule' : 'Shot Sheet'}`;
     $('title').textContent = p.title;
     $('title').hidden = editing;
     const ep = currentEpisode(p);
@@ -302,12 +306,14 @@
   const crewLabel = (k) => [k.role || 'Crew', k.name].filter(Boolean).join(' — ');
   const sceneCast = (p, s) => p.characters.filter((c) => s.castIds.includes(c.id));
   const sceneCrew = (p, s) => p.crew.filter((k) => s.crewIds.includes(k.id));
-  // Scenes being shot on a day: any scene with at least one shot scheduled that day.
-  const scenesOnDay = (p, dayId) => p.scenes.filter((s) => s.shots.some((x) => x.dayId === dayId));
+  // Scenes being shot on a day: any scene with at least one shot scheduled that day (or, for a
+  // scene without shots, scheduled on the stripboard).
+  const onDay = (s, dayId) => (s.shots.length ? s.shots.some((x) => x.dayId === dayId) : s.dayId === dayId);
+  const scenesOnDay = (p, dayId) => p.scenes.filter((s) => onDay(s, dayId));
   // The shoot days a scene is (partly) scheduled on, in date order.
-  const daysForScene = (p, s) => sortedDays(p).filter((d) => s.shots.some((x) => x.dayId === d.id));
+  const daysForScene = (p, s) => sortedDays(p).filter((d) => onDay(s, d.id));
   function daysLabel(p, scenes) {
-    const days = sortedDays(p).filter((d) => scenes.some((s) => s.shots.some((x) => x.dayId === d.id)));
+    const days = sortedDays(p).filter((d) => scenes.some((s) => onDay(s, d.id)));
     return days.map((d) => `Day ${dayNum(p, d.id)}`).join(', ');
   }
 
@@ -332,7 +338,7 @@
 
   // Script pages covered by a shoot day: every scene with at least one shot that day.
   function dayEighths(p, dayId) {
-    return p.scenes.filter((s) => s.shots.some((x) => x.dayId === dayId)).reduce((n, s) => n + (s.eighths || 0), 0);
+    return scenesOnDay(p, dayId).reduce((n, s) => n + (s.eighths || 0), 0);
   }
 
   // ---------- Link to the Script Writer script this project came from ----------
@@ -995,8 +1001,8 @@
           el('div', { class: 'panel-date' }, fmtDate(day.date, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }))),
         el('div', { class: 'panel-actions' },
           el('button', { class: 'ghost-btn', title: 'The printable call sheet for this day: call times, weather, location, scenes, cast and crew', onclick: () => openSummary(day.id) }, 'Call sheet'),
-          el('button', { class: 'primary-btn', title: 'Open this day as a checklist', onclick: () => {
-            dayFilter = day.id; view = 'shots'; editing = false; history = []; render(); $('sheet').scrollTop = 0;
+          el('button', { class: 'primary-btn', title: 'Open this day’s shots as a checklist in the Shot Sheet', onclick: () => {
+            store.flush().then(() => { location.href = window.Production.link('shotsheet.html', { day: day.id }); });
           } }, 'Run day ▶'))),
       el('div', { class: 'day-fields' },
         labeled('Date', el('input', { class: 'field', type: 'date', value: day.date, onchange: (e) => {
@@ -1026,6 +1032,7 @@
         if (!confirm(`Delete Day ${n} (${fmtDate(day.date)})? Its shots become unscheduled.`)) return;
         p.days = p.days.filter((d) => d.id !== day.id);
         all.forEach((x) => { if (x.shot.dayId === day.id) x.shot.dayId = null; });
+        p.scenes.forEach((s) => { if (s.dayId === day.id) s.dayId = null; });
         if (dayFilter === day.id) dayFilter = 'all';
         save(); render({ keepScroll: true });
       } }, 'Delete shoot day')].filter(Boolean));
@@ -1408,6 +1415,7 @@
     if (dayFilter !== 'all' && dayFilter !== 'none' && !dayById(p, dayFilter)) dayFilter = 'all';
     renderHeader(p);
     if (view === 'schedule') renderSchedule(p);
+    else if (view === 'strips' || view === 'dood' || view === 'availability') $('sections').replaceChildren(window.ScheduleViews[view](scheduleCtx(p)));
     else if (view === 'people') renderPeople(p);
     else if (view === 'summary') renderSummary(p);
     else if (editing) renderEdit(p);
@@ -1421,10 +1429,30 @@
   }
 
   function setView(v) {
+    // The other page's views: Shot List / Cast & Crew ↔ Schedule.
+    if (!VIEWS.includes(v)) {
+      store.flush().then(() => { location.href = window.Production.link(MODE === 'schedule' ? 'shotsheet.html' : 'schedule.html', { view: v }); });
+      return;
+    }
     view = v;
     if (v !== 'shots') editing = false;
+    const url = new URL(location.href);
+    url.searchParams.set('view', v);
+    window.history.replaceState(null, '', url);
     render();
     $('sheet').scrollTop = 0;
+  }
+
+  // What the stripboard, Day Out of Days and availability views need from this page.
+  function scheduleCtx(p) {
+    return {
+      p, el, uid, toast, save, render,
+      readOnly: () => collab.readOnly(),
+      sortedDays, dayNum, fmtDate, todayStr, ymd, parseYmd, sceneCode,
+      formatEighths: (n) => window.ScriptParse.formatEighths(n),
+      addDay, openSummary,
+      availabilityActions: window.Availability ? () => window.Availability.actions(p, { save, render, readOnly: collab.readOnly, isCloud: collab.isCloud(p) }) : null,
+    };
   }
 
   // ---------- Actions ----------
@@ -1651,6 +1679,9 @@
     let saved = null;
     if (kind === 'pdf' && view === 'summary' && dayById(p, summaryDayId)) {
       saved = await api.exportPdf({ defaultName: `${name} - Day ${dayNum(p, summaryDayId)} call sheet.pdf` });
+    } else if (kind === 'pdf' && MODE === 'schedule') {
+      const label = { schedule: 'Shoot days', strips: 'Stripboard', dood: 'Day Out of Days', availability: 'Availability' }[view] || 'Schedule';
+      saved = await api.exportPdf({ defaultName: `${name} - ${label}.pdf` });
     } else if (kind === 'pdf') {
       const prev = { view, editing };
       view = 'shots'; editing = false; render();
@@ -1748,7 +1779,8 @@
     const local = state.projects.some((p) => p.id === pid);
     state.activeId = local ? pid : null;
     episodeFilter = q.get('episode');
-    if (q.get('view') === 'schedule' || q.get('view') === 'people') view = q.get('view');
+    if (VIEWS.includes(q.get('view')) && q.get('view') !== 'summary') view = q.get('view');
+    if (q.get('day')) { if (MODE === 'shots') dayFilter = q.get('day'); else { summaryDayId = q.get('day'); view = 'summary'; } }
     if (q.get('date')) {
       selectedDate = q.get('date');
       const d = parseYmd(selectedDate);

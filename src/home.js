@@ -72,7 +72,7 @@
       const date = new Date(r.d.date + 'T00:00');
       const time = r.d.call ? new Date(`2000-01-01T${r.d.call}`).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '';
       list.append(el('li', {},
-        el('a', { href: `shotsheet.html?production=${encodeURIComponent(r.p.id)}&view=schedule&date=${r.d.date}` },
+        el('a', { href: `schedule.html?production=${encodeURIComponent(r.p.id)}&date=${r.d.date}` },
           el('div', { class: 'up-date' },
             el('span', { class: 'up-mon' }, date.toLocaleDateString(undefined, { month: 'short' }).toUpperCase()),
             el('span', { class: 'up-day' }, String(date.getDate()))),

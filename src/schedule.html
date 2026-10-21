@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self' https: wss: http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:*">
+  <title>Schedule</title>
+  <link rel="stylesheet" href="../node_modules/@fontsource/bebas-neue/index.css">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="shotsheet.css">
+  <link rel="stylesheet" href="schedule.css">
+  <link rel="stylesheet" href="collab.css">
+</head>
+<!-- The Schedule runs on shotsheet.js (same production data); data-mode picks its views. -->
+<body data-mode="schedule">
+  <div class="app sidebar-hidden" id="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-head prod-head">
+        <span class="sidebar-title" id="sidebarTitle">Production</span>
+        <span class="sidebar-sub" id="sidebarSub"></span>
+      </div>
+      <div class="sidebar-lists">
+        <div class="list-heading" id="listHeading" hidden>Episodes</div>
+        <ul class="sheet-list" id="list"></ul>
+      </div>
+      <div class="sidebar-foot" hidden>
+        <button class="ghost-btn" id="importScriptBtn">Import script…</button>
+        <button class="ghost-btn" id="importBtn">Import…</button>
+      </div>
+    </aside>
+
+    <main class="stage">
+      <div class="toolbar">
+        <button class="icon-btn" id="homeBtn" title="Home (Ctrl/Cmd+H)">⌂</button>
+        <button class="icon-btn" id="sidebarToggle" title="Toggle sidebar (Ctrl/Cmd+B)" hidden>☰</button>
+        <span class="system-label">Schedule</span>
+        <span class="undo-group">
+          <button class="icon-btn" id="undoBtn" title="Undo (Ctrl/Cmd+Z)">↶</button>
+          <button class="icon-btn" id="redoBtn" title="Redo (Ctrl+Y / Cmd+Shift+Z)">↷</button>
+        </span>
+        <div class="seg" id="viewToggle">
+          <button data-view="schedule">Calendar</button>
+          <button data-view="strips">Stripboard</button>
+          <button data-view="dood">Day Out of Days</button>
+          <button data-view="availability">Availability</button>
+        </div>
+        <div class="toolbar-spacer"></div>
+        <button class="icon-btn" id="commentsBtn" title="Comments (Ctrl/Cmd+Alt+M)">💬</button>
+        <button class="ghost-btn" id="resetBtn" hidden>Reset</button>
+        <div class="menu-wrap">
+          <button class="ghost-btn" data-menu="exportMenu">Export ▾</button>
+          <div class="menu" id="exportMenu" hidden>
+            <button data-export="pdf">PDF of this view (.pdf)</button>
+            <button data-export="ics">Shoot days to calendar (.ics)</button>
+          </div>
+        </div>
+        <button class="primary-btn" id="editBtn" hidden>Edit</button>
+      </div>
+
+      <div class="sheet" id="sheet">
+        <header class="sheet-header">
+          <div class="title-row">
+            <span class="live-dot cyan"></span>
+            <h1 class="sheet-title" id="title"></h1>
+            <input class="sheet-title-input" id="titleInput" hidden>
+            <span class="episode-label" id="episodeLabel" hidden></span>
+            <span class="counter" id="counter" hidden>0/0</span>
+          </div>
+          <div class="day-info" id="dayInfo" hidden></div>
+          <nav class="daybar" id="daybar" hidden></nav>
+          <nav class="tabs" id="tabs" hidden></nav>
+        </header>
+        <div class="sections" id="sections"></div>
+        <div class="hint" id="hint" hidden></div>
+      </div>
+    </main>
+  </div>
+
+  <datalist id="lensList"></datalist>
+  <datalist id="crewRoles"></datalist>
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="config.js"></script>
+  <script src="common.js"></script>
+  <script src="sync-core.js"></script>
+  <script src="cloud.js"></script>
+  <script src="collab-ui.js"></script>
+  <script src="history.js"></script>
+  <script src="comments.js"></script>
+  <script src="weather.js"></script>
+  <script src="script-parse.js"></script>
+  <script src="screenplay.js"></script>
+  <script src="shotsheet-formats.js"></script>
+  <script src="production.js"></script>
+  <script src="schedule-views.js"></script>
+  <script src="shotsheet.js"></script>
+</body>
+</html>

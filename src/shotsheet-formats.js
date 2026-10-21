@@ -112,9 +112,12 @@
       if (e && e.id) epMap[e.id] = out.id;
       return out;
     });
+    const sceneMap = {};
     const scenes = (Array.isArray(raw.scenes) ? raw.scenes : []).map((s, i) => ({
-      id: uid(),
+      id: (sceneMap[s && s.id] = uid()),
       ...(s && s.episodeId && epMap[s.episodeId] ? { episodeId: epMap[s.episodeId] } : {}),
+      // A scene without shots can still be scheduled on a day.
+      dayId: (s && s.dayId && idMap[s.dayId]) || (s && s.day && dateMap[s.day]) || null,
       number: str(s && s.number, String(i + 1)),
       heading: str(s && s.heading),
       synopsis: str(s && s.synopsis),
@@ -143,6 +146,17 @@
         done: !!sh.done,
       })),
     }));
+    // Strip order within each day, by the new scene ids.
+    const rawDays = Array.isArray(raw.days) ? raw.days.filter((d) => d && /^\d{4}-\d{2}-\d{2}$/.test(d.date)) : [];
+    days.forEach((d, i) => { d.sceneOrder = ids(rawDays[i] && rawDays[i].sceneOrder, sceneMap); });
+    // Availability is keyed by person; remap it too.
+    const availability = {};
+    if (raw.availability && typeof raw.availability === 'object') {
+      for (const [k, v] of Object.entries(raw.availability)) {
+        const id = charMap[k] || crewMap[k];
+        if (id) availability[id] = v;
+      }
+    }
     // Call times are keyed by person; remap them to the new ids.
     for (const d of days) {
       const raw = d._rawCalls && typeof d._rawCalls === 'object' ? d._rawCalls : {};
@@ -157,8 +171,25 @@
     return upgradeProject({
       id: uid(), title: str(raw.title, fallbackTitle || 'Untitled Project'), updatedAt: Date.now(), scenes, days, characters, crew,
       scriptLink: link, comments: Array.isArray(raw.comments) ? raw.comments : [],
-      type: raw.type === 'tv' ? 'tv' : 'film', episodes,
+      type: raw.type === 'tv' ? 'tv' : 'film', episodes, availability,
     });
+  }
+
+  // When people can't work: { [characterId or crewId]: { off: ['YYYY-MM-DD'], note, source, updatedAt } }.
+  // source 'web': sent through their personal availability link.
+  function cleanAvailability(raw, people) {
+    const out = {};
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+    for (const [id, a] of Object.entries(raw)) {
+      if (!people.has(id) || !a || typeof a !== 'object') continue;
+      out[id] = {
+        off: [...new Set((Array.isArray(a.off) ? a.off : []).filter((d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)))].sort(),
+        note: String(a.note == null ? '' : a.note).slice(0, 500),
+        ...(a.source === 'web' ? { source: 'web' } : {}),
+        ...(Number.isFinite(a.updatedAt) ? { updatedAt: a.updatedAt } : {}),
+      };
+    }
+    return out;
   }
 
   // A project is a production: a film, or a TV show with episodes (each with its own
@@ -201,7 +232,10 @@
       texts(d, ['call', 'wrap', 'location', 'notes', 'equipment', ...DAY_EXTRA_KEYS]);
       const calls = d.calls && typeof d.calls === 'object' && !Array.isArray(d.calls) ? d.calls : {};
       d.calls = Object.fromEntries(Object.entries(calls).filter(([, v]) => typeof v === 'string'));
+      d.sceneOrder = idList(d.sceneOrder); // strip order on the stripboard
     });
+    p.availability = cleanAvailability(p.availability, new Set([...p.characters, ...p.crew].map((x) => x.id)));
+    const dayIds = new Set(p.days.map((d) => d.id));
     if (!p.scriptLink || typeof p.scriptLink.scriptId !== 'string') p.scriptLink = null;
     else {
       p.scriptLink.auto = p.scriptLink.auto !== false; // keep in step with the script automatically
@@ -216,6 +250,7 @@
     for (const s of p.scenes) {
       texts(s, ['number', 'heading', 'synopsis', 'props', 'equipment']);
       if (!Number.isFinite(s.eighths)) s.eighths = 0;
+      if (typeof s.dayId !== 'string' || !dayIds.has(s.dayId)) s.dayId = null;
       if (!s.scriptScene || typeof s.scriptScene.id !== 'string') s.scriptScene = null;
       else if (s.scriptScene.number != null && typeof s.scriptScene.number !== 'string') delete s.scriptScene.number;
       s.shots = items(s.shots);
@@ -290,13 +325,17 @@
           date: d.date, call: d.call, wrap: d.wrap, location: d.location, notes: d.notes, equipment: d.equipment || '',
           ...DAY_EXTRA_KEYS.reduce((o, k) => ({ ...o, [k]: d[k] || '' }), {}),
           calls: d.calls || {},
+          sceneOrder: d.sceneOrder || [],
         })),
+      availability: p.availability || {},
       scriptLink: p.scriptLink || null,
       comments: p.comments || [],
       type: p.type === 'tv' ? 'tv' : 'film',
       episodes: (p.episodes || []).map(({ id, number, title, scriptLink }) => ({ id, number, title, scriptLink: scriptLink || null })),
       scenes: p.scenes.map((s) => ({
+        id: s.id,
         ...(s.episodeId ? { episodeId: s.episodeId } : {}),
+        ...(s.dayId && dateOf[s.dayId] ? { day: dateOf[s.dayId] } : {}),
         number: s.number,
         heading: s.heading,
         synopsis: s.synopsis || '',

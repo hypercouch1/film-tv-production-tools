@@ -77,6 +77,22 @@ assert.deepStrictEqual(off.scriptLink, { scriptId: 's', title: 'T', auto: false,
 assert.deepStrictEqual(off.scenes[0].scriptScene, { id: 'h1', hash: 'abc', number: '4' });
 console.log('  ✓ call sheet details, script link and comments survive export/import');
 
+// Schedule: strip order, scenes scheduled without shots, availability — survive export/import.
+const sched = F.normalizeProject({
+  characters: [{ id: 'c', name: 'Maya', actor: 'Ann' }],
+  crew: [{ id: 'k', role: 'Gaffer' }],
+  days: [{ id: 'd1', date: '2026-11-02', sceneOrder: ['s2', 's1'] }],
+  scenes: [{ id: 's1', number: '1', heading: 'A', shots: [{ day: '2026-11-02' }] }, { id: 's2', number: '2', heading: 'B', dayId: 'd1', shots: [] }],
+  availability: { c: { off: ['2026-11-02', 'bad', '2026-11-02'], note: 'mornings' }, ghost: { off: ['2026-11-03'] } },
+});
+const sched2 = F.normalizeProject(JSON.parse(F.toShotsheet(sched)));
+const [sa, sb] = sched2.scenes;
+assert.deepStrictEqual(sched2.days[0].sceneOrder, [sb.id, sa.id], 'strip order follows the scenes');
+assert.strictEqual(sb.dayId, sched2.days[0].id, 'a scene without shots keeps its day');
+assert.deepStrictEqual(sched2.availability[sched2.characters[0].id], { off: ['2026-11-02'], note: 'mornings' }, 'availability follows its person; bad dates dropped');
+assert.strictEqual(Object.keys(sched2.availability).length, 1, 'unknown people dropped');
+console.log('  ✓ schedule (strip order, availability) survives export/import');
+
 // Several roles per crew member, kept in the one role field.
 assert.deepStrictEqual(F.crewRoles({ role: 'Director, Producer ,, director' }), ['Director', 'Producer'], 'trimmed, no blanks or repeats');
 assert.deepStrictEqual(F.crewRoles({ role: 'Gaffer' }), ['Gaffer'], 'single roles unchanged');
