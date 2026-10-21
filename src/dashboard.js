@@ -111,7 +111,12 @@
           const n = (prod.elements || []).filter((e) => e.sceneIds.length).length;
           return n ? `${plural(n, 'item')} added by hand · plus script tags` : 'Tag the script, or add items per scene';
         })() },
-      { id: 'locations', name: 'Locations', tag: 'Addresses, contacts, permits and parking', soon: true },
+      { id: 'locations', name: 'Locations', tag: 'Addresses, contacts, permits and parking', page: 'locations.html', accent: '#f2994a',
+        stats: (() => {
+          const locs = prod.locations || [];
+          const pending = locs.filter((l) => l.permit === 'needed' || l.permit === 'requested').length;
+          return locs.length ? `${plural(locs.length, 'location')}${pending ? ` · ${pending} permit${pending === 1 ? '' : 's'} pending` : ''}` : 'No locations yet';
+        })() },
     ];
   }
 

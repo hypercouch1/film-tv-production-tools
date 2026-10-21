@@ -93,6 +93,25 @@ assert.deepStrictEqual(sched2.availability[sched2.characters[0].id], { off: ['20
 assert.strictEqual(Object.keys(sched2.availability).length, 1, 'unknown people dropped');
 console.log('  ✓ schedule (strip order, availability) survives export/import');
 
+// Locations: scenes match by their set; the longest matching set wins; a pick overrides.
+assert.strictEqual(F.setOf("INT. ROSIE'S DINER - BOOTH - LATER"), "ROSIE'S DINER - BOOTH");
+assert.strictEqual(F.setOf('EXT. PARKING LOT - NIGHT'), 'PARKING LOT');
+assert.strictEqual(F.setOf('I/E. CAR - DAY'), 'CAR');
+const lp = F.normalizeProject({
+  locations: [{ id: 'l1', name: "Rosie's", sets: ["Rosie's Diner"], permit: 'approved' }, { id: 'l2', name: 'Booth set', sets: ["Rosie's Diner - Booth"], permit: 'bogus' }, { id: 'l3', name: 'Lot', sets: ['Parking lot'] }],
+  scenes: [
+    { id: 'a', heading: "INT. ROSIE'S DINER - NIGHT", shots: [] },
+    { id: 'b', heading: "INT. ROSIE'S DINER - BOOTH - LATER", shots: [] },
+    { id: 'c', heading: 'EXT. PARKING LOT - NIGHT', shots: [], locationId: 'l1' },
+    { id: 'd', heading: 'EXT. BEACH - DAY', shots: [] },
+  ],
+});
+assert.deepStrictEqual(lp.scenes.map((s) => (F.locationOf(lp, s) || {}).name || null), ["Rosie's", 'Booth set', "Rosie's", null]);
+assert.strictEqual(lp.locations[1].permit, '', 'unknown permit status cleared');
+const lp2 = F.normalizeProject(JSON.parse(F.toShotsheet(lp)));
+assert.deepStrictEqual(lp2.scenes.map((s) => (F.locationOf(lp2, s) || {}).name || null), ["Rosie's", 'Booth set', "Rosie's", null], 'survives export/import');
+console.log('  ✓ locations match scenes by set, and survive export/import');
+
 // Several roles per crew member, kept in the one role field.
 assert.deepStrictEqual(F.crewRoles({ role: 'Director, Producer ,, director' }), ['Director', 'Producer'], 'trimmed, no blanks or repeats');
 assert.deepStrictEqual(F.crewRoles({ role: 'Gaffer' }), ['Gaffer'], 'single roles unchanged');

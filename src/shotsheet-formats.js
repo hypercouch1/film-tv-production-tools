@@ -86,6 +86,30 @@
     { id: 'equipment', label: 'Special equipment', color: '#e6cf2e' },
   ];
   const breakdownCategory = (id) => BREAKDOWN.find((c) => c.id === id) || null;
+
+  // Locations
+  const LOCATION_TEXT = ['name', 'address', 'contact', 'parking', 'hospital', 'power', 'permitNotes', 'cost', 'notes'];
+  const PERMITS = [['', 'Not needed / not checked'], ['needed', 'Permit needed'], ['requested', 'Permit requested'], ['approved', 'Permit approved']];
+  // The set a scene is in: its heading without INT./EXT. and the time of day.
+  const setOf = (heading) => String(heading || '')
+    .replace(/^(INT\.?\s*\/\s*EXT\.?|EXT\.?\s*\/\s*INT\.?|I\/E\.?|E\/I\.?|INT\.?|EXT\.?)\s*/i, '')
+    .replace(/\s+-\s+(DAY|NIGHT|MORNING|EVENING|AFTERNOON|DAWN|DUSK|CONTINUOUS|LATER|MOMENTS LATER|SAME|SAME TIME|SUNSET|SUNRISE)$/i, '')
+    .trim();
+  // The location a scene is shot at: chosen for the scene, or matched by its set
+  // ("ROSIE'S DINER - BOOTH" matches a location whose sets include "Rosie's Diner").
+  function locationOf(p, s) {
+    if (s.locationId) return (p.locations || []).find((l) => l.id === s.locationId) || null;
+    const set = setOf(s.heading).toLowerCase();
+    if (!set) return null;
+    let best = null, bestLen = 0;
+    for (const l of p.locations || []) {
+      for (const name of l.sets || []) {
+        const n = name.toLowerCase();
+        if ((set === n || set.startsWith(n + ' -') || set.startsWith(n + ' –')) && n.length > bestLen) { best = l; bestLen = n.length; }
+      }
+    }
+    return best;
+  }
   const elementKey = (category, name) => category + ':' + String(name || '').trim().toLowerCase();
 
   const ids = (list, map) => (Array.isArray(list) ? list.map((x) => map[x] || null).filter(Boolean) : []);
@@ -131,9 +155,16 @@
       if (e && e.id) epMap[e.id] = out.id;
       return out;
     });
+    const locMap = {};
+    const locations = (Array.isArray(raw.locations) ? raw.locations : []).filter((l) => l && typeof l === 'object').map((l) => {
+      const out = { ...l, id: uid() };
+      if (l.id) locMap[l.id] = out.id;
+      return out;
+    });
     const sceneMap = {};
     const scenes = (Array.isArray(raw.scenes) ? raw.scenes : []).map((s, i) => ({
       id: (sceneMap[s && s.id] = uid()),
+      locationId: (s && s.locationId && locMap[s.locationId]) || null,
       ...(s && s.episodeId && epMap[s.episodeId] ? { episodeId: epMap[s.episodeId] } : {}),
       // A scene without shots can still be scheduled on a day.
       dayId: (s && s.dayId && idMap[s.dayId]) || (s && s.day && dateMap[s.day]) || null,
@@ -193,6 +224,7 @@
       type: raw.type === 'tv' ? 'tv' : 'film', episodes, availability,
       elements: (Array.isArray(raw.elements) ? raw.elements : []).filter((e) => e && typeof e === 'object')
         .map((e) => ({ ...e, id: uid(), sceneIds: ids(e.sceneIds, sceneMap) })),
+      locations,
     });
   }
 
@@ -258,6 +290,17 @@
     p.availability = cleanAvailability(p.availability, new Set([...p.characters, ...p.crew].map((x) => x.id)));
     const dayIds = new Set(p.days.map((d) => d.id));
     const sceneIds = new Set(p.scenes.map((s) => s.id));
+    // Locations: { id, name, address, contact, parking, hospital, power, permit, permitNotes,
+    // cost, notes, sets: [set name] }. Scenes match a location by their set (the heading
+    // without INT./EXT. and the time) unless scene.locationId picks one.
+    p.locations = items(p.locations).map((l) => {
+      texts(l, LOCATION_TEXT);
+      l.permit = PERMITS.some(([k]) => k === l.permit) ? l.permit : '';
+      l.sets = (Array.isArray(l.sets) ? l.sets : []).filter((x) => typeof x === 'string' && x.trim()).map((x) => x.trim().slice(0, 200));
+      return l;
+    });
+    const locationIds = new Set(p.locations.map((l) => l.id));
+    p.scenes.forEach((s) => { if (typeof s.locationId !== 'string' || !locationIds.has(s.locationId)) s.locationId = null; });
     // Breakdown elements added by hand (script tags are read from the scripts):
     // { id, category, name, notes, sceneIds }. An entry with no scenes just holds notes.
     p.elements = items(p.elements).filter((e) => breakdownCategory(e.category)).map((e) => ({
@@ -357,6 +400,7 @@
         })),
       availability: p.availability || {},
       elements: (p.elements || []).map(({ category, name, notes, sceneIds }) => ({ category, name, notes, sceneIds })),
+      locations: p.locations || [],
       scriptLink: p.scriptLink || null,
       comments: p.comments || [],
       type: p.type === 'tv' ? 'tv' : 'film',
@@ -364,6 +408,7 @@
       scenes: p.scenes.map((s) => ({
         id: s.id,
         ...(s.episodeId ? { episodeId: s.episodeId } : {}),
+        ...(s.locationId ? { locationId: s.locationId } : {}),
         ...(s.dayId && dateOf[s.dayId] ? { day: dateOf[s.dayId] } : {}),
         number: s.number,
         heading: s.heading,
@@ -529,7 +574,8 @@
   }
 
   window.ShotFormats = {
-    OPTIONS, SHOT_DEFAULTS, CREW_ROLES, crewRoles, setCrewRoles, upgradeProduction, newShot, BREAKDOWN, breakdownCategory, elementKey, shotLetter, normalizeProject, upgradeProject, listItems, shotEquipment,
+    OPTIONS, SHOT_DEFAULTS, CREW_ROLES, crewRoles, setCrewRoles, upgradeProduction, newShot, BREAKDOWN, breakdownCategory, elementKey,
+    PERMITS, setOf, locationOf, shotLetter, normalizeProject, upgradeProject, listItems, shotEquipment,
     importFile, toShotsheet, toBackup, toCSV, toICS,
   };
 })();

@@ -12,6 +12,7 @@
     shots: { page: 'shotsheet.html', label: 'Shot Sheet', views: ['shots', 'people'] },
     schedule: { page: 'schedule.html', label: 'Schedule', views: ['schedule', 'strips', 'dood', 'availability', 'summary'] },
     breakdown: { page: 'breakdown.html', label: 'Breakdown', views: ['sheets', 'elements'] },
+    locations: { page: 'locations.html', label: 'Locations', views: ['locations'] },
   };
   const MODE = PAGES[document.body.dataset.mode] ? document.body.dataset.mode : 'shots';
   const VIEWS = PAGES[MODE].views;
@@ -205,7 +206,7 @@
     const p = active();
     // The Schedule covers every episode, so it has no sidebar; the Breakdown only needs one
     // for a TV show's episodes.
-    $('app').classList.toggle('sidebar-hidden', MODE === 'schedule' || (MODE === 'breakdown' && !isTv(p)) || state.sidebarHidden);
+    $('app').classList.toggle('sidebar-hidden', MODE === 'schedule' || MODE === 'locations' || (MODE === 'breakdown' && !isTv(p)) || state.sidebarHidden);
     $('sidebarTitle').textContent = p ? p.title || 'Untitled' : 'Production';
     $('sidebarSub').textContent = p ? window.Production.typeLabel(p) + (collab.isCloud(p) ? ' · shared' : '') : '';
     const list = $('list');
@@ -1193,8 +1194,29 @@
     summaryDayId = dayId;
     view = 'summary';
     editing = false;
+    fillFromLocations(active(), dayById(active(), dayId));
     render();
     $('sheet').scrollTop = 0;
+  }
+
+  // A call sheet's empty location, parking, hospital and weather place come from the
+  // locations of the day's scenes (Locations page). Anything typed on the sheet stays.
+  function fillFromLocations(p, day) {
+    if (!p || !day || collab.readOnly() || !window.LocationsViews) return;
+    const locs = window.LocationsViews.locationsFor(p, scenesOnDay(p, day.id));
+    if (!locs.length) return;
+    const join = (f) => locs.map(f).filter(Boolean).join('\n');
+    const fill = {
+      location: join((l) => [l.name, l.address].filter(Boolean).join(' — ')),
+      parking: join((l) => l.parking),
+      hospital: join((l) => l.hospital),
+      weatherPlace: (locs.find((l) => l.address) || {}).address || '',
+    };
+    let changed = false;
+    for (const [k, v] of Object.entries(fill)) {
+      if (v && !String(day[k] || '').trim()) { day[k] = v; changed = true; }
+    }
+    if (changed) save();
   }
 
   function daySummaryData(p, day) {
@@ -1441,6 +1463,7 @@
     if (view === 'schedule') renderSchedule(p);
     else if (view === 'strips' || view === 'dood' || view === 'availability') $('sections').replaceChildren(window.ScheduleViews[view](scheduleCtx(p)));
     else if (view === 'sheets' || view === 'elements') $('sections').replaceChildren(window.BreakdownViews[view](scheduleCtx(p)));
+    else if (view === 'locations') $('sections').replaceChildren(window.LocationsViews.list(scheduleCtx(p)));
     else if (view === 'people') renderPeople(p);
     else if (view === 'summary') renderSummary(p);
     else if (editing) renderEdit(p);

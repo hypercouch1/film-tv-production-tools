@@ -1,0 +1,33 @@
+/* Locations page */
+.locations { display: grid; gap: 14px; padding-bottom: 40px; }
+.loc-head { display: flex; align-items: center; justify-content: space-between; }
+.loc-loose { border: 1px dashed var(--line); border-radius: 10px; padding: 12px 14px; }
+.loc-loose-row { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(120px, 1fr) auto auto; gap: 10px; align-items: center; padding: 5px 0; border-top: 1px solid rgba(255, 255, 255, .04); }
+.loc-set { font-weight: 700; text-transform: uppercase; }
+.loc-assign { width: auto; }
+.loc-card { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 10px; background: var(--panel); padding: 12px 14px 14px; break-inside: avoid; }
+.loc-card.permit-needed { border-left-color: #f2994a; }
+.loc-card.permit-requested { border-left-color: var(--yellow); }
+.loc-card.permit-approved { border-left-color: #6fcf7a; }
+.loc-card-head { display: flex; align-items: center; gap: 12px; }
+.loc-name {
+  flex: 1; font-family: var(--display); font-size: 28px; letter-spacing: 1px; background: transparent; border: 0;
+  border-bottom: 1px solid transparent; color: var(--text); outline: none; padding: 0;
+}
+.loc-name:focus { border-bottom-color: var(--yellow); }
+.loc-days { white-space: nowrap; }
+.loc-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 8px; }
+.loc-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.loc-field.loc-wide { grid-column: span 2; }
+.loc-field > span { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); }
+.loc-field textarea.field { resize: vertical; }
+.loc-sets { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+.loc-sets .field-label { margin-right: 4px; }
+.loc-set-add { min-width: 220px; border-bottom: 1px dashed var(--line) !important; }
+.loc-scenes { margin-top: 8px; }
+@media (max-width: 1000px) { .loc-grid { grid-template-columns: 1fr 1fr; } }
+@media print {
+  .loc-card { background: #fff; color: #000; }
+  .loc-card .field, .loc-name { color: #000; border: 0; background: none; }
+  .loc-set-add, .loc-loose, .role-x, .loc-card .del { display: none !important; }
+}
