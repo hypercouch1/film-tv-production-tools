@@ -8,6 +8,9 @@ compatibility_date = "2025-09-01"
 routes = [
   { pattern = "film.prismdashboard.cc", custom_domain = true },
 ]
+# Keep the workers.dev address on: the app connects to production-hub.<you>.workers.dev
+# (adding a route switches it off unless this is set).
+workers_dev = true
 
 [vars]
 # PBKDF2 rounds for new passwords. Workers allows at most 100000.
