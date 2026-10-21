@@ -1,3 +1,10 @@
+# Production Tools 1.3.1
+
+## Fixed
+- **Post tile icon:** the Post tile on a production's home page showed "undefined" instead of its icon. It now has an icon like the other tiles.
+
+---
+
 # Production Tools 1.3.0
 
 ## Productions: everything for a film or TV show in one place
