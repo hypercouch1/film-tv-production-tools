@@ -27,8 +27,6 @@ A new **Post** page for each production:
 - **Every location** with address and map link, contact, fee, parking, nearest hospital, power, permit status and notes.
 - **Scenes match automatically** by the set in their headings; call sheets fill in the location, parking, hospital and weather place from them.
 
-> **For whoever runs the server:** this version needs the updated server. Older app versions keep working with it.
-
 ## Smoother editing together
 - **Long text stays in view:** when someone else edits a shared project while you're typing, the field you're in no longer jumps back to its start. Before, a long line would scroll back to the beginning and hide what you were typing.
 - **The page stays put:** your view no longer moves when others add or remove things above you. The field you're typing in stays at the same spot on screen. When you're not typing, whatever is at the top of your view stays there.
@@ -37,6 +35,8 @@ A new **Post** page for each production:
 - **Adding roles:** in **Cast & Crew**, one person can now hold several roles, for example Director and Writer. Type a role (or pick a suggestion) and press **Enter** to add it. Remove one with **×**, or press Backspace in the empty box to remove the last.
 - **Where they show:** every role appears on the scene crew picker, the call sheet and in exports, so someone with two jobs is listed once.
 - **Older versions:** collaborators still on an older version see the roles as "Director, Writer".
+
+> **For whoever runs the server:** this version needs the updated server. Older app versions keep working with it.
 
 ---
 

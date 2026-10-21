@@ -142,7 +142,7 @@ The sync server can also require a minimum app version (`MIN_CLIENT_VERSION` in 
 
 ### Releasing a new version
 
-1. Update `version` in `package.json` and write `RELEASE_NOTES.md`.
+1. Update `version` in `package.json` and add a `# Production Tools <version>` section at the top of `RELEASE_NOTES.md` (end it with a `---` line). The GitHub release shows only that section: what's new and changed in this update.
 2. Commit, then tag **that commit** with the same version (`version` `1.2.2` → tag `v1.2.2`) and push the tag. You can do this from GitHub Desktop or the command line.
 
    The tag and `package.json` must match: the app reports `package.json`'s version, and compares it with the newest release tag. The workflow refuses to publish a release when they differ.

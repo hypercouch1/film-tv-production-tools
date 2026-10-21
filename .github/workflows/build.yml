@@ -50,6 +50,8 @@ jobs:
             echo "::error::Tag ${GITHUB_REF_NAME} doesn't match package.json version ${version}. Update \"version\" in package.json, commit, then tag that commit."
             exit 1
           fi
+          # The release shows only this version's notes; make sure they're written.
+          node scripts/release-notes.js "${GITHUB_REF_NAME}" > /dev/null || { echo "::error::Add a '# Production Tools ${version#v}' section to RELEASE_NOTES.md."; exit 1; }
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -77,10 +79,13 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+      # Only this version's section of RELEASE_NOTES.md: what's new and changed in this update.
+      - name: Release notes for this version
+        run: node scripts/release-notes.js "${GITHUB_REF_NAME}" > release-notes.md
       # Third-party action pinned to an exact commit (v2) so a moved tag can't change what runs.
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
           name: Production Tools ${{ github.ref_name }}
-          body_path: RELEASE_NOTES.md
+          body_path: release-notes.md
           files: artifacts/*
           fail_on_unmatched_files: true
