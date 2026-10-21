@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self' https: wss: http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:*">
+  <title>Production Tools</title>
+  <link rel="stylesheet" href="../node_modules/@fontsource/bebas-neue/index.css">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="home.css">
+  <link rel="stylesheet" href="collab.css">
+</head>
+<body>
+  <div class="home">
+    <header class="home-header">
+      <a class="back-link" href="home.html" id="backLink">← All productions</a>
+      <div class="title-row">
+        <span class="live-dot"></span>
+        <h1 class="sheet-title" id="prodTitle" title="Click to rename">Production</h1>
+        <input class="sheet-title-input dash-title-input" id="prodTitleInput" hidden>
+        <span class="prod-type-pill" id="prodType"></span>
+        <div id="account"></div>
+      </div>
+      <p class="home-sub" id="homeSub"></p>
+    </header>
+
+    <section class="tiles" id="tiles"></section>
+
+    <section class="episodes" id="episodes" hidden>
+      <div class="episodes-head">
+        <h2 class="section-title">Episodes</h2>
+        <button class="ghost-btn" id="addEpisode" type="button">+ Add episode</button>
+      </div>
+      <div class="episode-list" id="episodeList"></div>
+    </section>
+
+    <section class="upcoming" id="upcoming" hidden>
+      <h2 class="section-title">Upcoming Shoots</h2>
+      <ul class="upcoming-list" id="upcomingList"></ul>
+    </section>
+
+    <section class="dash-danger" id="danger">
+      <button class="ghost-btn danger" id="deleteProduction" type="button">Delete production</button>
+    </section>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="config.js"></script>
+  <script src="common.js"></script>
+  <script src="sync-core.js"></script>
+  <script src="cloud.js"></script>
+  <script src="collab-ui.js"></script>
+  <script src="shotsheet-formats.js"></script>
+  <script src="production.js"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>

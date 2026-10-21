@@ -48,6 +48,16 @@ input { font: inherit; color: inherit; }
 .sidebar-title {
   font-family: var(--display); font-size: 22px; letter-spacing: 1px; color: var(--text);
 }
+/* Pages inside a production: the production's name heads the sidebar. */
+.sidebar-head.prod-head { flex-direction: column; align-items: flex-start; gap: 2px; padding-bottom: 14px; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+.sidebar-head.prod-head .sidebar-title { line-height: 1.05; word-break: break-word; }
+.list-heading-row { display: flex; align-items: center; justify-content: space-between; }
+.icon-btn.small-btn { width: 24px; height: 24px; font-size: 16px; line-height: 1; padding: 0; }
+.sidebar-sub { font-size: 11px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase; color: var(--muted); }
+.episode-label {
+  align-self: center; font-size: 13px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+  color: #7fd0ea; border: 1px solid #3aa7c9; border-radius: 999px; padding: 3px 10px; white-space: nowrap;
+}
 .search {
   margin: 0 12px 10px;
   padding: 7px 10px;

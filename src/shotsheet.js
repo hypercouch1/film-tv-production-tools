@@ -12,7 +12,7 @@
   let calMonth = null;         // { y, m } shown in the schedule calendar
   let selectedDate = null;     // 'YYYY-MM-DD' selected in the schedule
   let history = [];
-  let search = '';
+  let episodeFilter = null;    // TV: the episode whose shot list is shown (cast, crew and schedule cover all)
 
   // Shared (cloud) projects live on the server, so only local projects are saved here.
   const store = window.Common.createStore('shotsheets', () => ({ ...state, projects: collab.localOnly(state.projects) }));
@@ -68,7 +68,7 @@
     nounPlural: 'projects',
     getState: () => state,
     render: (opts = {}) => {
-      if (opts.opened) { dayFilter = 'all'; history = []; selectedDate = null; calMonth = null; editing = false; }
+      if (opts.opened) { dayFilter = 'all'; history = []; editing = false; }
       render(opts);
       if (opts.opened) $('sheet').scrollTop = 0;
     },
@@ -85,11 +85,10 @@
     onRoleChange: (role) => { if (role === 'viewer') editing = false; },
   });
 
-  // Opens the most recent local project, or the empty screen if there are none.
+  // Leaving a shared production (signed out, removed, deleted): back to the productions list.
   function selectFirstLocal() {
-    const local = collab.localOnly(state.projects).sort((a, b) => b.updatedAt - a.updatedAt);
     editing = false;
-    selectProject(local.length ? local[0].id : null);
+    window.Production.goPicker(store);
   }
 
   // Viewers can watch a shared project but not change it.
@@ -113,15 +112,28 @@
   const dayOnDate = (p, date) => p.days.find((d) => d.date === date);
   const dayNum = (p, id) => sortedDays(p).findIndex((d) => d.id === id) + 1;
 
+  // TV shows: each episode has its own scenes (numbered within the episode). The shot list
+  // shows one episode; production-wide views (schedule, call sheets) label scenes "2-5".
+  const isTv = (p) => p && p.type === 'tv';
+  const currentEpisode = (p) => (isTv(p) ? p.episodes.find((e) => e.id === episodeFilter) || p.episodes[0] : null);
+  const epScenes = (p) => (isTv(p) ? p.scenes.filter((s) => s.episodeId === currentEpisode(p).id) : p.scenes);
+  const epOf = (p, s) => (isTv(p) ? p.episodes.find((e) => e.id === s.episodeId) : null);
+  const sceneCode = (p, s) => { const e = epOf(p, s); return e ? `${e.number}-${s.number}` : s.number; };
+
+  // Every shot in the production (codes include the episode for TV).
   function allShots(p) {
-    return p.scenes.flatMap((sc) => sc.shots.map((shot, i) => ({ shot, scene: sc, code: sc.number + shotLetter(i) })));
+    return p.scenes.flatMap((sc) => sc.shots.map((shot, i) => ({ shot, scene: sc, code: sceneCode(p, sc) + shotLetter(i) })));
+  }
+  // The shots in the shot list being shown.
+  function epShots(p) {
+    return epScenes(p).flatMap((sc) => sc.shots.map((shot, i) => ({ shot, scene: sc, code: sc.number + shotLetter(i) })));
   }
   function matchesFilter(shot) {
     if (dayFilter === 'all') return true;
     if (dayFilter === 'none') return !shot.dayId;
     return shot.dayId === dayFilter;
   }
-  const visibleShots = (p) => allShots(p).filter((x) => matchesFilter(x.shot));
+  const visibleShots = (p) => epShots(p).filter((x) => matchesFilter(x.shot));
   const currentShot = (p) => { const x = visibleShots(p).find((v) => !v.shot.done); return x ? x.shot : null; };
   const typeName = (abbr) => (OPTIONS.type.find(([a]) => a === abbr) || [abbr, abbr])[1];
 
@@ -170,43 +182,36 @@
     }, 'Night Diner');
   }
 
-  function blankProject() {
-    return F.normalizeProject({ title: 'New Project', scenes: [{ number: '1', heading: 'INT. LOCATION - DAY', shots: [{}] }] });
-  }
-
   // ---------- Sidebar ----------
+  // The production this page belongs to, and for TV its episodes (each has its own shot list).
   function renderSidebar() {
+    const p = active();
     $('app').classList.toggle('sidebar-hidden', state.sidebarHidden);
+    $('sidebarTitle').textContent = p ? p.title || 'Untitled' : 'Production';
+    $('sidebarSub').textContent = p ? window.Production.typeLabel(p) + (collab.isCloud(p) ? ' · shared' : '') : '';
     const list = $('list');
     list.innerHTML = '';
-    const q = search.toLowerCase();
-    collab.localOnly(state.projects)
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .filter((p) => !q || p.title.toLowerCase().includes(q))
-      .forEach((p) => {
-        const shots = allShots(p);
-        const next = sortedDays(p).find((d) => d.date >= todayStr());
-        list.append(el('li', {
-          class: p.id === state.activeId ? 'active' : '',
-          onclick: () => selectProject(p.id),
-        },
-        el('div', { class: 'name' }, p.title || 'Untitled'),
-        el('div', { class: 'meta' },
-          `${shots.filter((x) => x.shot.done).length}/${shots.length} shots · ` +
-          (next ? 'next ' + fmtDate(next.date, { month: 'short', day: 'numeric' }) : relTime(p.updatedAt)))));
-      });
-    collab.renderShared($('sharedList'));
+    $('listHeading').hidden = !isTv(p);
+    if (!isTv(p)) return;
+    const cur = currentEpisode(p);
+    for (const e of p.episodes) {
+      const shots = p.scenes.filter((s) => s.episodeId === e.id).flatMap((s) => s.shots);
+      list.append(el('li', {
+        class: e === cur ? 'active' : '',
+        onclick: () => selectEpisode(e.id),
+      },
+      el('div', { class: 'name' }, window.Production.episodeLabel(e)),
+      el('div', { class: 'meta' }, `${shots.filter((x) => x.done).length}/${shots.length} shots`)));
+    }
   }
 
-  // Selects a project on this computer (shared ones are opened through collab.open).
-  function selectProject(id) {
-    collab.leave();
-    state.activeId = id;
-    dayFilter = 'all';
+  function selectEpisode(id) {
+    episodeFilter = id;
     history = [];
-    selectedDate = null;
-    calMonth = null;
-    save();
+    dayFilter = 'all';
+    const url = new URL(location.href);
+    url.searchParams.set('episode', id);
+    window.history.replaceState(null, '', url);
     render();
     $('sheet').scrollTop = 0;
   }
@@ -215,8 +220,12 @@
   function renderHeader(p) {
     const vis = visibleShots(p);
     const done = vis.filter((x) => x.shot.done).length;
+    document.title = `${p.title} — Shot Sheet`;
     $('title').textContent = p.title;
     $('title').hidden = editing;
+    const ep = currentEpisode(p);
+    $('episodeLabel').hidden = !ep || view === 'people' || view === 'schedule' || view === 'summary';
+    if (ep) $('episodeLabel').textContent = window.Production.episodeLabel(ep);
     const ti = $('titleInput');
     ti.hidden = !editing;
     if (editing && document.activeElement !== ti) ti.value = p.title;
@@ -235,7 +244,7 @@
     }, label, sub ? el('span', { class: 'chip-sub' }, sub) : null));
     chip('all', 'ALL SHOTS');
     sortedDays(p).forEach((d, i) => chip(d.id, `DAY ${i + 1}`, fmtDate(d.date)));
-    if (allShots(p).some((x) => !x.shot.dayId) && p.days.length) chip('none', 'UNSCHEDULED');
+    if (epShots(p).some((x) => !x.shot.dayId) && p.days.length) chip('none', 'UNSCHEDULED');
 
     // Info line for the filtered day (also shows on PDFs)
     const info = $('dayInfo');
@@ -256,7 +265,7 @@
     const tabs = $('tabs');
     tabs.innerHTML = '';
     tabs.hidden = view !== 'shots';
-    p.scenes.forEach((s) => {
+    epScenes(p).forEach((s) => {
       const shots = s.shots.filter(matchesFilter);
       if (!editing && !shots.length) return;
       tabs.append(el('button', {
@@ -333,17 +342,22 @@
     } catch { scripts = []; }
   }
 
+  // The script link for the shot list being shown: the film's, or the current episode's.
+  const linkOf = (p) => (!p ? null : isTv(p) ? currentEpisode(p).scriptLink : p.scriptLink);
+  const setLinkOf = (p, link) => { if (isTv(p)) currentEpisode(p).scriptLink = link; else p.scriptLink = link; };
+
   function linkStatus(p) {
-    if (!p || !p.scriptLink) return null;
-    const raw = scripts.find((d) => d.id === p.scriptLink.scriptId);
+    if (!p || !linkOf(p)) return null;
+    const raw = scripts.find((d) => d.id === linkOf(p).scriptId);
     if (!raw) return { missing: true };
     const script = SW().normalizeDoc(raw);
     const links = SW().sceneLinks(script);
     const hashOf = new Map(links.map((l) => [l.id, l.hash]));
-    const linked = new Set(p.scenes.filter((s) => s.scriptScene).map((s) => s.scriptScene.id));
-    const changed = p.scenes.filter((s) => s.scriptScene && hashOf.has(s.scriptScene.id) && hashOf.get(s.scriptScene.id) !== s.scriptScene.hash);
-    const removed = p.scenes.filter((s) => s.scriptScene && !hashOf.has(s.scriptScene.id));
-    const ignored = new Set(p.scriptLink.ignored || []);
+    const scenes = epScenes(p);
+    const linked = new Set(scenes.filter((s) => s.scriptScene).map((s) => s.scriptScene.id));
+    const changed = scenes.filter((s) => s.scriptScene && hashOf.has(s.scriptScene.id) && hashOf.get(s.scriptScene.id) !== s.scriptScene.hash);
+    const removed = scenes.filter((s) => s.scriptScene && !hashOf.has(s.scriptScene.id));
+    const ignored = new Set(linkOf(p).ignored || []);
     const unlinked = links.map((l, index) => ({ ...l, index })).filter((l) => !linked.has(l.id));
     const added = unlinked.filter((l) => !ignored.has(l.id));
     const leftOut = unlinked.filter((l) => ignored.has(l.id)); // unticked at import, or deleted here
@@ -361,7 +375,7 @@
   function linkBanner(p) {
     const st = linkStatus(p);
     if (!st) return null;
-    if (st.missing) return el('div', { class: 'link-banner muted' }, `Linked to the script "${p.scriptLink.title}", which isn't on this computer.`);
+    if (st.missing) return el('div', { class: 'link-banner muted' }, `Linked to the script "${linkOf(p).title}", which isn't on this computer.`);
     if (!st.total) return el('div', { class: 'link-banner ok' }, el('span', {}, `✓ Up to date with the script "${st.script.title}".`), autoToggle(p));
     const parts = [
       st.changed.length && `${st.changed.length} scene${st.changed.length === 1 ? '' : 's'} changed`,
@@ -396,13 +410,16 @@
     const one = F.normalizeProject(SP().buildProject({ ...st.parsed, scenes: [scriptScene(st, l.index)] },
       { establishing: withShots, master: withShots, coverage: withShots })).scenes[0];
     one.scriptScene = { id: l.id, hash: l.hash, number: one.number };
-    p.scriptLink.ignored = (p.scriptLink.ignored || []).filter((id) => id !== l.id);
+    linkOf(p).ignored = (linkOf(p).ignored || []).filter((id) => id !== l.id);
     one.castIds = [];
     one.cast = scriptScene(st, l.index).cast;
-    // Place it after the scene that comes before it in the script.
+    if (isTv(p)) one.episodeId = currentEpisode(p).id;
+    // Place it after the scene that comes before it in the script (or before the
+    // episode's first scene).
     const prevIds = new Set(st.links.slice(0, l.index).map((x) => x.id));
-    let at = 0;
-    p.scenes.forEach((s, i) => { if (s.scriptScene && prevIds.has(s.scriptScene.id)) at = i + 1; });
+    const mine = epScenes(p);
+    let at = mine.length ? p.scenes.indexOf(mine[0]) : p.scenes.length;
+    p.scenes.forEach((s, i) => { if (mine.includes(s) && s.scriptScene && prevIds.has(s.scriptScene.id)) at = i + 1; });
     p.scenes.splice(at, 0, one);
     F.upgradeProject(p);
   }
@@ -414,7 +431,7 @@
   function renumberFromScript(p, st) {
     const indexOf = new Map(st.links.map((l, i) => [l.id, i]));
     let n = 0;
-    for (const s of p.scenes) {
+    for (const s of epScenes(p)) {
       const ps = s.scriptScene && indexOf.has(s.scriptScene.id) && scriptScene(st, indexOf.get(s.scriptScene.id));
       if (!ps || !ps.number) continue;
       const last = s.scriptScene.number == null ? s.number : s.scriptScene.number;
@@ -427,7 +444,7 @@
   // Deleting a linked scene here means "not in this shot sheet": remember it, so updating
   // from the script doesn't bring it back.
   function forgetScriptScene(p, s) {
-    if (p.scriptLink && s.scriptScene) p.scriptLink.ignored = [...new Set([...(p.scriptLink.ignored || []), s.scriptScene.id])];
+    if (linkOf(p) && s.scriptScene) linkOf(p).ignored = [...new Set([...(linkOf(p).ignored || []), s.scriptScene.id])];
   }
 
   // With "Update automatically" on, new and changed script scenes are applied as soon as
@@ -444,12 +461,13 @@
     delete(id) { try { sessionStorage.removeItem(this.key(id)); } catch { /* ignore */ } },
   };
   function autoSync(p) {
-    if (!p || !p.scriptLink || !p.scriptLink.auto || collab.readOnly()) return;
+    if (!p || !linkOf(p) || !linkOf(p).auto || collab.readOnly()) return;
     const st = linkStatus(p);
     if (!st || st.missing) return;
     const print = st.links.map((l) => l.id + ':' + l.hash).join(',');
-    if (autoSeen.get(p.id) === print) return;
-    autoSeen.set(p.id, print);
+    const seenKey = p.id + (isTv(p) ? ':' + currentEpisode(p).id : '');
+    if (autoSeen.get(seenKey) === print) return;
+    autoSeen.set(seenKey, print);
     const changed = st.changed.length, added = st.added.length;
     st.changed.forEach((s) => updateFromScript(p, s, st));
     st.added.forEach((l) => addFromScript(p, l, st, true));
@@ -466,9 +484,9 @@
 
   function autoToggle(p) {
     if (collab.readOnly()) return null;
-    const box = el('input', { type: 'checkbox', checked: !!p.scriptLink.auto, onchange: () => {
-      p.scriptLink.auto = box.checked;
-      if (box.checked) autoSeen.delete(p.id); // apply anything waiting right away
+    const box = el('input', { type: 'checkbox', checked: !!linkOf(p).auto, onchange: () => {
+      linkOf(p).auto = box.checked;
+      if (box.checked) autoSeen.delete(p.id + (isTv(p) ? ':' + currentEpisode(p).id : '')); // apply anything waiting right away
       save(); render({ keepScroll: true });
     } });
     return el('label', { class: 'link-auto', title: 'Add new script scenes and apply script changes automatically. Your shots are never changed.' }, box, ' Update automatically');
@@ -550,7 +568,7 @@
     if (banner) wrap.append(banner);
     const cur = currentShot(p);
     let any = false;
-    for (const s of p.scenes) {
+    for (const s of epScenes(p)) {
       const ul = el('ul', { class: 'items' });
       s.shots.forEach((shot, i) => {
         if (!matchesFilter(shot)) return;
@@ -663,7 +681,7 @@
 
     const dayOptions = [['', 'Unscheduled'], ...sortedDays(p).map((d, i) => [d.id, `Day ${i + 1} · ${fmtDate(d.date)}`])];
 
-    p.scenes.forEach((s, sIdx) => {
+    epScenes(p).forEach((s) => {
       const shotsWrap = el('div', { class: 'edit-items' });
       s.shots.forEach((shot, i) => shotsWrap.append(editShotRow(p, s, shot, i, dayOptions)));
       shotsWrap.addEventListener('dragover', (e) => { if (dragData) e.preventDefault(); });
@@ -684,12 +702,12 @@
             class: 'edit-input section-input', value: s.heading, placeholder: 'INT. LOCATION - DAY',
             oninput: (e) => { s.heading = e.target.value; save(); },
           }),
-          el('button', { class: 'icon-btn', title: 'Move up', onclick: () => moveScene(sIdx, -1) }, '↑'),
-          el('button', { class: 'icon-btn', title: 'Move down', onclick: () => moveScene(sIdx, 1) }, '↓'),
+          el('button', { class: 'icon-btn', title: 'Move up', onclick: () => moveScene(s, -1) }, '↑'),
+          el('button', { class: 'icon-btn', title: 'Move down', onclick: () => moveScene(s, 1) }, '↓'),
           el('button', { class: 'icon-btn del', title: 'Delete scene', onclick: () => {
             if (s.shots.length && !confirm(`Delete scene ${s.number} and its ${s.shots.length} shots?`)) return;
             forgetScriptScene(p, s);
-            p.scenes.splice(sIdx, 1); save(); render({ keepScroll: true });
+            p.scenes.splice(p.scenes.indexOf(s), 1); save(); render({ keepScroll: true });
           } }, '✕')),
         el('div', { class: 'edit-row scene-extra' },
           el('input', {
@@ -715,8 +733,10 @@
     });
 
     wrap.append(el('button', { class: 'add-section-btn', onclick: () => {
-      const nums = p.scenes.map((s) => parseInt(s.number, 10)).filter((n) => !isNaN(n));
+      const nums = epScenes(p).map((s) => parseInt(s.number, 10)).filter((n) => !isNaN(n));
       const s = { id: uid(), number: String(nums.length ? Math.max(...nums) + 1 : 1), heading: '', shots: [F.newShot()] };
+      if (isTv(p)) s.episodeId = currentEpisode(p).id;
+      F.upgradeProject({ ...p, scenes: [s] }); // fills in the scene's fields
       p.scenes.push(s); save(); render({ keepScroll: true });
       const inp = document.querySelector(`#sec-${s.id} .section-input:not(.scene-num)`);
       if (inp) { inp.scrollIntoView({ block: 'center' }); inp.focus(); }
@@ -833,12 +853,15 @@
     save(); render({ keepScroll: true });
   }
 
-  function moveScene(idx, dir) {
+  // Swaps a scene with its neighbour in the shot list being shown (same episode for TV).
+  function moveScene(s, dir) {
     const p = active();
-    const to = idx + dir;
-    if (to < 0 || to >= p.scenes.length) return;
-    const [s] = p.scenes.splice(idx, 1);
-    p.scenes.splice(to, 0, s);
+    const list = epScenes(p);
+    const other = list[list.indexOf(s) + dir];
+    if (!other) return;
+    const a = p.scenes.indexOf(s);
+    const b = p.scenes.indexOf(other);
+    [p.scenes[a], p.scenes[b]] = [p.scenes[b], p.scenes[a]];
     save(); render({ keepScroll: true });
   }
 
@@ -1023,7 +1046,7 @@
     const wrap = $('sections');
     wrap.innerHTML = '';
     const ro = collab.readOnly();
-    const sceneNums = (scenes) => (scenes.length ? 'SC ' + scenes.map((s) => s.number).join(', ') : '—');
+    const sceneNums = (scenes) => (scenes.length ? 'SC ' + scenes.map((s) => sceneCode(p, s)).join(', ') : '—');
 
     function input(item, keyName, placeholder, extra = {}) {
       return el('input', {
@@ -1295,7 +1318,7 @@
 
         el('h3', {}, 'Scenes'),
         table(['SC', 'Set & description', 'D/N', 'Cast', 'Pages', 'Shots'], d.scenes.map((s) => [
-          s.number,
+          sceneCode(p, s),
           el('div', {}, el('strong', {}, s.heading || 'Untitled scene'), s.synopsis ? el('div', { class: 'sum-sub' }, s.synopsis) : null),
           dayNight(s.heading),
           sceneCast(p, s).map(castNo).join(', ') || '—',
@@ -1305,7 +1328,7 @@
 
         el('h3', {}, 'Cast'),
         table(['#', 'Character', 'Actor', 'Call', 'Scenes', 'Contact'], d.cast.map(({ c, scenes }) => [
-          String(castNo(c)), c.name || 'Unnamed', c.actor || '—', callInput(c.id, day.call), scenes.map((s) => s.number).join(', '), c.contact || '—',
+          String(castNo(c)), c.name || 'Unnamed', c.actor || '—', callInput(c.id, day.call), scenes.map((s) => sceneCode(p, s)).join(', '), c.contact || '—',
         ]), 'No cast picked for these scenes. Choose cast per scene in the Shot List (Edit mode).'),
 
         el('h3', {}, 'Crew'),
@@ -1343,21 +1366,26 @@
     $('editBtn').hidden = view !== 'shots' || collab.readOnly();
     $('resetBtn').hidden = editing || view !== 'shots' || collab.readOnly();
     $('app').classList.toggle('read-only', collab.readOnly());
-    $('deleteLabel').textContent = collab.isCloud(p) ? (p._cloud.role === 'owner' ? 'Delete for everyone' : 'Leave shared project') : 'Delete project';
     collab.updateToolbar();
     $('app').classList.toggle('editing', editing);
     $('app').classList.toggle('schedule-view', view === 'schedule');
     $('app').classList.toggle('is-empty', !p);
     if (!p) {
-      $('sections').innerHTML = '';
-      $('sections').append(window.Common.emptyState({
-        title: 'No projects',
-        text: 'Create a shot sheet, build one from a script, or import a project.',
+      // A shared production that's still loading.
+      $('sections').replaceChildren(el('div', { class: 'empty' }, 'Opening the production…'));
+      return;
+    }
+    if (view === 'shots' && !editing && !epScenes(p).length) {
+      renderHeader(p);
+      $('sections').replaceChildren(window.Common.emptyState({
+        title: 'No scenes yet',
+        text: isTv(p)
+          ? `Build ${window.Production.episodeLabel(currentEpisode(p))}'s shot list from its script, or add scenes by hand.`
+          : 'Build the shot list from the script, or add scenes by hand.',
         actions: [
-          { label: 'New project', primary: true, onclick: newProject },
-          { label: 'Import script…', onclick: importScript },
-          { label: 'Import…', onclick: importFiles },
-          { label: 'Load example', onclick: () => addProject(sampleProject()) },
+          { label: 'Import script…', primary: true, onclick: importScript },
+          { label: 'Add scenes', onclick: () => { if (!blockedReadOnly()) { editing = true; render(); } } },
+          { label: 'Load example', onclick: loadExample },
         ],
       }));
       return;
@@ -1385,36 +1413,21 @@
   }
 
   // ---------- Actions ----------
-  function addProject(p, { edit = false } = {}) {
-    state.projects.push(p);
-    selectProject(p.id);
-    editing = edit;
-    view = 'shots';
-    render();
-  }
-
-  function newProject() {
-    addProject(blankProject(), { edit: true });
-    const t = $('titleInput'); t.focus(); t.select();
-  }
-
-  function duplicateProject() {
+  // The example scenes, cast and crew, added to this (empty) production.
+  function loadExample() {
     const p = active();
-    if (!p) return;
-    const copy = F.normalizeProject(JSON.parse(F.toShotsheet(p)), p.title);
-    copy.title = p.title + ' (copy)';
-    allShots(copy).forEach((x) => (x.shot.done = false));
-    addProject(copy);
-    toast('Duplicated');
-  }
-
-  function deleteProject() {
-    const p = active();
-    if (!p) return;
-    if (collab.isCloud(p)) return collab.deleteOrLeave(p);
-    if (!confirm(`Delete "${p.title}"? This cannot be undone.`)) return;
-    state.projects = state.projects.filter((x) => x.id !== p.id);
-    selectFirstLocal();
+    if (!p || blockedReadOnly()) return;
+    const sample = sampleProject();
+    const toFile = JSON.parse(F.toShotsheet(sample));
+    const ex = F.normalizeProject(toFile);
+    p.characters.push(...ex.characters);
+    p.crew.push(...ex.crew);
+    p.days.push(...ex.days);
+    ex.scenes.forEach((s) => { if (isTv(p)) s.episodeId = currentEpisode(p).id; });
+    p.scenes.push(...ex.scenes);
+    F.upgradeProject(p);
+    save(); render();
+    toast('Example scenes added');
   }
 
   function resetChecks() {
@@ -1439,7 +1452,11 @@
 
   // Pick one of your Script Writer scripts, or a PDF / Final Draft / Fountain file.
   async function importScript() {
-    const pick = await window.Common.pickScript();
+    const p = active();
+    if (!p) return;
+    // This production's scripts (for TV, the current episode's first).
+    const ep = currentEpisode(p);
+    const pick = await window.Common.pickScript((d) => d.productionId === p.id && (!ep || !d.episodeId || d.episodeId === ep.id));
     if (!pick) return;
     if (pick.doc) {
       const doc = window.Screenplay.normalizeDoc(pick.doc);
@@ -1452,15 +1469,37 @@
     openScriptResult(pick.result);
   }
 
-  // If a project here already came from this script, offer to review its changes instead
-  // of making another copy. Returns true if the user chose that.
+  // If this shot list already came from this script, review its changes instead of
+  // importing it again. Returns true if that's what happened.
   async function offerLinkedProject(link) {
-    const existing = collab.localOnly(state.projects).find((x) => x.scriptLink && x.scriptLink.scriptId === link.scriptId);
-    if (!existing) return false;
-    if (!confirm(`"${existing.title}" was already made from this script.\n\nOK: open it and review what changed in the script.\nCancel: make a new shot sheet instead.`)) return false;
-    selectProject(existing.id);
+    const p = active();
+    const current = linkOf(p);
+    if (!current || current.scriptId !== link.scriptId) return false;
     await openLinkReview();
     return true;
+  }
+
+  // Puts a script's scenes into this production's shot list (the current episode's, for TV),
+  // after the scenes already there or in their place. Characters are matched by name.
+  function addScenesFromScript(raw, { replace, link, included, ignored }) {
+    const p = active();
+    const incoming = F.normalizeProject(raw);
+    const nameOf = new Map(incoming.characters.map((c) => [c.id, c.name]));
+    const scenes = incoming.scenes.map((s, k) => {
+      s.cast = s.castIds.map((id) => nameOf.get(id)).filter(Boolean);
+      s.castIds = [];
+      if (isTv(p)) s.episodeId = currentEpisode(p).id;
+      if (link) s.scriptScene = { ...link.scenes[included[k]], number: s.number };
+      return s;
+    });
+    if (replace) {
+      const mine = new Set(epScenes(p));
+      p.scenes = p.scenes.filter((s) => !mine.has(s));
+    }
+    p.scenes.push(...scenes);
+    if (link) setLinkOf(p, { scriptId: link.scriptId, title: link.title, auto: true, ignored });
+    F.upgradeProject(p); // cast names → this production's characters
+    return scenes;
   }
 
   function openScriptResult(result) {
@@ -1478,15 +1517,16 @@
   // link (from the Script Writer): { scriptId, title, scenes: [{ id, hash }] } — one per script scene.
   function openScriptPreview(parsed, fileName, link) {
     const SP = window.ScriptParse;
+    const p = active();
+    const existing = epScenes(p).length;
     const check = (on) => el('input', { type: 'checkbox', checked: on });
-    const title = el('input', { class: 'field', value: parsed.title });
     const opts = { establishing: check(true), master: check(true), coverage: check(true) };
     const sceneChecks = parsed.scenes.map(() => check(true));
     const create = el('button', { class: 'primary-btn' });
+    const replaceBtn = existing ? el('button', { class: 'ghost-btn' }, 'Replace the shot list') : null;
     const summary = el('span', { class: 'muted small' });
 
     const currentOpts = () => ({
-      title: title.value.trim() || parsed.title,
       include: new Set(sceneChecks.map((c, i) => (c.checked ? i : -1)).filter((i) => i >= 0)),
       establishing: opts.establishing.checked,
       master: opts.master.checked,
@@ -1495,8 +1535,9 @@
     const update = () => {
       const raw = SP.buildProject(parsed, currentOpts());
       const shots = raw.scenes.reduce((n, s) => n + s.shots.length, 0);
-      create.textContent = `Create shot sheet`;
+      create.textContent = existing ? 'Add to the shot list' : 'Create shot list';
       create.disabled = !raw.scenes.length;
+      if (replaceBtn) replaceBtn.disabled = !raw.scenes.length;
       summary.textContent = `${raw.scenes.length} scene${raw.scenes.length === 1 ? '' : 's'} · ${shots} starter shot${shots === 1 ? '' : 's'}`;
     };
     for (const c of [...Object.values(opts), ...sceneChecks]) c.addEventListener('change', update);
@@ -1507,7 +1548,8 @@
         el('strong', {}, fileName),
         el('br'),
         `${parsed.scenes.length} scenes · ${parsed.characters.length} speaking characters · ${SP.formatEighths(parsed.totalEighths)} pages`),
-      el('label', { class: 'form-field' }, el('span', {}, 'Project name'), title),
+      el('p', { class: 'muted small' }, (isTv(p) ? `Into ${window.Production.episodeLabel(currentEpisode(p))} of "${p.title}".` : `Into "${p.title}".`)
+        + (existing ? ` Its shot list already has ${existing} scene${existing === 1 ? '' : 's'}: add these after them, or replace them.` : '')),
       el('div', { class: 'script-opts' },
         el('div', { class: 'field-label' }, 'Starter shots for each scene'),
         el('label', {}, opts.establishing, ' Establishing shot when the location changes'),
@@ -1525,26 +1567,31 @@
           el('span', { class: 'script-scene-heading' }, s.heading),
           el('span', { class: 'muted small' }, [s.cast.join(', '), s.synopsis].filter(Boolean).join(' — '))),
         el('span', { class: 'muted small nowrap' }, pagesLabel(s.eighths))))),
-      el('p', { class: 'muted small' }, 'Starter shots are a first pass. Adjust them in Edit mode. You can share the project afterwards.'),
-      el('div', { class: 'modal-foot spread' }, summary, create));
+      el('p', { class: 'muted small' }, 'Starter shots are a first pass. Adjust them in Edit mode.'),
+      el('div', { class: 'modal-foot spread' }, summary, el('span', { class: 'foot-actions' }, replaceBtn, create)));
     const m = window.Common.modal('Import script', body, { wide: true });
 
-    create.addEventListener('click', () => {
+    const go = (replace) => {
+      if (blockedReadOnly()) return;
+      if (replace && !confirm(`Replace the ${existing} scene${existing === 1 ? '' : 's'} in this shot list (and their shots)?`)) return;
       const o = currentOpts();
-      const project = F.normalizeProject(SP.buildProject(parsed, o), o.title);
       // Remember where each scene came from, so later script changes can be flagged.
-      if (link && link.scenes.length === parsed.scenes.length) {
-        const included = [...o.include].sort((a, b) => a - b);
-        // Unticked scenes are left out on purpose, so automatic updates don't add them.
-        const ignored = link.scenes.filter((_, i) => !o.include.has(i)).map((l) => l.id);
-        project.scriptLink = { scriptId: link.scriptId, title: link.title, auto: true, ignored };
-        project.scenes.forEach((s, k) => { s.scriptScene = { ...link.scenes[included[k]], number: s.number }; });
-      }
-      const shots = allShots(project).length;
+      // Unticked scenes are left out on purpose, so automatic updates don't add them.
+      const linked = link && link.scenes.length === parsed.scenes.length;
+      const scenes = addScenesFromScript(SP.buildProject(parsed, o), {
+        replace,
+        link: linked ? link : null,
+        included: [...o.include].sort((a, b) => a - b),
+        ignored: linked ? link.scenes.filter((_, i) => !o.include.has(i)).map((l) => l.id) : [],
+      });
       m.close();
-      addProject(project);
-      toast(`Created ${project.scenes.length} scenes and ${shots} shots from ${fileName}`);
-    });
+      editing = false; view = 'shots'; dayFilter = 'all';
+      save(); render();
+      const shots = scenes.reduce((n, s) => n + s.shots.length, 0);
+      toast(`Added ${scenes.length} scenes and ${shots} shots from ${fileName}`);
+    };
+    create.addEventListener('click', () => go(false));
+    if (replaceBtn) replaceBtn.addEventListener('click', () => go(true));
     update();
   }
 
@@ -1556,6 +1603,7 @@
       files = files.filter((f) => f !== script);
       if (!files.length) return;
     }
+    // A .shotsheet / backup file is a whole production: it's added as a new one.
     let added = 0, last = null;
     const errors = [];
     for (const f of files) {
@@ -1565,9 +1613,15 @@
         errors.push(`${f.name}: ${err.message}`);
       }
     }
-    if (last) { editing = false; view = 'shots'; selectProject(last.id); }
     if (errors.length) alert('Some files could not be imported:\n\n' + errors.join('\n'));
-    else if (added) toast(`Imported ${added} project${added > 1 ? 's' : ''}`);
+    if (last) {
+      store.save();
+      store.flush().then(() => {
+        if (confirm(`Imported ${added} production${added > 1 ? 's' : ''}. Open "${last.title}" now?`)) {
+          location.href = `dashboard.html?production=${encodeURIComponent(last.id)}`;
+        }
+      });
+    }
   }
 
   async function importFiles() {
@@ -1602,20 +1656,18 @@
 
   // ---------- Events ----------
   function wire() {
-    $('homeBtn').addEventListener('click', () => window.Common.goHome(store));
-    $('newBtn').addEventListener('click', newProject);
+    $('homeBtn').addEventListener('click', () => window.Production.goHome(store));
     $('importBtn').addEventListener('click', importFiles);
     $('importScriptBtn').addEventListener('click', importScript);
     $('commentsBtn').addEventListener('click', () => active() && comments.open());
     // Coming back to the app: re-check linked scripts for changes.
     window.addEventListener('focus', async () => {
       const p = active();
-      if (p && p.scriptLink) { await loadScripts(); render({ keepScroll: true }); }
+      if (p && linkOf(p)) { await loadScripts(); render({ keepScroll: true }); }
     });
     $('resetBtn').addEventListener('click', resetChecks);
     $('editBtn').addEventListener('click', toggleEdit);
     $('sidebarToggle').addEventListener('click', toggleSidebar);
-    $('search').addEventListener('input', (e) => { search = e.target.value; renderSidebar(); });
     $('titleInput').addEventListener('input', (e) => {
       const p = active();
       if (!p) return;
@@ -1625,8 +1677,6 @@
     document.querySelectorAll('#viewToggle button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
     window.Common.wireDropdowns();
     document.querySelectorAll('[data-export]').forEach((b) => b.addEventListener('click', () => exportAs(b.dataset.export)));
-    document.querySelector('[data-more="duplicate"]').addEventListener('click', duplicateProject);
-    document.querySelector('[data-more="delete"]').addEventListener('click', deleteProject);
     window.Common.onFileDrop(ingest);
 
     const lens = $('lensList');
@@ -1648,12 +1698,10 @@
 
     api.onMenu((channel, arg) => {
       ({
-        new: newProject,
-        duplicate: duplicateProject,
         import: importFiles,
         importScript,
         export: () => exportAs(arg === 'native' ? 'shotsheet' : arg),
-        home: () => window.Common.goHome(store),
+        home: () => window.Production.goHome(store),
         toggleEdit,
         reset: resetChecks,
         toggleSidebar,
@@ -1672,19 +1720,19 @@
   }
 
   async function init() {
-    const stored = await api.loadStore('shotsheets');
-    // Starting with no projects is fine: the empty screen offers New, Import and an example.
-    if (stored && Array.isArray(stored.projects)) {
-      state = { sidebarHidden: false, ...stored };
-      state.projects.forEach(F.upgradeProject); // projects saved before cast & crew existed
-      if (!active()) state.activeId = state.projects.length ? state.projects[0].id : null;
-    } else {
-      state = { projects: [], activeId: null, sidebarHidden: false };
-    }
-    // Deep link from the home screen: ?project=<id>&view=schedule&date=YYYY-MM-DD
+    // This page shows one production: ?production=<id> (or the one last opened this session),
+    // optionally &episode=<id>&view=schedule|people&date=YYYY-MM-DD.
+    await window.Production.migrate();
     const q = new URLSearchParams(location.search);
-    if (q.get('project') && state.projects.some((p) => p.id === q.get('project'))) state.activeId = q.get('project');
-    if (q.get('view') === 'schedule') view = 'schedule';
+    const pid = window.Production.id() || q.get('project');
+    if (!pid) { window.Production.goPicker(); return; }
+    const stored = await api.loadStore('shotsheets');
+    state = { sidebarHidden: false, ...(stored || {}), projects: stored && Array.isArray(stored.projects) ? stored.projects : [] };
+    state.projects.forEach(F.upgradeProject); // projects saved before cast & crew existed
+    const local = state.projects.some((p) => p.id === pid);
+    state.activeId = local ? pid : null;
+    episodeFilter = q.get('episode');
+    if (q.get('view') === 'schedule' || q.get('view') === 'people') view = q.get('view');
     if (q.get('date')) {
       selectedDate = q.get('date');
       const d = parseYmd(selectedDate);
@@ -1695,6 +1743,8 @@
     collab.mountToolbar(document.querySelector('.toolbar'), $('resetBtn'));
     render();
     collab.init();
+    // Not on this computer: a shared production, opened live from the server.
+    if (!local) collab.open(pid);
     window.Common.initUpdates();
     // A script sent from the Script Writer ("Send to → Shot Sheet") opens the import preview.
     const handoff = window.Common.takeHandoff('shotsheet');

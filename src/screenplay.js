@@ -91,6 +91,9 @@
       elements,
       revisions: cleanRevisions(raw.revisions),
       comments: cleanComments(raw.comments),
+      // The production (and TV episode) this script belongs to.
+      ...(typeof raw.productionId === 'string' ? { productionId: raw.productionId } : {}),
+      ...(typeof raw.episodeId === 'string' ? { episodeId: raw.episodeId } : {}),
     };
   }
 

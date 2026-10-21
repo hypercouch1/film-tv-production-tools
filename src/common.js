@@ -219,11 +219,12 @@
 
   // ---- Choosing a script to import: one from the Script Writer, or a file ----
   // Resolves to { doc } (a Script Writer document) or { result } (from the file dialog).
-  async function pickScript() {
+  // filter: which Script Writer scripts to offer (e.g. this production's).
+  async function pickScript(filter = () => true) {
     let docs = [];
     try {
       const data = await api.loadStore('scripts');
-      docs = (data && Array.isArray(data.scripts) ? data.scripts : []).slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      docs = (data && Array.isArray(data.scripts) ? data.scripts : []).filter(filter).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
     } catch { /* no scripts yet */ }
     const fromFile = async () => {
       const result = await api.importScript();

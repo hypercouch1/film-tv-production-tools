@@ -15,15 +15,14 @@
 <body>
   <div class="app" id="app">
     <aside class="sidebar" id="sidebar">
-      <div class="sidebar-head">
-        <span class="sidebar-title">Scripts</span>
-        <button class="icon-btn" id="newBtn" title="New script (Ctrl/Cmd+N)">+</button>
+      <div class="sidebar-head prod-head">
+        <span class="sidebar-title" id="sidebarTitle">Scripts</span>
+        <span class="sidebar-sub" id="sidebarSub"></span>
       </div>
-      <input class="search" id="search" type="search" placeholder="Search…">
       <div class="sidebar-lists">
-        <div class="list-heading">On this computer</div>
+        <div class="list-heading list-heading-row"><span id="listHeading">Scripts</span>
+          <button class="icon-btn small-btn" id="newBtn" title="New script (Ctrl/Cmd+N)">+</button></div>
         <ul class="sheet-list" id="list"></ul>
-        <div id="sharedList"></div>
       </div>
       <div class="sidebar-foot">
         <button class="ghost-btn" id="importBtn" title="Open a script you already have (Ctrl/Cmd+O)">Import script (PDF, FDX, Fountain)…</button>
@@ -92,6 +91,8 @@
   <script src="comments.js"></script>
   <script src="script-parse.js"></script>
   <script src="screenplay.js"></script>
+  <script src="shotsheet-formats.js"></script>
+  <script src="production.js"></script>
   <script src="writer.js"></script>
 </body>
 </html>

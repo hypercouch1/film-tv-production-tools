@@ -5,8 +5,13 @@
 
   let state = { scripts: [], activeId: null, sidebarHidden: false };
   let currentId = null; // element with the cursor
-  let search = '';
   let compare = null;   // { docId, revisionId }: show changes since this revision
+  // The production this page works in: scripts are its scripts (one per episode for TV).
+  const P = window.Production;
+  let prod = null;      // { id, title, type, episodes }
+  const isTv = () => !!prod && prod.type === 'tv';
+  const mine = () => state.scripts.filter((d) => d.productionId === (prod && prod.id) || (d._cloud && !d.productionId));
+  const episodeOf = (d) => (isTv() && d ? prod.episodes.find((e) => e.id === d.episodeId) : null);
 
   // Shared (cloud) scripts live on the server, so only local scripts are saved here.
   const store = window.Common.createStore('scripts', () => ({ ...state, scripts: collab.localOnly(state.scripts) }));
@@ -67,15 +72,23 @@
   });
   const readOnly = () => collab.readOnly();
 
-  // Opens the most recent local script, or the empty screen if there are none.
+  // Opens this production's script (the first episode's, for TV), or the empty screen.
   function selectFirstLocal() {
-    const local = collab.localOnly(state.scripts).sort((a, b) => b.updatedAt - a.updatedAt);
-    selectScript(local.length ? local[0].id : null);
+    const local = collab.localOnly(mine());
+    const first = isTv()
+      ? prod.episodes.map((e) => local.find((d) => d.episodeId === e.id)).find(Boolean)
+      : local.sort((a, b) => b.updatedAt - a.updatedAt)[0];
+    selectScript(first ? first.id : null);
   }
 
   function selectScript(id) {
     collab.leave();
     state.activeId = id;
+    // Keep the address in step, so reopening the page shows the same episode.
+    const d = active();
+    const url = new URL(location.href);
+    if (d && d.episodeId) url.searchParams.set('episode', d.episodeId); else url.searchParams.delete('episode');
+    window.history.replaceState(null, '', url);
     currentId = null;
     compare = null;
     store.save();
@@ -83,21 +96,30 @@
   }
 
   // ---------- Sidebar ----------
+  // This production's scripts; for TV, one row per episode (a click on an episode without a
+  // script starts one).
   function renderSidebar() {
     $('app').classList.toggle('sidebar-hidden', state.sidebarHidden);
+    $('sidebarTitle').textContent = prod ? prod.title : 'Scripts';
+    $('sidebarSub').textContent = prod ? P.typeLabel(prod) : '';
+    $('listHeading').textContent = isTv() ? 'Episodes' : 'Scripts';
     const list = $('list');
     list.innerHTML = '';
-    const q = search.toLowerCase();
-    collab.localOnly(state.scripts)
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .filter((d) => !q || d.title.toLowerCase().includes(q))
-      .forEach((d) => {
-        const st = S.stats(d);
-        list.append(el('li', { class: d.id === state.activeId ? 'active' : '', onclick: () => selectScript(d.id) },
-          el('div', { class: 'name' }, d.title || 'Untitled Script'),
-          el('div', { class: 'meta' }, `${st.pages} pg · ${st.scenes} scenes · ${relTime(d.updatedAt)}`)));
-      });
-    collab.renderShared($('sharedList'));
+    const local = collab.localOnly(mine());
+    const row = (d, name, onclick) => {
+      const st = d && S.stats(d);
+      list.append(el('li', { class: d && d.id === state.activeId ? 'active' : '', onclick },
+        el('div', { class: 'name' }, name),
+        el('div', { class: 'meta' }, st ? `${st.pages} pg · ${st.scenes} scenes · ${relTime(d.updatedAt)}` : 'No script yet — click to start')));
+    };
+    if (isTv()) {
+      for (const e of prod.episodes) {
+        const d = local.find((x) => x.episodeId === e.id);
+        row(d, P.episodeLabel(e), () => (d ? selectScript(d.id) : newScript(e.id)));
+      }
+    } else {
+      local.sort((a, b) => b.updatedAt - a.updatedAt).forEach((d) => row(d, d.title || 'Untitled Script', () => selectScript(d.id)));
+    }
   }
 
   // ---------- Element type bar ----------
@@ -783,13 +805,26 @@
     }
     window.Common.setHandoff(payload);
     await store.flush();
-    location.href = target + '.html';
+    location.href = P.link(target + '.html', target === 'shotsheet' && doc.episodeId ? { episode: doc.episodeId } : {});
   }
 
   // ---------- Import ----------
-  function addScript(doc) {
+  // New and imported scripts belong to this production (and, for TV, to an episode: the one
+  // asked for, or the episode being viewed if it has no script yet).
+  function addScript(doc, episodeId) {
+    doc.productionId = prod.id;
+    if (isTv()) {
+      const cur = episodeOf(active());
+      const free = prod.episodes.find((e) => !collab.localOnly(mine()).some((d) => d.episodeId === e.id));
+      doc.episodeId = episodeId || (cur && !mine().some((d) => d.episodeId === cur.id) ? cur.id : free ? free.id : null);
+      if (!doc.episodeId) {
+        alert('Every episode already has a script. Add an episode on the production page first, or open the episode and replace its script.');
+        return false;
+      }
+    }
     state.scripts.push(doc);
     selectScript(doc.id);
+    return true;
   }
 
   function openImported(result) {
@@ -797,8 +832,7 @@
     if (result.error) { alert(result.error); return; }
     try {
       const doc = S.fromImport(result.script);
-      addScript(doc);
-      toast(`Imported ${result.script.name}: ${S.stats(doc).scenes} scenes`);
+      if (addScript(doc)) toast(`Imported ${result.script.name}: ${S.stats(doc).scenes} scenes`);
     } catch (err) {
       alert(`${result.script.name}: ${err.message}`);
     }
@@ -815,13 +849,14 @@
       $('paper').innerHTML = '';
       nodes.clear();
       $('sceneNav').innerHTML = '';
+      const ep = isTv() ? prod.episodes.find((e) => e.id === P.episode()) || prod.episodes[0] : null;
       $('desk').append(Object.assign(window.Common.emptyState({
-        title: 'No scripts',
-        text: 'Start a new screenplay, or import one you have already written (PDF, Final Draft or Fountain).',
+        title: ep ? `No script for ${P.episodeLabel(ep)}` : 'No script yet',
+        text: 'Start writing, or import a script you have already written (PDF, Final Draft or Fountain).',
         actions: [
-          { label: 'New script', primary: true, onclick: newScript },
+          { label: 'New script', primary: true, onclick: () => newScript(ep && ep.id) },
           { label: 'Import script…', onclick: async () => openImported(await api.importScript()) },
-          { label: 'Load example', onclick: () => addScript(sampleScript()) },
+          { label: 'Load example', onclick: () => addScript(sampleScript(), ep && ep.id) },
         ],
       }), { id: 'emptyState' }));
       return;
@@ -848,9 +883,11 @@
   }
 
   // ---------- Actions ----------
-  function newScript() {
-    addScript(S.newDoc());
-    openTitlePage();
+  function newScript(episodeId) {
+    const ep = isTv() && prod.episodes.find((e) => e.id === episodeId);
+    const doc = S.newDoc();
+    doc.title = ep ? `${prod.title} — ${P.episodeLabel(ep)}` : prod.title;
+    if (addScript(doc, ep ? ep.id : undefined)) openTitlePage();
   }
 
   function duplicateScript() {
@@ -860,8 +897,7 @@
     copy.elements.forEach((e) => (e.id = uid()));
     copy.revisions = []; // they refer to the original's lines
     copy.comments = [];
-    addScript(copy);
-    toast('Duplicated');
+    if (addScript(copy)) toast('Duplicated');
   }
 
   function deleteScript() {
@@ -890,15 +926,14 @@
 
   // ---------- Events ----------
   function wire() {
-    $('homeBtn').addEventListener('click', () => window.Common.goHome(store));
-    $('newBtn').addEventListener('click', newScript);
+    $('homeBtn').addEventListener('click', () => P.goHome(store));
+    $('newBtn').addEventListener('click', () => newScript());
     $('importBtn').addEventListener('click', async () => openImported(await api.importScript()));
     $('sidebarToggle').addEventListener('click', toggleSidebar);
     $('titlePageBtn').addEventListener('click', openTitlePage);
     $('revisionsBtn').addEventListener('click', openRevisions);
     $('commentBtn').addEventListener('mousedown', (e) => e.preventDefault()); // keep the current line
     $('commentBtn').addEventListener('click', () => comments.open(currentId || undefined));
-    $('search').addEventListener('input', (e) => { search = e.target.value; renderSidebar(); });
     window.Common.wireDropdowns();
     document.querySelectorAll('[data-export]').forEach((b) => b.addEventListener('click', () => exportAs(b.dataset.export)));
     document.querySelectorAll('[data-send]').forEach((b) => b.addEventListener('click', () => sendTo(b.dataset.send)));
@@ -920,12 +955,12 @@
     });
     api.onMenu((channel, arg) => {
       ({
-        new: newScript,
+        new: () => newScript(),
         duplicate: duplicateScript,
         import: async () => openImported(await api.importScript()),
         importScript: async () => openImported(await api.importScript()),
         export: () => exportAs(arg === 'native' ? 'fountain' : arg),
-        home: () => window.Common.goHome(store),
+        home: () => P.goHome(store),
         toggleSidebar,
         undo: () => active() && undoUi.run(false, true),
         redo: () => active() && undoUi.run(true, true),
@@ -936,15 +971,22 @@
   }
 
   async function init() {
+    // This page works in one production (?production=<id>, &episode=<id> for a TV episode).
+    await P.migrate();
+    const pid = P.id();
+    const productions = await P.list();
+    prod = productions.find((p) => p.id === pid);
+    if (!prod) { P.goPicker(); return; }
     const stored = await api.loadStore('scripts');
-    // Starting with no scripts is fine: the empty screen offers New, Import and an example.
-    if (stored && Array.isArray(stored.scripts)) {
-      state = { sidebarHidden: false, ...stored };
-      state.scripts = state.scripts.map((d) => S.normalizeDoc(d));
-      if (!active()) state.activeId = state.scripts.length ? state.scripts[0].id : null;
-    } else {
-      state = { scripts: [], activeId: null, sidebarHidden: false };
-    }
+    state = { sidebarHidden: false, ...(stored || {}), scripts: stored && Array.isArray(stored.scripts) ? stored.scripts.map((d) => S.normalizeDoc(d)) : [] };
+    const wanted = P.episode();
+    const local = collab.localOnly(mine());
+    const pick = wanted
+      ? local.find((d) => d.episodeId === wanted) // none: that episode's "no script yet" screen
+      : local.find((d) => d.id === state.activeId)
+        || (isTv() ? prod.episodes.map((e) => local.find((d) => d.episodeId === e.id)).find(Boolean)
+          : local.sort((a, b) => b.updatedAt - a.updatedAt)[0]);
+    state.activeId = pick ? pick.id : null;
     wire();
     collab.mountToolbar(document.querySelector('.toolbar'), $('titlePageBtn'));
     render({ fresh: true });

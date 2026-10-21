@@ -83,7 +83,7 @@
   const commentControl = (target) => comments.badge(target) || el('button', {
     class: 'cm-add', type: 'button', title: 'Add a comment',
     onclick: (e) => { e.stopPropagation(); comments.open(target); },
-  }, '💬');
+  }, 'ðŸ’¬');
 
   // ---------- Collaboration ----------
   const collab = window.Collab.attach({
@@ -112,9 +112,15 @@
     onRoleChange: (role) => { if (role === 'viewer') editing = false; },
   });
 
-  // Opens the most recent local sheet, or the empty screen if there are none.
+  // The production this page works in: its call sheets are the ones listed.
+  const P = window.Production;
+  let pid = null;
+  let prod = null;
+  const mine = () => state.sheets.filter((s) => s.productionId === pid);
+
+  // Opens the most recent of this production's sheets, or the empty screen if there are none.
   function selectFirstLocal() {
-    const local = collab.localOnly(state.sheets).sort((a, b) => b.updatedAt - a.updatedAt);
+    const local = collab.localOnly(mine()).sort((a, b) => b.updatedAt - a.updatedAt);
     state.activeId = local.length ? local[0].id : null;
     editing = false;
     history = [];
@@ -136,10 +142,12 @@
   // ---------- Sidebar ----------
   function renderSidebar() {
     $('app').classList.toggle('sidebar-hidden', state.sidebarHidden);
+    $('sidebarTitle').textContent = prod ? prod.title : 'Call Sheets';
+    $('sidebarSub').textContent = prod ? P.typeLabel(prod) : '';
     const list = $('sheetList');
     list.innerHTML = '';
     const q = search.toLowerCase();
-    collab.localOnly(state.sheets)
+    collab.localOnly(mine())
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .filter((s) => !q || s.title.toLowerCase().includes(q))
       .forEach((s) => {
@@ -150,7 +158,7 @@
           onclick: () => { collab.leave(); state.activeId = s.id; history = []; save(); render(); $('sheet').scrollTop = 0; },
         },
         el('div', { class: 'name' }, s.title || 'Untitled'),
-        el('div', { class: 'meta' }, `${done}/${items.length} · ${relTime(s.updatedAt)}`)));
+        el('div', { class: 'meta' }, `${done}/${items.length} Â· ${relTime(s.updatedAt)}`)));
       });
     collab.renderShared($('sharedList'));
   }
@@ -278,8 +286,8 @@
     const wrap = $('sections');
     wrap.innerHTML = '';
     wrap.append(el('div', { class: 'edit-help', html:
-      'Wrap words in asterisks to highlight them in yellow — <code>Take *cam 3*</code> shows as Take <mark>cam 3</mark>. ' +
-      'Press Enter in a cue to add another; Backspace on an empty cue removes it. Drag ⠿ to reorder.' }));
+      'Wrap words in asterisks to highlight them in yellow â€” <code>Take *cam 3*</code> shows as Take <mark>cam 3</mark>. ' +
+      'Press Enter in a cue to add another; Backspace on an empty cue removes it. Drag â ¿ to reorder.' }));
 
     sheet.sections.forEach((s, sIdx) => {
       const itemsWrap = el('div', { class: 'edit-items' });
@@ -293,19 +301,19 @@
       });
 
       const secRow = el('div', { class: 'edit-row' },
-        el('span', { class: 'drag', title: 'Drag to reorder section' }, '⠿'),
+        el('span', { class: 'drag', title: 'Drag to reorder section' }, 'â ¿'),
         el('input', {
           class: 'edit-input section-input',
           value: s.title,
           placeholder: 'SECTION NAME',
           oninput: (e) => { s.title = e.target.value; save(); renderHeader(sheet); renderSidebar(); },
         }),
-        el('button', { class: 'icon-btn', title: 'Move up', onclick: () => moveSection(sIdx, -1) }, '↑'),
-        el('button', { class: 'icon-btn', title: 'Move down', onclick: () => moveSection(sIdx, 1) }, '↓'),
+        el('button', { class: 'icon-btn', title: 'Move up', onclick: () => moveSection(sIdx, -1) }, 'â†‘'),
+        el('button', { class: 'icon-btn', title: 'Move down', onclick: () => moveSection(sIdx, 1) }, 'â†“'),
         el('button', { class: 'icon-btn del', title: 'Delete section', onclick: () => {
           if (s.items.some((i) => i.text.trim()) && !confirm(`Delete section "${s.title}" and its ${s.items.length} cues?`)) return;
           sheet.sections.splice(sIdx, 1); save(); render({ keepScroll: true });
-        } }, '✕'));
+        } }, 'âœ•'));
       makeDraggable(secRow, { type: 'section', sIdx });
       secRow.addEventListener('dragover', (e) => {
         if (dragData && dragData.type === 'section') { e.preventDefault(); secRow.classList.add('drag-over'); }
@@ -340,11 +348,11 @@
 
   function editItemRow(sheet, s, it, iIdx) {
     const row = el('div', { class: 'edit-row', 'data-item': it.id },
-      el('span', { class: 'drag', title: 'Drag to reorder cue' }, '⠿'),
+      el('span', { class: 'drag', title: 'Drag to reorder cue' }, 'â ¿'),
       el('input', {
         class: 'edit-input',
         value: it.text,
-        placeholder: 'Cue — e.g. Take *cam 3*, cue talent',
+        placeholder: 'Cue â€” e.g. Take *cam 3*, cue talent',
         oninput: (e) => { it.text = e.target.value; save(); renderHeader(sheet); },
         onkeydown: (e) => {
           if (e.key === 'Enter') {
@@ -365,7 +373,7 @@
       }),
       el('button', { class: 'icon-btn del', title: 'Delete cue', onclick: () => {
         s.items.splice(iIdx, 1); save(); render({ keepScroll: true });
-      } }, '✕'));
+      } }, 'âœ•'));
     makeDraggable(row, { type: 'item', sec: s, iIdx });
     row.addEventListener('dragover', (e) => {
       if (dragData && dragData.type === 'item') { e.preventDefault(); row.classList.add('drag-over'); }
@@ -437,8 +445,8 @@
         text: 'Create a call sheet, import one, or make one from a script.',
         actions: [
           { label: 'New call sheet', primary: true, onclick: newSheet },
-          { label: 'Import script…', onclick: importScript },
-          { label: 'Import…', onclick: importFiles },
+          { label: 'Import scriptâ€¦', onclick: importScript },
+          { label: 'Importâ€¦', onclick: importFiles },
           { label: 'Load example', onclick: () => addSheet(sampleSheet()) },
         ],
       }));
@@ -449,7 +457,7 @@
     else renderRun(sheet);
     $('hint').innerHTML = editing
       ? `<kbd>${mod}+E</kbd> done editing`
-      : '<kbd>Space</kbd> check next &nbsp; <kbd>⌫</kbd> undo &nbsp; <kbd>1–9</kbd> jump to section';
+      : '<kbd>Space</kbd> check next &nbsp; <kbd>âŒ«</kbd> undo &nbsp; <kbd>1â€“9</kbd> jump to section';
     if (keepScroll) sheetEl.scrollTop = top;
     updateActiveTab();
   }
@@ -457,6 +465,7 @@
   // ---------- Actions ----------
   function addSheet(sheet, { edit = false } = {}) {
     collab.leave();
+    sheet.productionId = pid;
     state.sheets.push(sheet);
     state.activeId = sheet.id;
     history = [];
@@ -513,6 +522,7 @@
     for (const f of files) {
       try {
         for (const sheet of window.Formats.importFile(f)) {
+          sheet.productionId = pid;
           state.sheets.push(sheet); last = sheet; added++;
         }
       } catch (err) {
@@ -577,7 +587,7 @@
         content: map.content(),
       });
     }
-    if (saved) toast('Exported → ' + saved.split(/[\\/]/).pop());
+    if (saved) toast('Exported â†’ ' + saved.split(/[\\/]/).pop());
   }
 
   // ---------- Events ----------
@@ -603,7 +613,7 @@
       s.title = e.target.value; save(); renderSidebar();
     });
     $('sheet').addEventListener('scroll', updateActiveTab, { passive: true });
-    $('homeBtn').addEventListener('click', () => window.Common.goHome(store));
+    $('homeBtn').addEventListener('click', () => P.goHome(store));
     wireMenus();
     window.Common.onFileDrop(ingest);
 
@@ -627,7 +637,7 @@
         import: importFiles,
         importScript,
         export: () => exportAs(arg === 'native' ? 'callsheet' : arg),
-        home: () => window.Common.goHome(store),
+        home: () => P.goHome(store),
         toggleEdit,
         reset: resetChecks,
         toggleSidebar: () => { state.sidebarHidden = !state.sidebarHidden; save(); renderSidebar(); },
@@ -640,26 +650,30 @@
   }
 
   async function init() {
+    // This page works in one production (?production=<id>).
+    await P.migrate();
+    pid = P.id();
+    prod = (await P.list()).find((p) => p.id === pid);
+    if (!prod) { P.goPicker(); return; }
     const stored = await api.loadStore('callsheets');
     // Starting with no sheets is fine: the empty screen offers New, Import and an example.
-    if (stored && Array.isArray(stored.sheets)) {
-      state = { sidebarHidden: false, ...stored };
-      state.sheets.forEach(window.Comments.clean);
-      if (!active()) state.activeId = state.sheets.length ? state.sheets[0].id : null;
-    } else {
-      state = { sheets: [], activeId: null, sidebarHidden: false };
+    state = { sidebarHidden: false, ...(stored || {}), sheets: stored && Array.isArray(stored.sheets) ? stored.sheets : [] };
+    state.sheets.forEach(window.Comments.clean);
+    if (!mine().some((s) => s.id === state.activeId)) {
+      const first = mine().sort((a, b) => b.updatedAt - a.updatedAt)[0];
+      state.activeId = first ? first.id : null;
     }
     wire();
     collab.mountToolbar(document.querySelector('.toolbar'), $('resetBtn'));
     render();
     collab.init();
     window.Common.initUpdates();
-    // A script sent from the Script Writer ("Send to → Call Sheet").
+    // A script sent from the Script Writer ("Send to â†’ Call Sheet").
     const handoff = window.Common.takeHandoff('callsheet');
     if (handoff) {
       const sheet = window.Formats.normalizeSheet(handoff.sheet, handoff.name);
       addSheet(sheet);
-      toast(`Created "${sheet.title}" from the script — ${sheet.sections.length} scenes`);
+      toast(`Created "${sheet.title}" from the script â€” ${sheet.sections.length} scenes`);
     }
     const pending = await api.takePendingFile();
     if (pending) ingest([pending]);

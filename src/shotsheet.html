@@ -13,15 +13,13 @@
 <body>
   <div class="app" id="app">
     <aside class="sidebar" id="sidebar">
-      <div class="sidebar-head">
-        <span class="sidebar-title">Projects</span>
-        <button class="icon-btn" id="newBtn" title="New project (Ctrl/Cmd+N)">+</button>
+      <div class="sidebar-head prod-head">
+        <span class="sidebar-title" id="sidebarTitle">Production</span>
+        <span class="sidebar-sub" id="sidebarSub"></span>
       </div>
-      <input class="search" id="search" type="search" placeholder="Search…">
       <div class="sidebar-lists">
-        <div class="list-heading">On this computer</div>
+        <div class="list-heading" id="listHeading" hidden>Episodes</div>
         <ul class="sheet-list" id="list"></ul>
-        <div id="sharedList"></div>
       </div>
       <div class="sidebar-foot">
         <button class="ghost-btn script-btn" id="importScriptBtn" title="Break a screenplay down into scenes and starter shots (Ctrl/Cmd+Shift+O)">Import script (PDF, FDX, Fountain)…</button>
@@ -54,14 +52,7 @@
             <button data-export="pdf">PDF of current shot list (.pdf)</button>
             <button data-export="ics">Shoot days to calendar (.ics)</button>
             <hr>
-            <button data-export="all">Backup all projects (.json)</button>
-          </div>
-        </div>
-        <div class="menu-wrap">
-          <button class="ghost-btn" data-menu="moreMenu">⋯</button>
-          <div class="menu" id="moreMenu" hidden>
-            <button data-more="duplicate">Duplicate project</button>
-            <button data-more="delete" class="danger" id="deleteLabel">Delete project</button>
+            <button data-export="all">Backup all productions (.json)</button>
           </div>
         </div>
         <button class="primary-btn" id="editBtn" title="Ctrl/Cmd+E">Edit</button>
@@ -73,6 +64,7 @@
             <span class="live-dot cyan"></span>
             <h1 class="sheet-title" id="title"></h1>
             <input class="sheet-title-input" id="titleInput" hidden>
+            <span class="episode-label" id="episodeLabel" hidden></span>
             <span class="counter" id="counter">0/0</span>
           </div>
           <div class="day-info" id="dayInfo" hidden></div>
@@ -100,6 +92,7 @@
   <script src="script-parse.js"></script>
   <script src="screenplay.js"></script>
   <script src="shotsheet-formats.js"></script>
+  <script src="production.js"></script>
   <script src="shotsheet.js"></script>
 </body>
 </html>

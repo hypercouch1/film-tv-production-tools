@@ -106,8 +106,15 @@
         dateMap[d.date] = day.id;
         return day;
       });
+    const epMap = {};
+    const episodes = (Array.isArray(raw.episodes) ? raw.episodes : []).map((e, i) => {
+      const out = { id: uid(), number: str(e && e.number, String(i + 1)), title: str(e && e.title), scriptLink: (e && e.scriptLink) || null };
+      if (e && e.id) epMap[e.id] = out.id;
+      return out;
+    });
     const scenes = (Array.isArray(raw.scenes) ? raw.scenes : []).map((s, i) => ({
       id: uid(),
+      ...(s && s.episodeId && epMap[s.episodeId] ? { episodeId: epMap[s.episodeId] } : {}),
       number: str(s && s.number, String(i + 1)),
       heading: str(s && s.heading),
       synopsis: str(s && s.synopsis),
@@ -150,7 +157,27 @@
     return upgradeProject({
       id: uid(), title: str(raw.title, fallbackTitle || 'Untitled Project'), updatedAt: Date.now(), scenes, days, characters, crew,
       scriptLink: link, comments: Array.isArray(raw.comments) ? raw.comments : [],
+      type: raw.type === 'tv' ? 'tv' : 'film', episodes,
     });
+  }
+
+  // A project is a production: a film, or a TV show with episodes (each with its own
+  // script and scenes; cast, crew and the schedule are shared). Safe to call repeatedly.
+  function upgradeProduction(p) {
+    if (p.type !== 'tv') p.type = 'film';
+    p.episodes = items(p.episodes).map((e, i) => ({
+      id: e.id,
+      number: String(e.number == null || e.number === '' ? i + 1 : e.number),
+      title: String(e.title == null ? '' : e.title),
+      scriptLink: e.scriptLink && typeof e.scriptLink.scriptId === 'string'
+        ? { ...e.scriptLink, title: String(e.scriptLink.title || ''), auto: e.scriptLink.auto !== false, ignored: idList(e.scriptLink.ignored) } : null,
+    }));
+    if (p.type === 'tv' && !p.episodes.length) p.episodes.push({ id: uid(), number: '1', title: '', scriptLink: null });
+    const epIds = new Set(p.episodes.map((e) => e.id));
+    for (const s of Array.isArray(p.scenes) ? p.scenes : []) {
+      if (p.type === 'tv') { if (!epIds.has(s.episodeId)) s.episodeId = p.episodes[0].id; } else delete s.episodeId;
+    }
+    return p;
   }
 
   // Fills in fields added in later versions, in place, so older local and shared
@@ -214,7 +241,7 @@
         delete s.cast;
       }
     }
-    return p;
+    return upgradeProduction(p);
   }
 
   // Splits a free-text list ("mug, keys\nnewspaper") into items.
@@ -266,7 +293,10 @@
         })),
       scriptLink: p.scriptLink || null,
       comments: p.comments || [],
+      type: p.type === 'tv' ? 'tv' : 'film',
+      episodes: (p.episodes || []).map(({ id, number, title, scriptLink }) => ({ id, number, title, scriptLink: scriptLink || null })),
       scenes: p.scenes.map((s) => ({
+        ...(s.episodeId ? { episodeId: s.episodeId } : {}),
         number: s.number,
         heading: s.heading,
         synopsis: s.synopsis || '',
@@ -431,7 +461,7 @@
   }
 
   window.ShotFormats = {
-    OPTIONS, SHOT_DEFAULTS, CREW_ROLES, crewRoles, setCrewRoles, newShot, shotLetter, normalizeProject, upgradeProject, listItems, shotEquipment,
+    OPTIONS, SHOT_DEFAULTS, CREW_ROLES, crewRoles, setCrewRoles, upgradeProduction, newShot, shotLetter, normalizeProject, upgradeProject, listItems, shotEquipment,
     importFile, toShotsheet, toBackup, toCSV, toICS,
   };
 })();

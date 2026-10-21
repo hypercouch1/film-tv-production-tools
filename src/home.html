@@ -18,10 +18,15 @@
         <h1 class="sheet-title">Production Tools</h1>
         <div id="account"></div>
       </div>
-      <p class="home-sub" id="homeSub">Pick a system to get started.</p>
+      <p class="home-sub" id="homeSub">Choose a production, or start a new one.</p>
     </header>
 
-    <section class="tiles" id="tiles"></section>
+    <section class="prod-grid" id="productions"></section>
+
+    <section class="prod-shared" id="sharedSection" hidden>
+      <h2 class="section-title">Shared with you</h2>
+      <div class="prod-grid" id="shared"></div>
+    </section>
 
     <section class="upcoming" id="upcoming" hidden>
       <h2 class="section-title">Upcoming Shoots</h2>
@@ -36,6 +41,8 @@
   <script src="sync-core.js"></script>
   <script src="cloud.js"></script>
   <script src="collab-ui.js"></script>
+  <script src="shotsheet-formats.js"></script>
+  <script src="production.js"></script>
   <script src="home.js"></script>
 </body>
 </html>
