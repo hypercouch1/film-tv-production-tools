@@ -264,6 +264,40 @@ assert.equal((await api('GET', `/api/projects/${loose.project.id}/doc`, null, C)
 assert.equal((await api('GET', `/api/projects?parent=${prodId}&kind=script`, null, A)).projects.length, 2);
 step('a script shared on its own moves into a production');
 
+// Personal availability links: no account needed, the code is the key.
+const watcher = live(prodId, A);
+await watcher.next((m) => m.type === 'snapshot');
+await api('POST', '/api/projects', { kind: 'shotsheet', id: 'x' + prodId, doc: { title: 'Other' } }, A); // not used: proves codes are per production
+assert.equal((await api('POST', `/api/projects/${prodId}/availability/links`, { start: '2026-11-01', end: '2026-11-30', people: [{ personId: 'c1', name: 'Ann Lee', role: 'Maya' }] }, C)).status, 200, 'editors can ask');
+const linkRes = await api('POST', `/api/projects/${prodId}/availability/links`, { start: '2026-11-01', end: '2026-11-30', people: [{ personId: 'c1', name: 'Ann Lee', role: 'Maya' }, { personId: 'k1', name: 'Gus', role: 'Gaffer' }] }, A);
+assert.equal(linkRes.status, 200, linkRes.error);
+const annCode = linkRes.links.find((l) => l.personId === 'c1').code;
+assert.match(annCode, /^[A-HJ-NP-Z2-9]{10}$/);
+assert.equal((await api('GET', '/api/availability/AAAAAAAAAA')).status, 404, 'unknown codes are refused');
+const page = await api('GET', `/api/availability/${annCode.toLowerCase()}`);
+assert.deepEqual([page.production, page.name, page.role, page.start, page.end, page.off], ['Harbour Lights', 'Ann Lee', 'Maya', '2026-11-01', '2026-11-30', []], 'codes work in any case');
+const sent = await api('POST', `/api/availability/${annCode}`, { off: ['2026-11-03', '2026-11-03', '2026-12-25', 'nope'], note: 'Mornings only on the 4th' });
+assert.deepEqual(sent.off, ['2026-11-03'], 'only dates in the range are kept');
+const live1 = await watcher.next((m) => m.type === 'ops' && m.from === 'server');
+assert.deepEqual(live1.ops[0].p.slice(0, 1), ['availability'], 'the answer reaches the production live');
+assert.deepEqual((await api('GET', `/api/projects/${prodId}/doc`, null, A)).doc.availability.c1.off, ['2026-11-03']);
+assert.equal((await api('GET', `/api/availability/${annCode}`)).note, 'Mornings only on the 4th');
+const listed2 = (await api('GET', `/api/projects/${prodId}/availability/links`, null, C)).links;
+assert.deepEqual(listed2.map((l) => [l.personId, !!l.respondedAt]), [['c1', true], ['k1', false]]);
+assert.equal((await api('GET', `/api/projects/${prodId}/availability/links`, null, B)).status, 404, 'non-members see nothing');
+// A new link replaces the old one; revoking stops it.
+const again = await api('POST', `/api/projects/${prodId}/availability/links`, { start: '2026-11-01', end: '2026-11-30', people: [{ personId: 'c1', name: 'Ann Lee', role: 'Maya' }] }, A);
+assert.equal((await api('GET', `/api/availability/${annCode}`)).status, 404, 'the old code stops working');
+await api('DELETE', `/api/projects/${prodId}/availability/links/c1`, null, A);
+assert.equal((await api('GET', `/api/availability/${again.links[0].code}`)).status, 404, 'revoked');
+const html = await fetch(BASE + `/a/${annCode}`);
+assert.match(html.headers.get('content-type'), /text\/html/);
+assert.match(html.headers.get('content-security-policy'), /script-src 'nonce-/);
+assert.match(await html.text(), /Availability/);
+watcher.close();
+await api('DELETE', `/api/projects/x${prodId}`, null, A);
+step('availability links: answer without an account, reaches the production live, replace and revoke');
+
 // Editors can delete a document inside; deleting the production deletes everything.
 assert.equal((await api('DELETE', `/api/projects/${sheet.project.id}`, null, C)).deleted, true);
 assert.equal((await api('DELETE', `/api/projects/${prodId}`, null, A)).deleted, true);

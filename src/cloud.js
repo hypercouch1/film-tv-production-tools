@@ -339,6 +339,18 @@
     // A document as it is now, without opening it live.
     doc: (id) => request('GET', `/api/projects/${encodeURIComponent(id)}/doc`).then((r) => r.doc),
     moveInto: (id, parent) => request('PATCH', `/api/projects/${encodeURIComponent(id)}`, { parent }).then((r) => r.project),
+
+    // Personal availability links for a shared production's cast and crew.
+    availabilityLinks: (id) => request('GET', `/api/projects/${encodeURIComponent(id)}/availability/links`).then((r) => r.links),
+    createAvailabilityLinks: (id, body) => request('POST', `/api/projects/${encodeURIComponent(id)}/availability/links`, body).then((r) => r.links),
+    revokeAvailabilityLink: (id, personId) => request('DELETE', `/api/projects/${encodeURIComponent(id)}/availability/links/${encodeURIComponent(personId)}`),
+    // The address cast and crew open: /a/<code> on the availability site (or this server).
+    availabilityLink: (code) => {
+      const site = ((window.APP_CONFIG && window.APP_CONFIG.availabilityUrl) || '').replace(/\/+$/, '');
+      const configured = ((window.APP_CONFIG && window.APP_CONFIG.serverUrl) || '').replace(/\/+$/, '');
+      // Someone using their own server gets links on that server.
+      return `${site && serverUrl() === configured ? site : serverUrl()}/a/${code}`;
+    },
     deleteProject: (id) => request('DELETE', `/api/projects/${encodeURIComponent(id)}`),
     members: (id) => request('GET', `/api/projects/${encodeURIComponent(id)}/members`).then((r) => r.members),
     addMember: (id, email, role) => request('POST', `/api/projects/${encodeURIComponent(id)}/members`, { email, role }).then((r) => r.members),

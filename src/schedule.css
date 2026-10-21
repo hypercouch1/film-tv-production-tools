@@ -93,6 +93,21 @@
 .avail .av-note .field { font-size: 12px; padding: 4px 6px; }
 .av-src { font-size: 11px; color: #a9c8f0; }
 
+/* Availability links dialogs */
+.av-range { display: flex; gap: 12px; margin: 10px 0; }
+.av-range label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+.av-people { display: grid; gap: 4px; max-height: 340px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+.av-pick { display: flex; align-items: center; gap: 10px; padding: 4px 6px; border-radius: 6px; cursor: pointer; }
+.av-pick:hover { background: rgba(255, 255, 255, .04); }
+.av-pick > span:nth-child(3) { margin-left: auto; }
+.av-links { display: grid; gap: 6px; max-height: 420px; overflow-y: auto; }
+.av-link-row { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(150px, 1.5fr) auto 84px 28px; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); }
+.av-link-row > div { min-width: 0; }
+.av-link-row .field { min-width: 0; }
+.av-link-row.fresh { border-color: var(--yellow); }
+.av-url { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+.av-answered { color: #6fcf7a; }
+
 /* ---------- Print ---------- */
 @media print {
   .strip-move, .strip-grip, .add-day-btn, .strip-help, .avail-head .icon-btn, .avail-actions { display: none !important; }

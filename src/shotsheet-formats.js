@@ -228,8 +228,9 @@
     });
   }
 
-  // When people can't work: { [characterId or crewId]: { off: ['YYYY-MM-DD'], note, source, updatedAt } }.
-  // source 'web': sent through their personal availability link.
+  // When people can't work: { [characterId or crewId]: { off: ['YYYY-MM-DD'], note, source, at } }.
+  // source 'web': sent through their personal availability link. (at, not updatedAt: keys
+  // named updatedAt are local-only and never sync.)
   function cleanAvailability(raw, people) {
     const out = {};
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
@@ -239,7 +240,7 @@
         off: [...new Set((Array.isArray(a.off) ? a.off : []).filter((d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)))].sort(),
         note: String(a.note == null ? '' : a.note).slice(0, 500),
         ...(a.source === 'web' ? { source: 'web' } : {}),
-        ...(Number.isFinite(a.updatedAt) ? { updatedAt: a.updatedAt } : {}),
+        ...(Number.isFinite(a.at) ? { at: a.at } : {}),
       };
     }
     return out;
@@ -287,7 +288,16 @@
       d.calls = Object.fromEntries(Object.entries(calls).filter(([, v]) => typeof v === 'string'));
       d.sceneOrder = idList(d.sceneOrder); // strip order on the stripboard
     });
-    p.availability = cleanAvailability(p.availability, new Set([...p.characters, ...p.crew].map((x) => x.id)));
+    const people = new Set([...p.characters, ...p.crew].map((x) => x.id));
+    p.availability = cleanAvailability(p.availability, people);
+    // Personal availability links sent out: { [personId]: { code, at, start, end } }.
+    const links = p.availabilityLinks && typeof p.availabilityLinks === 'object' && !Array.isArray(p.availabilityLinks) ? p.availabilityLinks : {};
+    p.availabilityLinks = {};
+    for (const [id, l] of Object.entries(links)) {
+      if (people.has(id) && l && typeof l.code === 'string' && /^[A-Z0-9]{6,20}$/.test(l.code)) {
+        p.availabilityLinks[id] = { code: l.code, at: Number(l.at) || 0, start: String(l.start || ''), end: String(l.end || '') };
+      }
+    }
     const dayIds = new Set(p.days.map((d) => d.id));
     const sceneIds = new Set(p.scenes.map((s) => s.id));
     // Locations: { id, name, address, contact, parking, hospital, power, permit, permitNotes,

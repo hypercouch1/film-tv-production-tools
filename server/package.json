@@ -9,6 +9,8 @@
     "db:init:local": "wrangler d1 execute production-hub --local --file=schema.sql",
     "db:migrate": "wrangler d1 execute production-hub --remote --file=migrations/0002_productions.sql",
     "db:migrate:local": "wrangler d1 execute production-hub --local --file=migrations/0002_productions.sql",
+    "db:migrate:availability": "wrangler d1 execute production-hub --remote --file=migrations/0003_availability.sql",
+    "db:migrate:availability:local": "wrangler d1 execute production-hub --local --file=migrations/0003_availability.sql",
     "test": "node test/api.test.mjs"
   },
   "devDependencies": {

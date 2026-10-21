@@ -250,7 +250,8 @@
       const a = p.availability[personId] = p.availability[personId] || { off: [], note: '' };
       a.off = Array.isArray(a.off) ? a.off : [];
       a.off = a.off.includes(date) ? a.off.filter((x) => x !== date) : [...a.off, date].sort();
-      a.updatedAt = Date.now();
+      a.at = Date.now();
+      delete a.source; // edited in the app now
       ctx.save(); ctx.render({ keepScroll: true });
     };
     const needed = (person, isCast, d) => !!d && (isCast
@@ -286,7 +287,7 @@
         }),
         el('td', { class: 'av-note' }, el('input', {
           class: 'field', value: (a && a.note) || '', placeholder: 'e.g. mornings only', disabled: ro,
-          onchange: (e) => { const x = p.availability[person.id] = p.availability[person.id] || { off: [], note: '' }; x.note = e.target.value; x.updatedAt = Date.now(); ctx.save(); },
+          onchange: (e) => { const x = p.availability[person.id] = p.availability[person.id] || { off: [], note: '' }; x.note = e.target.value; x.at = Date.now(); ctx.save(); },
         })));
     };
     const first = ctx.parseYmd(dates[0]), last = ctx.parseYmd(dates[dates.length - 1]);

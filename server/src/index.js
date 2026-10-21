@@ -4,6 +4,7 @@
 //                    to everyone connected over WebSockets.
 import { DurableObject } from 'cloudflare:workers';
 import '../../src/sync-core.js';
+import { AVAILABILITY_HTML } from './availability-page.js';
 
 const { applyAll, clone } = globalThis.SyncCore;
 
@@ -170,6 +171,26 @@ const withInfo = (row) => {
 // Ids the app chooses for documents it moves online (so links between them survive).
 const validId = (id) => typeof id === 'string' && /^[A-Za-z0-9_-]{8,40}$/.test(id);
 
+// Personal availability codes: 10 characters people can read out or type (no 0/O, 1/I/L).
+const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+function availabilityCode() {
+  const bytes = crypto.getRandomValues(new Uint8Array(10));
+  return [...bytes].map((b) => CODE_CHARS[b % CODE_CHARS.length]).join('');
+}
+
+function availabilityPage() {
+  const nonce = randomToken(16);
+  return new Response(AVAILABILITY_HTML.replace(/__NONCE__/g, nonce), {
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+      'Referrer-Policy': 'no-referrer',
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'no-store',
+    },
+  });
+}
+
 async function listMembers(env, projectId) {
   const { results } = await env.DB.prepare(
     'SELECT u.id, u.email, u.name, m.role FROM members m JOIN users u ON u.id = m.user_id WHERE m.project_id = ? ' +
@@ -242,6 +263,38 @@ async function route(req, env, url) {
       if (session) await revokeLive(env, session.user_id, { only: hash });
     }
     return json({ ok: true });
+  }
+
+  // ---- Availability links (no account needed: the personal code is the key) ----
+  // The page cast and crew open (film.prismdashboard.cc/a/<code>).
+  if (method === 'GET' && (pathname.startsWith('/a/') || (pathname === '/' && url.hostname === env.AVAILABILITY_HOST))) {
+    return availabilityPage();
+  }
+  if ((m = pathname.match(/^\/api\/availability\/([A-Za-z0-9]{6,20})$/))) {
+    const link = await env.DB.prepare('SELECT * FROM availability_links WHERE code_hash = ?').bind(await sha256Hex(m[1].toUpperCase())).first();
+    if (!link) throw new HttpError(404, "This link isn't valid any more. Ask the production for a new one.");
+    const res = await room(env, link.project_id).fetch('https://room/doc', { method: 'POST', body: '{}' });
+    if (!res.ok) throw new HttpError(404, "This production isn't available any more.");
+    const doc = await res.json();
+    if (method === 'GET') {
+      const mine = (doc.availability && doc.availability[link.person_id]) || {};
+      const days = (Array.isArray(doc.days) ? doc.days : []).map((d) => d && d.date).filter((d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+      return json({
+        production: String(doc.title || 'Untitled').slice(0, 200), name: link.name, role: link.role,
+        start: link.start_date, end: link.end_date, shootDays: days,
+        off: Array.isArray(mine.off) ? mine.off : [], note: String(mine.note || ''), respondedAt: link.responded_at,
+      });
+    }
+    if (method === 'POST') {
+      const body = await readJson(req, 20_000);
+      const inRange = (d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= link.start_date && d <= link.end_date;
+      const off = [...new Set((Array.isArray(body.off) ? body.off : []).filter(inRange))].sort().slice(0, 400);
+      const entry = { off, note: String(body.note || '').slice(0, 500), source: 'web', at: Date.now() };
+      const put = await roomCall(env, link.project_id, '/availability', { personId: link.person_id, entry });
+      if (!put.ok) throw new HttpError(404, "This production isn't available any more.");
+      await env.DB.prepare('UPDATE availability_links SET responded_at = ? WHERE code_hash = ?').bind(entry.at, link.code_hash).run();
+      return json({ ok: true, off, note: entry.note });
+    }
   }
 
   const user = await authUser(req, env, url);
@@ -356,6 +409,45 @@ async function route(req, env, url) {
     return json({ project: { id, kind: doc.kind, parentId } });
   }
 
+  // Availability links for a shared production. Owners and editors create them (one code
+  // per person; a new one replaces the old) and revoke them; members see who has answered.
+  if ((m = pathname.match(/^\/api\/projects\/([\w-]+)\/availability\/links(?:\/([\w-]+))?$/))) {
+    const [, id, personId] = m;
+    const prodRow = await env.DB.prepare('SELECT kind, parent_id FROM projects WHERE id = ?').bind(id).first();
+    if (!prodRow || prodRow.kind !== 'shotsheet' || prodRow.parent_id) throw new HttpError(404, 'Project not found.');
+    if (method === 'GET' && !personId) {
+      await requireRole(env, id, user.id);
+      const { results } = await env.DB.prepare(
+        'SELECT person_id AS personId, name, role, start_date AS start, end_date AS end, created_at AS createdAt, responded_at AS respondedAt FROM availability_links WHERE project_id = ? ORDER BY name'
+      ).bind(id).all();
+      return json({ links: results });
+    }
+    await requireRole(env, id, user.id, ['owner', 'editor']);
+    if (method === 'POST' && !personId) {
+      const body = await readJson(req, 100_000);
+      const date = (d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);
+      if (!date(body.start) || !date(body.end) || body.end < body.start) throw new HttpError(400, 'Choose the dates to ask about.');
+      const people = (Array.isArray(body.people) ? body.people : []).filter((x) => x && typeof x.personId === 'string' && /^[\w-]{1,64}$/.test(x.personId)).slice(0, 300);
+      if (!people.length) throw new HttpError(400, 'Choose at least one person.');
+      const now = Date.now();
+      const links = [];
+      const stmts = [];
+      for (const x of people) {
+        const code = availabilityCode();
+        links.push({ personId: x.personId, code });
+        stmts.push(env.DB.prepare('DELETE FROM availability_links WHERE project_id = ? AND person_id = ?').bind(id, x.personId));
+        stmts.push(env.DB.prepare('INSERT INTO availability_links (code_hash, project_id, person_id, name, role, start_date, end_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+          .bind(await sha256Hex(code), id, x.personId, String(x.name || 'Cast or crew').slice(0, 100), String(x.role || '').slice(0, 100), body.start, body.end, now));
+      }
+      await env.DB.batch(stmts);
+      return json({ links });
+    }
+    if (method === 'DELETE' && personId) {
+      await env.DB.prepare('DELETE FROM availability_links WHERE project_id = ? AND person_id = ?').bind(id, personId).run();
+      return json({ ok: true });
+    }
+  }
+
   // The current document, read-only (e.g. the shot sheet reading a production's script).
   if ((m = pathname.match(/^\/api\/projects\/([\w-]+)\/doc$/)) && method === 'GET') {
     const id = m[1];
@@ -382,6 +474,7 @@ async function route(req, env, url) {
       await env.DB.batch([
         env.DB.prepare('DELETE FROM members WHERE project_id = ?').bind(id),
         env.DB.prepare('DELETE FROM projects WHERE id = ? OR parent_id = ?').bind(id, id),
+        env.DB.prepare('DELETE FROM availability_links WHERE project_id = ?').bind(id),
       ]);
       await Promise.all(ids.map((x) => roomCall(env, x, '/destroy')));
       return json({ ok: true, deleted: true });
@@ -505,6 +598,23 @@ export class ProjectRoom extends DurableObject {
     if (url.pathname === '/doc') {
       if (!this.doc) return new Response('Not found', { status: 404 });
       return new Response(JSON.stringify(this.doc), { headers: { 'Content-Type': 'application/json' } });
+    }
+    // An answer sent through a personal availability link: written into the production like
+    // any edit, so everyone with it open sees it straight away.
+    if (url.pathname === '/availability') {
+      if (!this.doc) return new Response('Not found', { status: 404 });
+      const has = this.doc.availability && typeof this.doc.availability === 'object' && !Array.isArray(this.doc.availability);
+      const ops = has
+        ? [{ t: 'set', p: ['availability', String(body.personId)], v: body.entry }]
+        : [{ t: 'set', p: ['availability'], v: { [String(body.personId)]: body.entry } }];
+      const next = clone(this.doc);
+      const applied = applyAll(next, ops);
+      if (!applied.length || JSON.stringify(next).length > MAX_DOC_BYTES) return new Response('Not saved', { status: 400 });
+      this.doc = next;
+      this.version++;
+      await this.ctx.storage.put({ doc: this.doc, version: this.version });
+      this.broadcast({ type: 'ops', ops: applied, v: this.version, from: 'server', batch: 0 });
+      return new Response('ok');
     }
     if (url.pathname === '/destroy') {
       for (const ws of this.ctx.getWebSockets()) {

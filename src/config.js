@@ -3,4 +3,6 @@
 // People can still override it under Account → Server.
 window.APP_CONFIG = {
   serverUrl: 'https://production-hub.sosdorfm.workers.dev',
+  // Where cast and crew answer their personal availability links (served by the server).
+  availabilityUrl: 'https://film.prismdashboard.cc',
 };

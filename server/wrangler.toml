@@ -2,12 +2,21 @@ name = "production-hub"
 main = "src/index.js"
 compatibility_date = "2025-09-01"
 
+# The availability page's address (cast and crew open film.prismdashboard.cc/a/<code>).
+# The domain is in the same Cloudflare account, so deploying creates the DNS record and
+# certificate.
+routes = [
+  { pattern = "film.prismdashboard.cc", custom_domain = true },
+]
+
 [vars]
 # PBKDF2 rounds for new passwords. Workers allows at most 100000.
 PBKDF2_ITERATIONS = "100000"
 # Apps older than this see an "update required" notice. Raise it when a server
 # change needs a newer app.
 MIN_CLIENT_VERSION = "1.0.0"
+# Where cast and crew open their personal availability links (served by this Worker).
+AVAILABILITY_HOST = "film.prismdashboard.cc"
 
 [[d1_databases]]
 binding = "DB"

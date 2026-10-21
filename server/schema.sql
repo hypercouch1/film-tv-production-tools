@@ -37,6 +37,20 @@ CREATE TABLE IF NOT EXISTS members (
 );
 CREATE INDEX IF NOT EXISTS members_user ON members(user_id);
 
+-- Personal availability links (see migrations/0003_availability.sql).
+CREATE TABLE IF NOT EXISTS availability_links (
+  code_hash    TEXT PRIMARY KEY,
+  project_id   TEXT NOT NULL,
+  person_id    TEXT NOT NULL,
+  name         TEXT NOT NULL,
+  role         TEXT NOT NULL,
+  start_date   TEXT NOT NULL,
+  end_date     TEXT NOT NULL,
+  created_at   INTEGER NOT NULL,
+  responded_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS availability_project ON availability_links(project_id, person_id);
+
 -- Failed sign-in attempts per email, for basic brute-force protection.
 CREATE TABLE IF NOT EXISTS auth_failures (
   email        TEXT PRIMARY KEY,
