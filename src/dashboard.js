@@ -56,6 +56,17 @@
         <path d="M32 58s-17-17-17-30a17 17 0 0 1 34 0c0 13-17 30-17 30z" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linejoin="round"/>
         <circle cx="32" cy="28" r="6.5" fill="#e6cf2e"/>
       </svg>`,
+    post: `
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <rect x="8" y="8" width="48" height="30" rx="4" fill="none" stroke="currentColor" stroke-width="3.5"/>
+        <path d="M28 16v14l11-7z" fill="#e6cf2e"/>
+        <line x1="8" y1="46" x2="56" y2="46" stroke="currentColor" stroke-width="2" opacity=".5"/>
+        <rect x="10" y="42" width="18" height="8" rx="2" fill="currentColor"/>
+        <rect x="31" y="42" width="12" height="8" rx="2" fill="#e6cf2e"/>
+        <rect x="46" y="42" width="8" height="8" rx="2" fill="currentColor" opacity=".55"/>
+        <rect x="16" y="53" width="26" height="5" rx="2" fill="currentColor" opacity=".55"/>
+        <line x1="36" y1="39" x2="36" y2="60" stroke="#e2332b" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>`,
     callsheet: `
       <svg viewBox="0 0 64 64" aria-hidden="true">
         <rect x="12" y="8" width="40" height="50" rx="5" fill="none" stroke="currentColor" stroke-width="3.5"/>
