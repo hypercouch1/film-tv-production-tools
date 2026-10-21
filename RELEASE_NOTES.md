@@ -1,5 +1,26 @@
 # Production Tools 1.2.5
 
+## Productions: everything for a film or TV show in one place
+- **Start screen:** choose a production, or create one as a **Film** or a **TV show**. Each production has its own home page with all its tools: Script, Shot Sheet, Schedule, Cast & Crew, Call Sheets, Breakdown and Locations.
+- **TV shows:** episodes each have their own script, shot list and breakdown, while cast, crew, locations and the schedule are shared.
+- **Your existing work** is moved into productions automatically: each shot sheet becomes a film, with its script.
+- **Share the whole production:** invite someone once and they get everything in it. Scripts and call sheets shared on their own before can be moved into a production from the start screen.
+
+## A Schedule page
+- **Calendar**, **Stripboard** (drag colour-coded scene strips between shoot days), **Day Out of Days** (who works, holds and finishes when) and **Availability** in one place.
+- **Availability by link:** send cast and crew a personal link (film.prismdashboard.cc). They tap the days they can't work on their phone, with no app or account. Answers appear live, and clashes with the schedule are flagged on the stripboard, in the Day Out of Days and on the availability grid. People in the production mark their own days in the app.
+
+## Script breakdown
+- **Tag the script:** select words in the Script Writer and tag them as props, wardrobe, vehicles, extras, stunts, effects and more (🏷 or Ctrl/⌘+Shift+T).
+- **Breakdown page:** a sheet per scene with the script's tags plus anything you add, and a list of every element with notes.
+- **Call sheets** now list what each day's scenes need.
+
+## Locations
+- **Every location** with address and map link, contact, fee, parking, nearest hospital, power, permit status and notes.
+- **Scenes match automatically** by the set in their headings; call sheets fill in the location, parking, hospital and weather place from them.
+
+> **For whoever runs the server:** this version needs the server update (two small database changes and the film.prismdashboard.cc address). Older app versions keep working with the updated server.
+
 ## Smoother editing together
 - **Long text stays in view:** when someone else edits a shared project while you're typing, the field you're in no longer jumps back to its start. Before, a long line would scroll back to the beginning and hide what you were typing.
 - **The page stays put:** your view no longer moves when others add or remove things above you. The field you're typing in stays at the same spot on screen. When you're not typing, whatever is at the top of your view stays there.

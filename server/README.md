@@ -40,6 +40,16 @@ You need a free Cloudflare account and Node.js. Run these in a terminal inside t
 
 To deploy an update after changing the server code, run `npm run deploy` again.
 
+**Updating a server set up before 1.2.5** (productions and availability links): apply the two database changes once, then deploy:
+
+```bash
+npm run db:migrate
+npm run db:migrate:availability
+npm run deploy
+```
+
+(A new server set up with `npm run db:init` already has them.) Deploying also attaches the availability page's address, `film.prismdashboard.cc` (see `routes` in `wrangler.toml`); the domain must be in the same Cloudflare account. Change `AVAILABILITY_HOST` and `routes` to use another address.
+
 ## Local development
 
 Set up the local database and start the server:

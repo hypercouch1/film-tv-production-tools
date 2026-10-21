@@ -50,23 +50,50 @@ To get rid of these warnings, sign and notarize the app with an Apple Developer 
 The `online` branch adds accounts and live collaboration. It needs the small Cloudflare server in [`server/`](server/README.md); that page has the one-time setup.
 
 - **Accounts:** click **Sign in** in the top-right corner of any screen to create an account or sign in.
-- **Local and shared:** each sidebar has two lists.
-  - **On this computer:** works offline, exactly as before.
-  - **Shared:** stored on the server and edited live by everyone in the project.
-- **Sharing:** open a call sheet or project and click **Share**. This moves it online. Then add people by the email they signed up with:
-  - **Can edit:** full editing, including checking items off.
-  - **View only:** they can watch live but can't change anything.
-- **Live:** checkmarks, edits, new shots, and schedule changes appear for everyone within a fraction of a second. Avatars show who else is in the project.
+- **Sharing a production:** click **Share** on the production's home page (or any of its tools).
+  - **What happens:** the production moves online with everything in it: scripts, shot list, schedule, breakdown, locations and call sheets. They keep their ids, so the links between them keep working.
+  - **Inviting:** add people by the email they signed up with. **Can edit** gives full editing; **View only** lets them watch live without changing anything.
+  - **What they get:** everyone you add gets the whole production.
+- **Live:** checkmarks, edits, new shots and schedule changes appear for everyone within a fraction of a second. Avatars show who else is there.
   - The status pill shows **Live**, **Connecting…** or **Offline · will sync**.
   - Edits made offline are sent when the connection returns.
-- **Owners** manage people under **People**. The ⋯ menu offers **Delete for everyone** to the owner and **Leave** to everyone else.
-- **Private copy:** **Duplicate** on a shared project makes a copy on this computer only.
+- **Owners** manage people under **People**. Deleting a shared production deletes everything in it for everyone; anyone else can **Leave**.
+- **Shared before productions:** scripts and call sheets shared on their own by an older version are listed on the start screen. Their owner can move each into a shared production.
 
-## Home screen
+## Productions
 
-Click a tile (or press **1**, **2**) to open a system. **Ctrl/⌘+H** or the ⌂ button returns home. Upcoming shoot days from every Shot Sheet project are listed under the tiles.
+Everything for a film or TV show lives in one **production**.
 
-To add a new system, add an entry to `SYSTEMS` in `src/home.js` (and a logo in `LOGOS`). Then add its page under `src/`. If it needs saved data, add its store name to `STORES` in `main.js`.
+- **Start screen:** lists your productions (on this computer and shared with you), with upcoming shoot days. **New production** asks for a title and **Film** or **TV show**.
+- **Film:** one script and one shot list.
+- **TV show:** episodes, each with its own script, shot list and breakdown. Cast, crew, locations and the schedule are shared by every episode. Add, number and name episodes on the production's home page; scene codes in shared views read "2-5" (episode 2, scene 5).
+- **Production home:** tiles for Script, Shot Sheet, Schedule, Cast & Crew, Call Sheets, Breakdown and Locations (or press **1**–**7**), the episodes, upcoming shoot days, rename and delete. **Ctrl/⌘+H** or ⌂ in any tool returns here.
+- **Older data:** the first time 1.2.5 runs, each existing shot sheet becomes a film, scripts join the production they're linked to (or get their own), and call sheets go into a "Call Sheets" production.
+
+Code: `src/production.js` (current production, links, migration, sharing), `src/home.js` (start screen), `src/dashboard.js` (production home). The production document is the shot sheet project (`shotsheets` store / shared kind `shotsheet`); scripts and call sheets carry `productionId` (and `episodeId` for TV). `shotsheet.js` runs the Shot Sheet, Schedule, Breakdown and Locations pages (`body[data-mode]`).
+
+## Schedule
+
+**Schedule** on the production home (or the Shot Sheet's Schedule tab):
+
+- **Calendar:** shoot days, each day's details, **Call sheet** and **Run day**.
+- **Stripboard:** every scene as a strip coloured by INT/EXT and day/night (white INT day, yellow EXT day, blue INT night, green EXT night) with set, pages, cast numbers and shots. Drag strips between shoot days and the unscheduled bin, or use **Move…**. A scene split over days shows a strip on each. Days show page counts and availability clashes.
+- **Day Out of Days:** cast and crew against shoot days: SW (start), W (work), H (hold), WF (finish), SWF (one day), with totals.
+- **Availability:** a grid of people and dates. Click a date to mark a day someone can't work. Shoot days are highlighted, and a marked day they're scheduled on shows as a clash (here, on the stripboard and in the Day Out of Days).
+  - **Ask by link…** (shared productions): pick people and dates; each gets a personal link (`film.prismdashboard.cc/a/<code>`). They tap the days they can't work on their phone — no app or account. Answers appear live in the grid, marked "from their link". **Links** lists them with copy buttons, who has answered, and revoke.
+  - People in the production mark their own days on the grid instead.
+
+## Breakdown
+
+- **Tagging in the script:** in the Script Writer, select words and press 🏷 (**Ctrl/⌘+Shift+T**): Props, Wardrobe, Makeup & hair, Extras, Stunts, Vehicles, Animals, Special effects, Visual effects, Sound & music, Set dressing or Special equipment. Tags show as coloured pills in the left margin (click one to remove it).
+- **Breakdown page:** a sheet per scene with every category: script tags (marked 📄, found through the scene's link to the script) plus anything added by hand. **Elements** lists everything with its scenes, shoot days and notes.
+- **Call sheets** list the day's breakdown: props and special equipment join those lists, the rest get their own section.
+
+## Locations
+
+- Each location has an address (with a map link), contact, fee, parking, nearest hospital, power & facilities, permit status and notes.
+- **Sets shot here:** scenes match a location by their set — the heading without INT./EXT. and the time ("INT. ROSIE'S DINER - BOOTH - NIGHT" matches "Rosie's Diner"). **Sets without a location** lists the sets from your headings to turn into locations.
+- A call sheet's empty location, parking, nearest hospital and weather place are filled from the locations of the day's scenes.
 
 ## Script Writer
 
