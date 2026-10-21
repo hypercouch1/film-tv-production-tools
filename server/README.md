@@ -40,7 +40,7 @@ You need a free Cloudflare account and Node.js. Run these in a terminal inside t
 
 To deploy an update after changing the server code, run `npm run deploy` again.
 
-**Updating a server set up before 1.2.5** (productions and availability links): apply the two database changes once, then deploy:
+**Updating a server set up before 1.3.0** (productions and availability links): apply the two database changes once, then deploy:
 
 ```bash
 npm run db:migrate

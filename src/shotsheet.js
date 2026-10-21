@@ -1502,6 +1502,13 @@
       formatEighths: (n) => window.ScriptParse.formatEighths(n),
       addDay, openSummary,
       scripts, linkedScript: !!linkOf(p),
+      // Shared production: you can say which person you are and mark your own availability,
+      // even with view-only access (the server checks it's your row).
+      me: collab.isCloud(p) && window.Cloud.signedIn && window.Cloud.user ? {
+        userId: window.Cloud.user.id,
+        claim: (personId) => window.Cloud.claimPerson(p._cloud.id, personId),
+        setMine: (personId, entry) => window.Cloud.setMyAvailability(p._cloud.id, personId, entry),
+      } : null,
       availabilityActions: window.Availability ? () => window.Availability.actions(p, { save, render, readOnly: collab.readOnly, isCloud: collab.isCloud(p) }) : null,
     };
   }

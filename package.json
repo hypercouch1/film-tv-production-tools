@@ -1,7 +1,7 @@
 {
   "name": "production-tools",
   "productName": "Production Tools",
-  "version": "1.2.5",
+  "version": "1.3.0",
   "description": "Scripts, call sheets, shot lists and shoot scheduling for film and TV production",
   "main": "main.js",
   "author": "Matthew Sosdorf",
@@ -15,7 +15,7 @@
     "dist:win": "electron-builder --win",
     "dist:mac": "electron-builder --mac",
     "dist": "electron-builder --win --mac",
-    "test": "node tests/sync-core.test.js && node tests/script-parse.test.js && node tests/shotsheet-formats.test.js && node tests/screenplay.test.js && node tests/updates.test.js && node tests/history.test.js && node tests/weather.test.js && node tests/schedule.test.js && node tests/breakdown.test.js && node --no-warnings tests/cloud.test.js"
+    "test": "node tests/sync-core.test.js && node tests/script-parse.test.js && node tests/shotsheet-formats.test.js && node tests/screenplay.test.js && node tests/updates.test.js && node tests/history.test.js && node tests/weather.test.js && node tests/schedule.test.js && node tests/breakdown.test.js && node tests/post.test.js && node --no-warnings tests/cloud.test.js"
   },
   "build": {
     "appId": "com.callsheet.app",

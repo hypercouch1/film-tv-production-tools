@@ -160,10 +160,14 @@
         } catch (err) { failed.push(`${d.title || kind}: ${err.message}`); }
       }
       store[key] = (store[key] || []).filter((d) => !done.has(d.id));
-      await api.saveStore(kind === 'script' ? 'scripts' : 'callsheets', store);
+      await api.saveStore({ script: 'scripts', callsheet: 'callsheets', post: 'post' }[kind], store);
     };
     await upload('script', myScripts, scripts, 'scripts');
     await upload('callsheet', mySheets, sheets, 'sheets');
+    // Post production (take log, media catalogue, tracker, cuts).
+    const post = (await api.loadStore('post')) || {};
+    const myPost = (post.docs || []).filter((d) => d.productionId === pid);
+    if (myPost.length) await upload('post', myPost, post, 'docs');
     if (failed.length) alert('These couldn’t be moved online and are still on this computer:\n\n' + failed.join('\n'));
     return true;
   }

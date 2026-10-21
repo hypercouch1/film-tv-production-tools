@@ -77,6 +77,7 @@
   let prod = null;      // this production
   let scripts = [];     // this production's scripts ({ id, title, episodeId })
   let sheets = [];      // this production's call sheets
+  let post = null;      // this production's post document (on this computer)
   let session = null;   // a shared production: its live connection
   let role = 'owner';   // your role in a shared production
 
@@ -111,6 +112,10 @@
           const n = (prod.elements || []).filter((e) => e.sceneIds.length).length;
           return n ? `${plural(n, 'item')} added by hand · plus script tags` : 'Tag the script, or add items per scene';
         })() },
+      { id: 'post', name: 'Post', tag: 'Take log, media catalogue, post tracker, cuts & notes', page: 'post.html', accent: '#7fd0ea',
+        stats: post ? [post.takes.length && plural(post.takes.length, 'take'), post.media.length && plural(post.media.length, 'file'),
+          post.tasks.filter((t) => t.status !== 'done').length && plural(post.tasks.filter((t) => t.status !== 'done').length, 'open task')].filter(Boolean).join(' · ') || 'Nothing logged yet'
+          : session ? 'Take log, media, tracker and cuts' : 'Nothing logged yet' },
       { id: 'locations', name: 'Locations', tag: 'Addresses, contacts, permits and parking', page: 'locations.html', accent: '#f2994a',
         stats: (() => {
           const locs = prod.locations || [];
@@ -275,6 +280,9 @@
     const cd = (await api.loadStore('callsheets')) || {};
     cd.sheets = (cd.sheets || []).filter((s) => s.productionId !== prod.id);
     await api.saveStore('callsheets', cd);
+    const pd = (await api.loadStore('post')) || {};
+    pd.docs = (pd.docs || []).filter((s) => s.productionId !== prod.id);
+    await api.saveStore('post', pd);
     P.goPicker();
   }
 
@@ -332,6 +340,9 @@
       scripts = (sd.scripts || []).filter((s) => s.productionId === pid);
       const cd = (await api.loadStore('callsheets')) || {};
       sheets = (cd.sheets || []).filter((s) => s.productionId === pid);
+      const pd = (await api.loadStore('post')) || {};
+      const raw = (pd.docs || []).find((x) => x.productionId === pid);
+      post = raw ? window.PostFormats.normalizePost(raw) : null;
     }
     render();
     wireTitle();

@@ -92,6 +92,11 @@
 .avail .av-note { min-width: 180px; }
 .avail .av-note .field { font-size: 12px; padding: 4px 6px; }
 .av-src { font-size: 11px; color: #a9c8f0; }
+.av-me { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 10px 0 4px; padding: 8px 12px; border: 1px solid #9b7be0; border-radius: 8px; background: rgba(155, 123, 224, .08); font-size: 14px; }
+.av-me .field { width: auto; min-width: 220px; }
+.av-you { margin-left: 6px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: #1a1712; background: #c7b6f2; border-radius: 999px; padding: 1px 6px; }
+tr.av-mine .av-name { background: rgba(155, 123, 224, .12); }
+.avail .av-name .link-btn { font-size: 11px; padding: 0; }
 
 /* Availability links dialogs */
 .av-range { display: flex; gap: 12px; margin: 10px 0; }

@@ -294,6 +294,32 @@ const html = await fetch(BASE + `/a/${annCode}`);
 assert.match(html.headers.get('content-type'), /text\/html/);
 assert.match(html.headers.get('content-security-policy'), /script-src 'nonce-/);
 assert.match(await html.text(), /Availability/);
+// View-only people mark their own availability: claim a person, then only that row.
+const viewer = await api('POST', '/api/signup', { email: `dan.${run}@example.com`, name: 'Dan', password: 'correct horse' });
+await api('POST', `/api/projects/${prodId}/members`, { email: `dan.${run}@example.com`, role: 'viewer' }, A);
+const D = viewer.token;
+// The production needs people for claims to point at.
+const owner = live(prodId, A);
+const snapO = await owner.next((m) => m.type === 'snapshot');
+owner.send({ type: 'ops', batch: 1, ops: [{ t: 'set', p: ['characters'], v: [{ id: 'c1', name: 'Maya', actor: 'Ann' }, { id: 'c2', name: 'Lou', actor: 'Dan' }] }] });
+await owner.next((m) => m.type === 'ops' && m.from === snapO.clientId);
+assert.equal((await api('POST', `/api/projects/${prodId}/me/availability`, { personId: 'c2', off: ['2026-11-05'] }, D)).status, 403, 'claim first');
+assert.equal((await api('POST', `/api/projects/${prodId}/me/claim`, { personId: 'nobody' }, D)).status, 404);
+assert.equal((await api('POST', `/api/projects/${prodId}/me/claim`, { personId: 'c2' }, D)).status, 200);
+assert.deepEqual((await owner.next((m) => m.type === 'ops' && m.from === 'server')).ops[0].p[0], 'claims', 'claims reach the production live');
+assert.equal((await api('POST', `/api/projects/${prodId}/me/claim`, { personId: 'c2' }, C)).status, 409, 'someone else can’t take it');
+assert.equal((await api('POST', `/api/projects/${prodId}/me/availability`, { personId: 'c2', off: ['2026-11-05', 'x'], note: 'Back from 6th' }, D)).status, 200);
+assert.equal((await api('POST', `/api/projects/${prodId}/me/availability`, { personId: 'c1', off: ['2026-11-05'] }, D)).status, 403, 'only your own row');
+const docNow = (await api('GET', `/api/projects/${prodId}/doc`, null, A)).doc;
+assert.deepEqual([docNow.availability.c2.off, docNow.availability.c2.source, docNow.claims.c2], [['2026-11-05'], 'member', viewer.user.id]);
+assert.equal((await api('POST', `/api/projects/${prodId}/me/claim`, { personId: null }, D)).status, 200);
+assert.equal((await api('GET', `/api/projects/${prodId}/doc`, null, A)).doc.claims.c2, undefined, 'letting go');
+assert.equal((await api('POST', `/api/projects/${prodId}/me/claim`, { personId: 'c2' }, B)).status, 404, 'non-members can’t');
+owner.close();
+assert.equal((await api('POST', '/api/projects', { kind: 'post', doc: { title: 'Post' } }, A)).status, 400, 'post documents only live inside a production');
+assert.equal((await api('POST', '/api/projects', { kind: 'post', parent: prodId, doc: { title: 'Post' } }, A)).status, 200);
+step('view-only people claim themselves and mark their own availability; post documents live in a production');
+
 watcher.close();
 await api('DELETE', `/api/projects/x${prodId}`, null, A);
 step('availability links: answer without an account, reaches the production live, replace and revoke');

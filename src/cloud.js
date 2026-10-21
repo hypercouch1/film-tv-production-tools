@@ -344,6 +344,10 @@
     availabilityLinks: (id) => request('GET', `/api/projects/${encodeURIComponent(id)}/availability/links`).then((r) => r.links),
     createAvailabilityLinks: (id, body) => request('POST', `/api/projects/${encodeURIComponent(id)}/availability/links`, body).then((r) => r.links),
     revokeAvailabilityLink: (id, personId) => request('DELETE', `/api/projects/${encodeURIComponent(id)}/availability/links/${encodeURIComponent(personId)}`),
+    // Anyone in a shared production (view-only too): say which cast/crew entry is you
+    // (personId null lets go), then mark your own days.
+    claimPerson: (id, personId) => request('POST', `/api/projects/${encodeURIComponent(id)}/me/claim`, { personId }),
+    setMyAvailability: (id, personId, entry) => request('POST', `/api/projects/${encodeURIComponent(id)}/me/availability`, { personId, ...entry }),
     // The address cast and crew open: /a/<code> on the availability site (or this server).
     availabilityLink: (code) => {
       const site = ((window.APP_CONFIG && window.APP_CONFIG.availabilityUrl) || '').replace(/\/+$/, '');

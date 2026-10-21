@@ -68,7 +68,7 @@ Everything for a film or TV show lives in one **production**.
 - **Film:** one script and one shot list.
 - **TV show:** episodes, each with its own script, shot list and breakdown. Cast, crew, locations and the schedule are shared by every episode. Add, number and name episodes on the production's home page; scene codes in shared views read "2-5" (episode 2, scene 5).
 - **Production home:** tiles for Script, Shot Sheet, Schedule, Cast & Crew, Call Sheets, Breakdown and Locations (or press **1**–**7**), the episodes, upcoming shoot days, rename and delete. **Ctrl/⌘+H** or ⌂ in any tool returns here.
-- **Older data:** the first time 1.2.5 runs, each existing shot sheet becomes a film, scripts join the production they're linked to (or get their own), and call sheets go into a "Call Sheets" production.
+- **Older data:** the first time 1.3.0 runs, each existing shot sheet becomes a film, scripts join the production they're linked to (or get their own), and call sheets go into a "Call Sheets" production.
 
 Code: `src/production.js` (current production, links, migration, sharing), `src/home.js` (start screen), `src/dashboard.js` (production home). The production document is the shot sheet project (`shotsheets` store / shared kind `shotsheet`); scripts and call sheets carry `productionId` (and `episodeId` for TV). `shotsheet.js` runs the Shot Sheet, Schedule, Breakdown and Locations pages (`body[data-mode]`).
 
@@ -81,7 +81,17 @@ Code: `src/production.js` (current production, links, migration, sharing), `src/
 - **Day Out of Days:** cast and crew against shoot days: SW (start), W (work), H (hold), WF (finish), SWF (one day), with totals.
 - **Availability:** a grid of people and dates. Click a date to mark a day someone can't work. Shoot days are highlighted, and a marked day they're scheduled on shows as a clash (here, on the stripboard and in the Day Out of Days).
   - **Ask by link…** (shared productions): pick people and dates; each gets a personal link (`film.prismdashboard.cc/a/<code>`). They tap the days they can't work on their phone — no app or account. Answers appear live in the grid, marked "from their link". **Links** lists them with copy buttons, who has answered, and revoke.
-  - People in the production mark their own days on the grid instead.
+  - People in the production mark their own days in the app instead: editors on the grid, and anyone (view-only too) by choosing **That's me** once, after which they can change their own row. The server checks the claim (`POST /api/projects/:id/me/claim` and `/me/availability`); editors can unlink a wrong claim.
+
+## Post
+
+**Post** on the production home (`post.html`, `post.js`; data in its own post document, `post-formats.js`):
+
+- **Take log:** pick a shoot day (or all shots); **+ Take** on a shot adds the next take number with the day's roll. Record roll/card, clip name, timecode, ◯ circled / ✓ good / ✕ no good and notes. Export as CSV.
+- **Media:** **+ Add files** or **+ Add folder** (up to 5,000 files per folder, hidden and system folders skipped) records each file's name, path, drive, size and date — nothing is opened or uploaded. Clips whose name matches a logged clip link to that take (**Match to takes** again later). Link files to scenes or shots, add notes, search and filter by kind, 📂 shows the file in its folder.
+- **Post tracker:** tasks for visual effects, sound, music, colour, edit and other, with status, who, due date (late ones in red) and notes. **Add from breakdown** makes tasks from the breakdown's visual effects and sound items (once each).
+- **Cuts & notes:** cuts by stage (assembly, rough, fine, picture lock, online), with a review link or file path and timecoded notes to resolve.
+- In a shared production the post document is online inside it (made the first time someone who can edit opens Post).
 
 ## Breakdown
 

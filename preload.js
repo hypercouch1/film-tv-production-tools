@@ -17,6 +17,9 @@ if (location.protocol === 'file:') contextBridge.exposeInMainWorld('api', {
   onUpdate: (cb) => ipcRenderer.on('update:status', (_e, info) => cb(info)),
   openRelease: (url) => ipcRenderer.invoke('update:open', url),
   installUpdate: () => ipcRenderer.invoke('update:install'),
+  // Media catalogue: pick files or a folder (names, paths, sizes, dates); show one in its folder.
+  pickMedia: (opts) => ipcRenderer.invoke('media:pick', opts),
+  revealMedia: (filePath) => ipcRenderer.invoke('media:reveal', filePath),
   onMenu: (cb) => ipcRenderer.on('menu', (_e, channel, arg) => cb(channel, arg)),
   onFileOpened: (cb) => ipcRenderer.on('file:opened', (_e, file) => cb(file)),
   platform: process.platform,

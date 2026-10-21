@@ -239,7 +239,7 @@
       out[id] = {
         off: [...new Set((Array.isArray(a.off) ? a.off : []).filter((d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)))].sort(),
         note: String(a.note == null ? '' : a.note).slice(0, 500),
-        ...(a.source === 'web' ? { source: 'web' } : {}),
+        ...(a.source === 'web' || a.source === 'member' ? { source: a.source } : {}),
         ...(Number.isFinite(a.at) ? { at: a.at } : {}),
       };
     }
@@ -290,6 +290,10 @@
     });
     const people = new Set([...p.characters, ...p.crew].map((x) => x.id));
     p.availability = cleanAvailability(p.availability, people);
+    // Who is who in a shared production: { [personId]: account id }, set by the server when
+    // someone says "this is me" (so view-only people can mark their own availability).
+    const claims = p.claims && typeof p.claims === 'object' && !Array.isArray(p.claims) ? p.claims : {};
+    p.claims = Object.fromEntries(Object.entries(claims).filter(([id, uid]) => people.has(id) && typeof uid === 'string'));
     // Personal availability links sent out: { [personId]: { code, at, start, end } }.
     const links = p.availabilityLinks && typeof p.availabilityLinks === 'object' && !Array.isArray(p.availabilityLinks) ? p.availabilityLinks : {};
     p.availabilityLinks = {};

@@ -1,4 +1,4 @@
-# Production Tools 1.2.5
+# Production Tools 1.3.0
 
 ## Productions: everything for a film or TV show in one place
 - **Start screen:** choose a production, or create one as a **Film** or a **TV show**. Each production has its own home page with all its tools: Script, Shot Sheet, Schedule, Cast & Crew, Call Sheets, Breakdown and Locations.
@@ -8,7 +8,15 @@
 
 ## A Schedule page
 - **Calendar**, **Stripboard** (drag colour-coded scene strips between shoot days), **Day Out of Days** (who works, holds and finishes when) and **Availability** in one place.
-- **Availability by link:** send cast and crew a personal link (film.prismdashboard.cc). They tap the days they can't work on their phone, with no app or account. Answers appear live, and clashes with the schedule are flagged on the stripboard, in the Day Out of Days and on the availability grid. People in the production mark their own days in the app.
+- **Availability by link:** send cast and crew a personal link (film.prismdashboard.cc). They tap the days they can't work on their phone, with no app or account. Answers appear live, and clashes with the schedule are flagged on the stripboard, in the Day Out of Days and on the availability grid.
+- **Your own availability in the app:** anyone in a shared production — including people with view-only access — picks "That's me" once, then marks their own days. Only their own row can be changed.
+
+## Post production
+A new **Post** page for each production:
+- **Take log:** for each shoot day's shots, log takes with roll or card, clip name and timecode, circle the good ones, add notes. Exports as CSV for the editor.
+- **Media:** a catalogue of footage and production files. Add files or a whole card or drive folder; each file's drive, folder, size and date are recorded, and clips link to their logged takes automatically by name. Search, filter, link files to scenes and shots, and show a file in its folder. Files stay where they are; nothing is uploaded.
+- **Post tracker:** visual effects, sound (ADR, foley, mix), music, colour and edit tasks with status, who's on it and due date. **Add from breakdown** turns the breakdown's visual effects and sound items into tasks.
+- **Cuts & notes:** each cut from assembly to picture lock, with where to watch it and timecoded review notes that can be resolved.
 
 ## Script breakdown
 - **Tag the script:** select words in the Script Writer and tag them as props, wardrobe, vehicles, extras, stunts, effects and more (🏷 or Ctrl/⌘+Shift+T).
@@ -19,7 +27,7 @@
 - **Every location** with address and map link, contact, fee, parking, nearest hospital, power, permit status and notes.
 - **Scenes match automatically** by the set in their headings; call sheets fill in the location, parking, hospital and weather place from them.
 
-> **For whoever runs the server:** this version needs the server update (two small database changes and the film.prismdashboard.cc address). Older app versions keep working with the updated server.
+> **For whoever runs the server:** this version needs the updated server. Older app versions keep working with it.
 
 ## Smoother editing together
 - **Long text stays in view:** when someone else edits a shared project while you're typing, the field you're in no longer jumps back to its start. Before, a long line would scroll back to the beginning and hide what you were typing.

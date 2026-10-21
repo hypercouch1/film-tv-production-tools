@@ -20,6 +20,8 @@
     onUpdate: () => {},
     openRelease: (url) => window.open(url, '_blank'),
     installUpdate: async () => false,
+    pickMedia: async () => ({ files: [], truncated: false }),
+    revealMedia: async () => false,
     onMenu: () => {},
     onFileOpened: () => {},
     platform: 'web',

@@ -245,15 +245,53 @@
     const shootOn = new Map(days.map((d) => [d.date, d]));
     const shift = (n) => { const d = ctx.parseYmd(availStart); d.setDate(d.getDate() + n * 7); availStart = ctx.ymd(d); ctx.render({ keepScroll: true }); };
 
+    // In a shared production, anyone (view-only too) can say which person they are and then
+    // mark their own row; the server checks it's theirs. ctx.me: { userId, claim, setMine }.
+    const me = ctx.me || null;
+    const claims = p.claims || {};
+    const mine = me ? Object.keys(claims).find((id) => claims[id] === me.userId) || null : null;
+    const canEdit = (personId) => !ro || personId === mine;
+    // A view-only person's own change goes through the server; it comes back as a live edit.
+    const sendMine = (personId, entry) => me.setMine(personId, entry).catch((err) => window.Common.toast(err.message));
+
     const toggle = (personId, date) => {
-      if (ro) return;
-      const a = p.availability[personId] = p.availability[personId] || { off: [], note: '' };
-      a.off = Array.isArray(a.off) ? a.off : [];
-      a.off = a.off.includes(date) ? a.off.filter((x) => x !== date) : [...a.off, date].sort();
+      if (!canEdit(personId)) return;
+      const cur = p.availability[personId] || { off: [], note: '' };
+      const offNow = Array.isArray(cur.off) ? cur.off : [];
+      const next = offNow.includes(date) ? offNow.filter((x) => x !== date) : [...offNow, date].sort();
+      if (ro) { sendMine(personId, { off: next, note: cur.note || '' }); return; }
+      const a = p.availability[personId] = cur;
+      a.off = next;
       a.at = Date.now();
-      delete a.source; // edited in the app now
+      a.source = personId === mine ? 'member' : undefined;
+      if (!a.source) delete a.source; // edited by someone else in the app
       ctx.save(); ctx.render({ keepScroll: true });
     };
+    const setNote = (personId, note) => {
+      if (!canEdit(personId)) return;
+      const cur = p.availability[personId] || { off: [], note: '' };
+      if (ro) { sendMine(personId, { off: cur.off || [], note }); return; }
+      const x = p.availability[personId] = cur;
+      x.note = note; x.at = Date.now(); ctx.save();
+    };
+    const everyone = [...p.characters.map((c) => ({ id: c.id, name: c.actor || c.name || 'Unnamed', role: c.actor ? c.name : 'Cast' })),
+      ...p.crew.map((k) => ({ id: k.id, name: k.name || k.role || 'Crew', role: k.name ? k.role : 'Crew' }))];
+    let meBar = null;
+    if (me && mine) {
+      const who = everyone.find((x) => x.id === mine);
+      meBar = el('div', { class: 'av-me' },
+        el('span', {}, 'You’re ', el('strong', {}, who ? who.name : 'in this production'), who ? ` (${who.role}). Click your row to mark the days you can’t work.` : '.'),
+        el('button', { class: 'link-btn', type: 'button', onclick: () => me.claim(null).catch((err) => window.Common.toast(err.message)) }, 'Not you?'));
+    } else if (me && everyone.length) {
+      const free = everyone.filter((x) => !claims[x.id]);
+      const pick = el('select', { class: 'field' }, el('option', { value: '' }, 'Which one is you?'), ...free.map((x) => el('option', { value: x.id }, `${x.name} — ${x.role}`)));
+      meBar = el('div', { class: 'av-me' },
+        el('span', {}, 'Mark your own availability: '), pick,
+        el('button', { class: 'ghost-btn', type: 'button', onclick: () => {
+          if (!pick.value) return;
+          me.claim(pick.value).catch((err) => window.Common.toast(err.message));
+        } }, 'That’s me'));
+    }
     const needed = (person, isCast, d) => !!d && (isCast
       ? scenesOn(p, d.id).some((s) => s.castIds.includes(person.id))
       : person.allDays || scenesOn(p, d.id).some((s) => s.crewIds.includes(person.id)));
@@ -272,22 +310,28 @@
     const row = (person, label, sub, isCast) => {
       const off = offDays(p, person.id);
       const a = p.availability[person.id];
-      return el('tr', {},
-        el('td', { class: 'av-name' }, el('strong', {}, label), sub ? el('div', { class: 'muted small' }, sub) : null,
-          a && a.source === 'web' ? el('div', { class: 'av-src muted small' }, 'from their link') : null),
+      const editable = canEdit(person.id);
+      const claimed = claims[person.id];
+      return el('tr', { class: person.id === mine ? 'av-mine' : '' },
+        el('td', { class: 'av-name' }, el('strong', {}, label), person.id === mine ? el('span', { class: 'av-you' }, 'you') : null,
+          sub ? el('div', { class: 'muted small' }, sub) : null,
+          a && a.source === 'web' ? el('div', { class: 'av-src muted small' }, 'from their link') : null,
+          a && a.source === 'member' && person.id !== mine ? el('div', { class: 'av-src muted small' }, 'marked by them') : null,
+          claimed && person.id !== mine && !ro ? el('button', { class: 'link-btn small', type: 'button', title: 'This person is linked to an account in the production. Unlink it (e.g. if the wrong person claimed it).',
+            onclick: () => { delete p.claims[person.id]; ctx.save(); ctx.render({ keepScroll: true }); } }, 'linked · unlink') : null),
         ...dates.map((date) => {
           const shoot = shootOn.get(date);
           const isOff = off.has(date);
           const clash = isOff && needed(person, isCast, shoot);
           return el('td', {
-            class: 'av-cell' + (shoot ? ' shoot' : '') + (isOff ? ' off' : '') + (clash ? ' clash' : '') + (ro ? '' : ' editable'),
-            title: clash ? 'Can’t work, but scheduled this day' : isOff ? 'Can’t work' : ro ? '' : 'Click to mark as can’t work',
+            class: 'av-cell' + (shoot ? ' shoot' : '') + (isOff ? ' off' : '') + (clash ? ' clash' : '') + (editable ? ' editable' : ''),
+            title: clash ? 'Can’t work, but scheduled this day' : isOff ? 'Can’t work' : editable ? 'Click to mark as can’t work' : '',
             onclick: () => toggle(person.id, date),
           }, isOff ? '✕' : '');
         }),
         el('td', { class: 'av-note' }, el('input', {
-          class: 'field', value: (a && a.note) || '', placeholder: 'e.g. mornings only', disabled: ro,
-          onchange: (e) => { const x = p.availability[person.id] = p.availability[person.id] || { off: [], note: '' }; x.note = e.target.value; x.at = Date.now(); ctx.save(); },
+          class: 'field', value: (a && a.note) || '', placeholder: 'e.g. mornings only', disabled: !editable,
+          onchange: (e) => setNote(person.id, e.target.value),
         })));
     };
     const first = ctx.parseYmd(dates[0]), last = ctx.parseYmd(dates[dates.length - 1]);
@@ -299,6 +343,7 @@
         el('button', { class: 'icon-btn', title: 'Later', onclick: () => shift(1) }, '›'),
         clashCount ? el('span', { class: 'clash' }, `⚠ ${clashCount} clash${clashCount === 1 ? '' : 'es'} with the schedule`) : el('span', { class: 'muted small' }, 'No clashes with the schedule'),
         ctx.availabilityActions ? ctx.availabilityActions() : null),
+      meBar,
       el('p', { class: 'muted small' }, ro ? 'Days people can’t work.' : 'Click a date to mark a day someone can’t work. Highlighted columns are shoot days; red means they’re scheduled anyway.'),
       el('div', { class: 'avail-scroll' }, el('table', { class: 'avail' },
         el('thead', {}, head),

@@ -30,7 +30,7 @@ function migrateFromOldName() {
 migrateFromOldName();
 
 // Each system keeps its own store file in the user data folder.
-const STORES = ['callsheets', 'shotsheets', 'scripts'];
+const STORES = ['callsheets', 'shotsheets', 'scripts', 'post'];
 const storePath = (key) => {
   if (!STORES.includes(key)) throw new Error('Unknown store: ' + key);
   return path.join(app.getPath('userData'), key + '.json');
@@ -345,6 +345,50 @@ handle('script:import', async () => {
 
 // A script file dragged onto the window.
 handle('script:read', (_e, filePath) => scriptResult(readScript(String(filePath || ''))));
+
+// ---- Media catalogue (Post page) ----
+// Lists files the person picks (or every file in a folder they pick): name, path, size and
+// date only. Nothing is opened, read or copied.
+const MEDIA_LIMIT = 5000;
+handle('media:pick', async (_e, { folder = false } = {}) => {
+  const res = await dialog.showOpenDialog(win, {
+    title: folder ? 'Add a folder of footage and files' : 'Add files',
+    properties: folder ? ['openDirectory'] : ['openFile', 'multiSelections'],
+  });
+  if (res.canceled || !res.filePaths.length) return { files: [], truncated: false };
+  const files = [];
+  const addFile = (p) => {
+    try {
+      const st = fs.statSync(p);
+      if (st.isFile()) files.push({ name: path.basename(p), path: p, size: st.size, modified: st.mtimeMs });
+    } catch { /* unreadable: skip */ }
+  };
+  if (!folder) { res.filePaths.forEach(addFile); return { files, truncated: false }; }
+  // Folder: walk it (skipping hidden and system folders), up to MEDIA_LIMIT files.
+  const skip = (name) => name.startsWith('.') || /^(\$RECYCLE\.BIN|System Volume Information|node_modules)$/i.test(name);
+  const walk = (dir, depth) => {
+    if (depth > 12 || files.length >= MEDIA_LIMIT) return;
+    let entries = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const ent of entries) {
+      if (files.length >= MEDIA_LIMIT) return;
+      if (skip(ent.name)) continue;
+      const p = path.join(dir, ent.name);
+      if (ent.isDirectory()) walk(p, depth + 1);
+      else if (ent.isFile()) addFile(p);
+    }
+  };
+  walk(res.filePaths[0], 0);
+  return { files, truncated: files.length >= MEDIA_LIMIT, root: res.filePaths[0] };
+});
+// Shows a catalogued file in Explorer / Finder (never opens it). False if it isn't there
+// (e.g. the drive isn't connected).
+handle('media:reveal', (_e, filePath) => {
+  const p = String(filePath || '');
+  if (!path.isAbsolute(p) || !fs.existsSync(p)) return false;
+  shell.showItemInFolder(p);
+  return true;
+});
 
 // Called by a page after startup: hands over a double-clicked file meant for it.
 handle('update:get', () => updater.get());

@@ -8,7 +8,9 @@ import { AVAILABILITY_HTML } from './availability-page.js';
 
 const { applyAll, clone } = globalThis.SyncCore;
 
-const KINDS = ['callsheet', 'shotsheet', 'script'];
+// shotsheet = a production; script, callsheet and post (take log, media, post tracker, cuts)
+// can live inside one. post only exists inside a production.
+const KINDS = ['callsheet', 'shotsheet', 'script', 'post'];
 const ROLES = ['editor', 'viewer'];
 const SESSION_DAYS = 30;
 const MAX_DOC_BYTES = 1_500_000;
@@ -353,6 +355,7 @@ async function route(req, env, url) {
     if (!KINDS.includes(body.kind)) throw new HttpError(400, 'Unknown project type.');
     const doc = body.doc;
     if (!doc || typeof doc !== 'object' || Array.isArray(doc)) throw new HttpError(400, 'Missing document.');
+    if (body.kind === 'post' && body.parent == null) throw new HttpError(400, 'Post production belongs to a production.');
     let parent = null;
     let role = 'owner';
     let ownerId = user.id;
@@ -446,6 +449,30 @@ async function route(req, env, url) {
       await env.DB.prepare('DELETE FROM availability_links WHERE project_id = ? AND person_id = ?').bind(id, personId).run();
       return json({ ok: true });
     }
+  }
+
+  // Your own availability, for anyone in the production (view-only people included):
+  // first say which cast or crew entry is you (once; nobody else can claim it), then mark
+  // the days you can't work. The room checks the claim, so you can only change your own.
+  if ((m = pathname.match(/^\/api\/projects\/([\w-]+)\/me\/(claim|availability)$/)) && method === 'POST') {
+    const [, id, what] = m;
+    const prodRow = await env.DB.prepare('SELECT kind, parent_id FROM projects WHERE id = ?').bind(id).first();
+    if (!prodRow || prodRow.kind !== 'shotsheet' || prodRow.parent_id) throw new HttpError(404, 'Project not found.');
+    await requireRole(env, id, user.id);
+    const body = await readJson(req, 20_000);
+    const personId = body.personId == null ? null : String(body.personId);
+    if (personId !== null && !/^[\w-]{1,64}$/.test(personId)) throw new HttpError(400, 'Unknown person.');
+    let call;
+    if (what === 'claim') call = { userId: user.id, personId };
+    else {
+      if (!personId) throw new HttpError(400, 'Unknown person.');
+      const date = (d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);
+      const off = [...new Set((Array.isArray(body.off) ? body.off : []).filter(date))].sort().slice(0, 400);
+      call = { userId: user.id, personId, entry: { off, note: String(body.note || '').slice(0, 500), source: 'member', at: Date.now() } };
+    }
+    const res = await roomCall(env, id, '/me/' + what, call);
+    if (!res.ok) throw new HttpError(res.status, await res.text());
+    return json({ ok: true });
   }
 
   // The current document, read-only (e.g. the shot sheet reading a production's script).
@@ -603,18 +630,26 @@ export class ProjectRoom extends DurableObject {
     // any edit, so everyone with it open sees it straight away.
     if (url.pathname === '/availability') {
       if (!this.doc) return new Response('Not found', { status: 404 });
-      const has = this.doc.availability && typeof this.doc.availability === 'object' && !Array.isArray(this.doc.availability);
-      const ops = has
-        ? [{ t: 'set', p: ['availability', String(body.personId)], v: body.entry }]
-        : [{ t: 'set', p: ['availability'], v: { [String(body.personId)]: body.entry } }];
-      const next = clone(this.doc);
-      const applied = applyAll(next, ops);
-      if (!applied.length || JSON.stringify(next).length > MAX_DOC_BYTES) return new Response('Not saved', { status: 400 });
-      this.doc = next;
-      this.version++;
-      await this.ctx.storage.put({ doc: this.doc, version: this.version });
-      this.broadcast({ type: 'ops', ops: applied, v: this.version, from: 'server', batch: 0 });
-      return new Response('ok');
+      return this.serverEdit([this.setInMap('availability', String(body.personId), body.entry)]);
+    }
+    // Claiming a cast or crew entry as yourself (personId null: let go of yours).
+    if (url.pathname === '/me/claim') {
+      if (!this.doc) return new Response('Not found', { status: 404 });
+      const claims = this.objectAt('claims');
+      const people = new Set([...(this.doc.characters || []), ...(this.doc.crew || [])].map((x) => x && x.id));
+      if (body.personId != null && !people.has(body.personId)) return new Response('That person isn’t in this production.', { status: 404 });
+      if (body.personId != null && claims[body.personId] && claims[body.personId] !== body.userId) {
+        return new Response('Someone else has already said that’s them. Ask an editor to unlink it.', { status: 409 });
+      }
+      const ops = Object.entries(claims).filter(([pid, uid]) => uid === body.userId && pid !== body.personId).map(([pid]) => ({ t: 'unset', p: ['claims', pid] }));
+      if (body.personId != null && claims[body.personId] !== body.userId) ops.push(this.setInMap('claims', body.personId, body.userId));
+      return ops.length ? this.serverEdit(ops) : new Response('ok');
+    }
+    // Your own availability: only for the person you've claimed.
+    if (url.pathname === '/me/availability') {
+      if (!this.doc) return new Response('Not found', { status: 404 });
+      if (this.objectAt('claims')[body.personId] !== body.userId) return new Response('Say which person you are first.', { status: 403 });
+      return this.serverEdit([this.setInMap('availability', String(body.personId), body.entry)]);
     }
     if (url.pathname === '/destroy') {
       for (const ws of this.ctx.getWebSockets()) {
@@ -661,6 +696,30 @@ export class ProjectRoom extends DurableObject {
       return new Response('ok');
     }
     return new Response('Not found', { status: 404 });
+  }
+
+  // ---- Edits made by the server itself (availability answers, claims) ----
+  objectAt(key) {
+    const v = this.doc[key];
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+  }
+  // Sets doc[key][id] = value, creating doc[key] if it isn't there yet.
+  setInMap(key, id, value) {
+    const v = this.doc[key];
+    return v && typeof v === 'object' && !Array.isArray(v)
+      ? { t: 'set', p: [key, id], v: value }
+      : { t: 'set', p: [key], v: { [id]: value } };
+  }
+  // Applies the ops, saves, and sends them to everyone connected (like any edit).
+  async serverEdit(ops) {
+    const next = clone(this.doc);
+    const applied = applyAll(next, ops);
+    if (!applied.length || JSON.stringify(next).length > MAX_DOC_BYTES) return new Response('Not saved', { status: 400 });
+    this.doc = next;
+    this.version++;
+    await this.ctx.storage.put({ doc: this.doc, version: this.version });
+    this.broadcast({ type: 'ops', ops: applied, v: this.version, from: 'server', batch: 0 });
+    return new Response('ok');
   }
 
   connect(req) {
