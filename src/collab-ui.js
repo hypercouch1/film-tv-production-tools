@@ -222,11 +222,15 @@
     c.readOnly = () => { const d = activeDoc(); return !!(d && d._cloud && d._cloud.role === 'viewer'); };
     c.localOnly = (docs) => docs.filter((d) => !d._cloud);
 
+    // Inside a production (o.production), the shared list is the production's documents of this
+    // kind when the production is online (o.parent() gives its id), and empty when it isn't.
     c.refreshList = async () => {
-      if (!Cloud.signedIn || !Cloud.serverUrl()) { c.shared = []; c.error = null; o.renderSidebar(); return; }
-      try { c.shared = await Cloud.projects(o.kind); c.error = null; } catch (err) { c.error = err.message; }
+      const parent = o.parent ? o.parent() : null;
+      if (!Cloud.signedIn || !Cloud.serverUrl() || (o.production && !parent)) { c.shared = []; c.error = null; o.renderSidebar(); return; }
+      try { c.shared = await Cloud.projects(o.kind, parent); c.error = null; } catch (err) { c.error = err.message; }
       o.renderSidebar();
     };
+    c.inCloudProduction = () => !!(o.parent && o.parent());
 
     c.renderShared = (container) => {
       container.innerHTML = '';
@@ -323,6 +327,7 @@
 
     c.share = async () => {
       const doc = activeDoc();
+      if (o.share && !(doc && doc._cloud)) return o.share(); // e.g. share the whole production
       if (!doc) return;
       if (doc._cloud) return c.openMembers();
       if (!Cloud.signedIn) return openAccount(() => c.share());
@@ -343,79 +348,37 @@
     c.openMembers = () => {
       const doc = cloudDoc();
       if (!doc) return;
-      const projectId = doc._cloud.id;
-      const isOwner = doc._cloud.role === 'owner';
-      const body = el('div', { class: 'members-body' });
-      const m = modal(`Share “${doc.title}”`, body, { wide: true });
-      const listEl = el('ul', { class: 'member-list' }, el('li', { class: 'muted' }, 'Loading…'));
-      const error = el('p', { class: 'form-error' });
-
-      const renderMembers = (members) => {
-        listEl.innerHTML = '';
-        for (const mem of members) {
-          const me = Cloud.user && mem.id === Cloud.user.id;
-          const roleCtl = isOwner && mem.role !== 'owner'
-            ? el('select', { class: 'field role-select', onchange: async (e) => {
-              try { renderMembers(await Cloud.setRole(projectId, mem.id, e.target.value)); } catch (err) { error.textContent = err.message; }
-            } }, el('option', { value: 'editor' }, 'Can edit'), el('option', { value: 'viewer' }, 'View only'))
-            : el('span', { class: 'role-pill' }, ROLE_LABEL[mem.role]);
-          if (roleCtl.tagName === 'SELECT') roleCtl.value = mem.role;
-          listEl.append(el('li', {},
-            avatar(mem.name, mem.id),
-            el('div', { class: 'member-who' }, el('div', {}, mem.name + (me ? ' (you)' : '')), el('div', { class: 'muted small' }, mem.email)),
-            roleCtl,
-            isOwner && mem.role !== 'owner'
-              ? el('button', { class: 'icon-btn del', title: 'Remove from project', onclick: async () => {
-                if (!confirm(`Remove ${mem.name} from this project?`)) return;
-                try { renderMembers(await Cloud.removeMember(projectId, mem.id)); } catch (err) { error.textContent = err.message; }
-              } }, '✕')
-              : null));
-        }
-      };
-
-      const email = el('input', { class: 'field', type: 'email', placeholder: 'Their account email' });
-      const role = el('select', { class: 'field role-select' }, el('option', { value: 'editor' }, 'Can edit'), el('option', { value: 'viewer' }, 'View only'));
-      const add = el('button', { class: 'primary-btn', type: 'submit' }, 'Add');
-      const form = el('form', { class: 'inline-form invite-form' }, email, role, add);
-      form.addEventListener('submit', busy(add, async () => {
-        error.textContent = '';
-        try {
-          renderMembers(await Cloud.addMember(projectId, email.value, role.value));
-          toast('Added. It will appear in their Shared list.');
-          email.value = '';
-        } catch (err) { error.textContent = err.message; }
-      }));
-
-      body.append(
-        isOwner
-          ? el('div', {}, el('p', { class: 'muted small' }, 'Add people by the email they signed up with. They will see this project under Shared.'), form)
-          : el('p', { class: 'muted small' }, 'Only the owner can add or remove people.'),
-        error,
-        el('h3', { class: 'panel-title' }, 'People'),
-        listEl,
-        el('div', { class: 'modal-foot' },
-          el('button', { class: 'ghost-btn danger', onclick: () => { m.close(); c.deleteOrLeave(doc); } },
-            isOwner ? 'Delete for everyone' : 'Leave project')));
-
-      Cloud.members(projectId).then(renderMembers).catch((err) => { error.textContent = err.message; });
+      // Inside a production, people are the production's: show its name.
+      const production = o.productionTitle ? o.productionTitle() : null;
+      membersDialog({
+        projectId: doc._cloud.id,
+        title: production || doc.title,
+        isOwner: doc._cloud.role === 'owner',
+        inProduction: !!production,
+        onDelete: () => c.deleteOrLeave(doc),
+      });
     };
 
     c.deleteOrLeave = async (doc) => {
       const owner = doc._cloud.role === 'owner';
-      if (!confirm(owner
+      const child = c.inCloudProduction();
+      // A document inside a production: its owners and editors delete it; viewers can't.
+      if (child && doc._cloud.role === 'viewer') { toast('You have view-only access'); return; }
+      if (!confirm(child || owner
         ? `Delete "${doc.title}" for everyone? This cannot be undone.`
         : `Leave "${doc.title}"? You'll lose access until the owner adds you again.`)) return;
       const id = doc._cloud.id;
       c.leave();
       try {
         await Cloud.deleteProject(id);
-        toast(owner ? 'Project deleted' : 'You left the project');
+        toast(child || owner ? 'Deleted' : 'You left the project');
       } catch (err) {
         alert(err.message);
       }
       o.selectLocal();
       c.refreshList();
     };
+    c.deleteLabel = (doc) => (c.inCloudProduction() || (doc && doc._cloud && doc._cloud.role === 'owner') ? 'Delete for everyone' : 'Leave shared project');
 
     // ---- Toolbar: live status, who's online, Share, account ----
     const statusEl = el('span', { class: 'live-status' });
@@ -446,8 +409,8 @@
         if (others.length > 5) presenceEl.append(el('span', { class: 'avatar more' }, '+' + (others.length - 5)));
         presenceEl.title = others.length ? 'Also here: ' + others.map((u) => u.name).join(', ') : 'Nobody else is here right now';
       }
-      shareBtn.hidden = !d;
-      shareBtn.textContent = c.isCloud(d) ? 'People' : 'Share';
+      shareBtn.hidden = !d && !o.share;
+      shareBtn.textContent = c.isCloud(d) || c.inCloudProduction() ? 'People' : 'Share';
     };
 
     c.init = () => {
@@ -465,5 +428,67 @@
     return c;
   }
 
-  window.Collab = { attach, openAccount, accountButton };
+  // ---------- People: who has access to a shared production (or document) ----------
+  // isOwner: can add, change and remove people. onDelete: "Delete for everyone" / "Leave".
+  function membersDialog({ projectId, title, isOwner, inProduction, onDelete }) {
+    const noun = inProduction ? 'production' : 'project';
+    const body = el('div', { class: 'members-body' });
+    const m = modal(`Share “${title}”`, body, { wide: true });
+    const listEl = el('ul', { class: 'member-list' }, el('li', { class: 'muted' }, 'Loading…'));
+    const error = el('p', { class: 'form-error' });
+
+    const renderMembers = (members) => {
+      listEl.innerHTML = '';
+      for (const mem of members) {
+        const me = Cloud.user && mem.id === Cloud.user.id;
+        const roleCtl = isOwner && mem.role !== 'owner'
+          ? el('select', { class: 'field role-select', onchange: async (e) => {
+            try { renderMembers(await Cloud.setRole(projectId, mem.id, e.target.value)); } catch (err) { error.textContent = err.message; }
+          } }, el('option', { value: 'editor' }, 'Can edit'), el('option', { value: 'viewer' }, 'View only'))
+          : el('span', { class: 'role-pill' }, ROLE_LABEL[mem.role]);
+        if (roleCtl.tagName === 'SELECT') roleCtl.value = mem.role;
+        listEl.append(el('li', {},
+          avatar(mem.name, mem.id),
+          el('div', { class: 'member-who' }, el('div', {}, mem.name + (me ? ' (you)' : '')), el('div', { class: 'muted small' }, mem.email)),
+          roleCtl,
+          isOwner && mem.role !== 'owner'
+            ? el('button', { class: 'icon-btn del', title: `Remove from ${noun}`, onclick: async () => {
+              if (!confirm(`Remove ${mem.name} from this ${noun}?`)) return;
+              try { renderMembers(await Cloud.removeMember(projectId, mem.id)); } catch (err) { error.textContent = err.message; }
+            } }, '✕')
+            : null));
+      }
+    };
+
+    const email = el('input', { class: 'field', type: 'email', placeholder: 'Their account email' });
+    const role = el('select', { class: 'field role-select' }, el('option', { value: 'editor' }, 'Can edit'), el('option', { value: 'viewer' }, 'View only'));
+    const add = el('button', { class: 'primary-btn', type: 'submit' }, 'Add');
+    const form = el('form', { class: 'inline-form invite-form' }, email, role, add);
+    form.addEventListener('submit', busy(add, async () => {
+      error.textContent = '';
+      try {
+        renderMembers(await Cloud.addMember(projectId, email.value, role.value));
+        toast('Added. It will appear in their Shared list.');
+        email.value = '';
+      } catch (err) { error.textContent = err.message; }
+    }));
+
+    body.append(
+      isOwner
+        ? el('div', {}, el('p', { class: 'muted small' }, inProduction
+          ? 'Add people by the email they signed up with. They get the whole production: script, shot sheet, schedule and call sheets.'
+          : 'Add people by the email they signed up with. They will see this project under Shared.'), form)
+        : el('p', { class: 'muted small' }, 'Only the owner can add or remove people.'),
+      error,
+      el('h3', { class: 'panel-title' }, 'People'),
+      listEl,
+      onDelete ? el('div', { class: 'modal-foot' },
+        el('button', { class: 'ghost-btn danger', onclick: () => { m.close(); onDelete(); } },
+          isOwner ? 'Delete for everyone' : `Leave ${noun}`)) : null);
+
+    Cloud.members(projectId).then(renderMembers).catch((err) => { error.textContent = err.message; });
+    return m;
+  }
+
+  window.Collab = { attach, openAccount, accountButton, membersDialog };
 })();

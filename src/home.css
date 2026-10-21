@@ -92,7 +92,16 @@ a.tile:hover, a.tile:focus-visible {
 .kind-opt:has(input:checked) { border-color: var(--yellow); background: rgba(230, 207, 46, .06); }
 .kind-opt > span { display: grid; gap: 2px; }
 
+.loose-list { display: grid; gap: 8px; margin-top: 12px; }
+.loose-row { display: grid; grid-template-columns: 90px minmax(160px, 1fr) auto; gap: 12px; align-items: center; padding: 10px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.loose-kind { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); }
+.loose-title { font-weight: 600; }
+.loose-move { display: flex; gap: 8px; align-items: center; }
+.loose-move .field { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; color: var(--text); font: 13px var(--body); }
+
 /* Production dashboard */
+.dash-share { align-self: center; }
+.title-row .live-status { align-self: center; }
 .back-link { display: inline-block; color: var(--muted); text-decoration: none; font-size: 14px; margin: 0 0 14px 28px; }
 .back-link:hover { color: var(--text); }
 #prodTitle { cursor: text; }

@@ -201,6 +201,76 @@ await a.next((m) => m.type === 'gone');
 assert.equal((await api('GET', '/api/projects', null, A)).projects.length, 0);
 step('member leaves; owner deletes the project for everyone');
 
+// ---- Productions: membership covers the scripts and call sheets inside ----
+const prodId = 'prod' + run;
+const prod = await api('POST', '/api/projects', { kind: 'shotsheet', id: prodId, doc: { title: 'Harbour Lights', type: 'tv', episodes: [{ id: 'e1', number: '1' }], scenes: [] } }, A);
+assert.equal(prod.status, 200, prod.error);
+assert.equal(prod.project.id, prodId, 'keeps the id the app chose');
+assert.equal((await api('POST', '/api/projects', { kind: 'shotsheet', id: prodId, doc: { title: 'x' } }, A)).status, 409, 'an id already online is refused');
+assert.equal((await api('POST', '/api/projects', { kind: 'shotsheet', id: 'bad id!', doc: { title: 'x' } }, A)).status, 400);
+const listed = (await api('GET', '/api/projects?kind=shotsheet', null, A)).projects.find((p) => p.id === prodId);
+assert.equal(listed.type, 'tv', 'lists show the production type');
+const childId = 'scr' + run;
+const child = await api('POST', '/api/projects', { kind: 'script', id: childId, parent: prodId, doc: { title: 'Ep 1', episodeId: 'e1', elements: [{ id: 'h', type: 'heading', text: 'INT. BOAT - NIGHT' }] } }, A);
+assert.equal(child.status, 200, child.error);
+assert.equal(child.project.parentId, prodId);
+assert.equal((await api('POST', '/api/projects', { kind: 'shotsheet', parent: prodId, doc: { title: 'x' } }, A)).status, 400, 'no productions inside productions');
+assert.equal((await api('GET', '/api/projects?kind=script', null, A)).projects.some((p) => p.id === childId), false, 'documents inside a production are not listed on their own');
+step('a production keeps its id; scripts go inside it');
+
+// Not a member: nothing inside is reachable.
+assert.equal((await api('GET', `/api/projects?parent=${prodId}`, null, B)).status, 404);
+assert.equal((await api('GET', `/api/projects/${childId}/doc`, null, B)).status, 404);
+assert.equal((await api('POST', '/api/projects', { kind: 'callsheet', parent: prodId, doc: { title: 'x' } }, B)).status, 404);
+const outsider = live(childId, B);
+assert.notEqual((await outsider.closed).code, 1000);
+step('people outside the production can’t list, read, add to or open what’s inside');
+
+// Invite Bob to the production (editor) and Carol (viewer): both reach the script.
+await api('POST', `/api/projects/${prodId}/members`, { email: `bob.${run}@example.com`, role: 'editor' }, A);
+await api('POST', `/api/projects/${prodId}/members`, { email: `carol.${run}@example.com`, role: 'viewer' }, A);
+const kids = (await api('GET', `/api/projects?parent=${prodId}`, null, B)).projects;
+assert.deepEqual(kids.map((k) => [k.id, k.kind, k.episodeId, k.role]), [[childId, 'script', 'e1', 'editor']]);
+assert.equal((await api('GET', `/api/projects/${childId}/doc`, null, C)).doc.title, 'Ep 1');
+const bobScript = live(childId, B);
+assert.equal((await bobScript.next((m) => m.type === 'snapshot')).role, 'editor');
+const carolScript = live(childId, C);
+assert.equal((await carolScript.next((m) => m.type === 'snapshot')).role, 'viewer');
+assert.equal((await api('POST', '/api/projects', { kind: 'callsheet', parent: prodId, doc: { title: 'Day 1 cues' } }, C)).status, 403, 'viewers can’t add');
+const sheet = await api('POST', '/api/projects', { kind: 'callsheet', parent: prodId, doc: { title: 'Day 1 cues' } }, B);
+assert.equal(sheet.status, 200, sheet.error);
+assert.equal(sheet.project.ownerName, 'Alice', 'the production owner owns what’s inside');
+assert.deepEqual((await api('GET', `/api/projects/${childId}/members`, null, B)).members.map((x) => x.role), ['owner', 'editor', 'viewer'], 'people are the production’s');
+step('production members reach everything inside, with their production role');
+
+// Changing someone's role or removing them reaches every open document in the production.
+const carolMember = (await api('GET', `/api/projects/${prodId}/members`, null, A)).members.find((x) => x.role === 'viewer');
+await api('PATCH', `/api/projects/${prodId}/members/${carolMember.id}`, { role: 'editor' }, A);
+assert.equal((await carolScript.next((m) => m.type === 'role')).role, 'editor');
+const bobMember = (await api('GET', `/api/projects/${prodId}/members`, null, A)).members.find((x) => x.name === 'Bob');
+await api('DELETE', `/api/projects/${prodId}/members/${bobMember.id}`, null, A);
+await bobScript.next((m) => m.type === 'gone');
+await bobScript.closed;
+assert.equal((await api('GET', `/api/projects/${childId}/doc`, null, B)).status, 404);
+step('role changes and removals reach the documents inside');
+
+// A script shared on its own (from before productions) can be moved into the production.
+const loose = await api('POST', '/api/projects', { kind: 'script', doc: { title: 'Old draft', elements: [] } }, A);
+assert.equal((await api('PATCH', `/api/projects/${loose.project.id}`, { parent: prodId }, C)).status, 404, 'only its owner can move it');
+assert.equal((await api('PATCH', `/api/projects/${loose.project.id}`, { parent: loose.project.id }, A)).status, 400, 'only into a production');
+assert.equal((await api('PATCH', `/api/projects/${loose.project.id}`, { parent: 'nope' + run }, A)).status, 404, 'only into a production you can edit');
+assert.equal((await api('PATCH', `/api/projects/${loose.project.id}`, { parent: prodId }, A)).project.parentId, prodId);
+assert.equal((await api('GET', `/api/projects/${loose.project.id}/doc`, null, C)).doc.title, 'Old draft', 'production members can now open it');
+assert.equal((await api('GET', `/api/projects?parent=${prodId}&kind=script`, null, A)).projects.length, 2);
+step('a script shared on its own moves into a production');
+
+// Editors can delete a document inside; deleting the production deletes everything.
+assert.equal((await api('DELETE', `/api/projects/${sheet.project.id}`, null, C)).deleted, true);
+assert.equal((await api('DELETE', `/api/projects/${prodId}`, null, A)).deleted, true);
+await carolScript.next((m) => m.type === 'gone');
+assert.equal((await api('GET', `/api/projects/${childId}/doc`, null, A)).status, 404);
+step('deleting a production deletes everything in it');
+
 // Brute-force protection.
 for (let i = 0; i < 10; i++) await api('POST', '/api/login', { email: `bob.${run}@example.com`, password: 'nope nope' });
 assert.equal((await api('POST', '/api/login', { email: `bob.${run}@example.com`, password: 'correct horse' })).status, 429);

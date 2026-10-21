@@ -119,5 +119,59 @@
     return (Array.isArray(shots.projects) ? shots.projects : []).map(upgrade).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   }
 
-  window.Production = { id, episode, remember, link, goHome, goPicker, blank, upgrade, migrate, list, episodeLabel, typeLabel };
+  // ---- Sharing a production ----
+  // Moves a production on this computer online with everything in it (scripts, call sheets),
+  // keeping every id so the links between them keep working. Afterwards the production is
+  // opened from the server; its local copies are removed. Resolves to true when it's online.
+  async function share(pid) {
+    const Cloud = window.Cloud;
+    if (!Cloud.signedIn) {
+      window.Collab.openAccount(() => window.Common.toast('Signed in. Click Share again to invite people.'));
+      return false;
+    }
+    const shots = (await api.loadStore('shotsheets')) || {};
+    const prod = (shots.projects || []).find((p) => p.id === pid);
+    if (!prod) return false;
+    const scripts = (await api.loadStore('scripts')) || {};
+    const sheets = (await api.loadStore('callsheets')) || {};
+    const myScripts = (scripts.scripts || []).filter((d) => d.productionId === pid);
+    const mySheets = (sheets.sheets || []).filter((d) => d.productionId === pid);
+    const parts = [myScripts.length && `${myScripts.length} script${myScripts.length === 1 ? '' : 's'}`, mySheets.length && `${mySheets.length} call sheet${mySheets.length === 1 ? '' : 's'}`].filter(Boolean);
+    if (!confirm(`Move "${prod.title}"${parts.length ? ` and its ${parts.join(' and ')}` : ''} online so you can invite people?\n\n`
+      + 'Everyone you add gets the whole production. It will be saved on your server and removed from this computer.')) return false;
+    const { clone, stripLocal } = window.SyncCore;
+    try {
+      await Cloud.createProject('shotsheet', stripLocal(clone(prod)), { id: prod.id });
+    } catch (err) {
+      alert(err.message);
+      return false;
+    }
+    shots.projects = shots.projects.filter((p) => p.id !== pid);
+    await api.saveStore('shotsheets', shots);
+    // Then everything inside it. Anything that fails stays on this computer (still in the
+    // production) and can be shared again from its page.
+    const failed = [];
+    const upload = async (kind, docs, store, key) => {
+      const done = new Set();
+      for (const d of docs) {
+        try {
+          await Cloud.createProject(kind, stripLocal(clone(d)), { id: d.id, parent: pid });
+          done.add(d.id);
+        } catch (err) { failed.push(`${d.title || kind}: ${err.message}`); }
+      }
+      store[key] = (store[key] || []).filter((d) => !done.has(d.id));
+      await api.saveStore(kind === 'script' ? 'scripts' : 'callsheets', store);
+    };
+    await upload('script', myScripts, scripts, 'scripts');
+    await upload('callsheet', mySheets, sheets, 'sheets');
+    if (failed.length) alert('These couldn’t be moved online and are still on this computer:\n\n' + failed.join('\n'));
+    return true;
+  }
+
+  // A shared production: open its people dialog.
+  function openPeople(pid, { title, role, onDelete } = {}) {
+    return window.Collab.membersDialog({ projectId: pid, title, isOwner: role === 'owner', inProduction: true, onDelete });
+  }
+
+  window.Production = { id, episode, remember, link, goHome, goPicker, blank, upgrade, migrate, list, episodeLabel, typeLabel, share, openPeople };
 })();

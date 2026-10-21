@@ -83,6 +83,13 @@
     },
     selectLocal: () => selectFirstLocal(),
     onRoleChange: (role) => { if (role === 'viewer') editing = false; },
+    // Share moves the whole production online (with its scripts and call sheets).
+    share: async () => {
+      const p = active();
+      if (!p) return;
+      await store.flush();
+      if (await window.Production.share(p.id)) location.reload();
+    },
   });
 
   // Leaving a shared production (signed out, removed, deleted): back to the productions list.
@@ -335,11 +342,19 @@
   const SW = () => window.Screenplay;
   let scripts = []; // Script Writer scripts on this computer
 
+  // The production's scripts: on this computer, or (for a shared production) read from the
+  // server as they are now.
   async function loadScripts() {
     try {
+      const pid = window.Production.id();
       const data = await api.loadStore('scripts');
-      scripts = data && Array.isArray(data.scripts) ? data.scripts : [];
-    } catch { scripts = []; }
+      scripts = (data && Array.isArray(data.scripts) ? data.scripts : []).filter((d) => !pid || d.productionId === pid);
+      if (pid && window.Cloud.signedIn && !state.projects.some((p) => p.id === pid && !p._cloud)) {
+        const list = await window.Cloud.projects('script', pid);
+        const docs = await Promise.all(list.map((x) => window.Cloud.doc(x.id).then((d) => ({ ...d, id: x.id, productionId: pid })).catch(() => null)));
+        scripts = scripts.concat(docs.filter(Boolean));
+      }
+    } catch { /* offline: keep what we had */ }
   }
 
   // The script link for the shot list being shown: the film's, or the current episode's.
@@ -1456,7 +1471,8 @@
     if (!p) return;
     // This production's scripts (for TV, the current episode's first).
     const ep = currentEpisode(p);
-    const pick = await window.Common.pickScript((d) => d.productionId === p.id && (!ep || !d.episodeId || d.episodeId === ep.id));
+    await loadScripts();
+    const pick = await window.Common.pickScript((d) => d.productionId === p.id && (!ep || !d.episodeId || d.episodeId === ep.id), scripts);
     if (!pick) return;
     if (pick.doc) {
       const doc = window.Screenplay.normalizeDoc(pick.doc);

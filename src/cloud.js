@@ -329,8 +329,16 @@
       return r.user;
     },
 
-    projects: (kind) => request('GET', '/api/projects?kind=' + encodeURIComponent(kind)).then((r) => r.projects),
-    createProject: (kind, doc) => request('POST', '/api/projects', { kind, doc }).then((r) => r.project),
+    // Productions (and documents shared on their own) you're a member of, or with parent,
+    // the documents inside a production.
+    projects: (kind, parent) => request('GET', '/api/projects?' + new URLSearchParams({ ...(kind ? { kind } : {}), ...(parent ? { parent } : {}) }))
+      .then((r) => r.projects),
+    // opts.id keeps the document's id (so links to it survive); opts.parent puts it inside a production.
+    createProject: (kind, doc, opts = {}) => request('POST', '/api/projects', { kind, doc, ...(opts.id ? { id: opts.id } : {}), ...(opts.parent ? { parent: opts.parent } : {}) })
+      .then((r) => r.project),
+    // A document as it is now, without opening it live.
+    doc: (id) => request('GET', `/api/projects/${encodeURIComponent(id)}/doc`).then((r) => r.doc),
+    moveInto: (id, parent) => request('PATCH', `/api/projects/${encodeURIComponent(id)}`, { parent }).then((r) => r.project),
     deleteProject: (id) => request('DELETE', `/api/projects/${encodeURIComponent(id)}`),
     members: (id) => request('GET', `/api/projects/${encodeURIComponent(id)}/members`).then((r) => r.members),
     addMember: (id, email, role) => request('POST', `/api/projects/${encodeURIComponent(id)}/members`, { email, role }).then((r) => r.members),

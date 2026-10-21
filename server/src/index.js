@@ -109,32 +109,66 @@ async function authUser(req, env, url) {
   return { ...u, sessionHash: tokenHash };
 }
 
-// Disconnects a user's live connections in every project they belong to.
-// keep: session to leave connected; only: the one session to disconnect.
+// Disconnects a user's live connections in every project they belong to (and everything
+// inside those productions). keep: session to leave connected; only: the one session to disconnect.
 async function revokeLive(env, userId, { keep, only } = {}) {
-  const { results } = await env.DB.prepare('SELECT project_id FROM members WHERE user_id = ?').bind(userId).all();
-  await Promise.all(results.map((r) => roomCall(env, r.project_id, '/revoke', { userId, keep, only })));
+  const { results } = await env.DB.prepare(
+    'SELECT p.id FROM members m JOIN projects p ON p.id = m.project_id OR p.parent_id = m.project_id WHERE m.user_id = ?'
+  ).bind(userId).all();
+  await Promise.all(results.map((r) => roomCall(env, r.id, '/revoke', { userId, keep, only })));
 }
 
 // Stand-in hash so a sign-in for an unknown email takes as long as a wrong password,
 // and timing doesn't reveal which emails have accounts.
 let dummyHash = null;
 
+// People are members of a production (or of a document shared on its own); a script or call
+// sheet inside a production is reached through the production's membership.
+async function rootOf(env, projectId) {
+  const row = await env.DB.prepare('SELECT id, parent_id FROM projects WHERE id = ?').bind(projectId).first();
+  return row ? row.parent_id || row.id : null;
+}
+
 async function roleOf(env, projectId, userId) {
-  const row = await env.DB.prepare('SELECT role FROM members WHERE project_id = ? AND user_id = ?').bind(projectId, userId).first();
+  const row = await env.DB.prepare(
+    'SELECT m.role FROM projects p JOIN members m ON m.project_id = COALESCE(p.parent_id, p.id) AND m.user_id = ? WHERE p.id = ?'
+  ).bind(userId, projectId).first();
   return row ? row.role : null;
 }
 
 async function requireRole(env, projectId, userId, allowed) {
   const role = await roleOf(env, projectId, userId);
   if (!role) throw new HttpError(404, 'Project not found.');
-  if (allowed && !allowed.includes(role)) throw new HttpError(403, 'Only the project owner can do that.');
+  if (allowed && !allowed.includes(role)) throw new HttpError(403, allowed.includes('editor') ? "You don't have permission to change this." : 'Only the project owner can do that.');
   return role;
 }
 
 const room = (env, projectId) => env.ROOMS.get(env.ROOMS.idFromName(projectId));
 const roomCall = (env, projectId, path, body) =>
   room(env, projectId).fetch('https://room' + path, { method: 'POST', body: JSON.stringify(body || {}) });
+// A production and everything in it: role changes and removals reach every open document.
+async function roomsOf(env, rootId) {
+  const { results } = await env.DB.prepare('SELECT id FROM projects WHERE id = ? OR parent_id = ?').bind(rootId, rootId).all();
+  return results.map((r) => r.id);
+}
+const roomCallAll = async (env, rootId, path, body) =>
+  Promise.all((await roomsOf(env, rootId)).map((id) => roomCall(env, id, path, body)));
+
+// Small facts about a document for lists: a production's type, a script's episode.
+function infoOf(doc) {
+  const info = {};
+  if (doc && (doc.type === 'tv' || doc.type === 'film')) info.type = doc.type;
+  if (doc && typeof doc.episodeId === 'string') info.episodeId = doc.episodeId.slice(0, 64);
+  return JSON.stringify(info);
+}
+const withInfo = (row) => {
+  let info = {};
+  try { info = JSON.parse(row.info || '{}') || {}; } catch { /* old rows */ }
+  const { info: _raw, ...rest } = row;
+  return { ...rest, ...info };
+};
+// Ids the app chooses for documents it moves online (so links between them survive).
+const validId = (id) => typeof id === 'string' && /^[A-Za-z0-9_-]{8,40}$/.test(id);
 
 async function listMembers(env, projectId) {
   const { results } = await env.DB.prepare(
@@ -237,53 +271,129 @@ async function route(req, env, url) {
   }
 
   // Projects
+  // ?kind=shotsheet: productions (and documents shared on their own) you're a member of.
+  // ?parent=<production id>: the scripts / call sheets inside a production.
   if (pathname === '/api/projects' && method === 'GET') {
     const kind = url.searchParams.get('kind');
+    const parent = url.searchParams.get('parent');
+    const cols = 'p.id, p.kind, p.title, p.updated_at AS updatedAt, p.parent_id AS parentId, p.info, u.name AS ownerName, ';
+    if (parent) {
+      const role = await requireRole(env, parent, user.id);
+      const { results } = await env.DB.prepare(
+        `SELECT ${cols} (SELECT COUNT(*) FROM members x WHERE x.project_id = ?) AS memberCount ` +
+        'FROM projects p JOIN users u ON u.id = p.owner_id WHERE p.parent_id = ? AND (? IS NULL OR p.kind = ?) ORDER BY p.updated_at DESC'
+      ).bind(parent, parent, kind, kind).all();
+      return json({ projects: results.map((r) => ({ ...withInfo(r), role })) });
+    }
     const { results } = await env.DB.prepare(
-      'SELECT p.id, p.kind, p.title, p.updated_at AS updatedAt, m.role, u.name AS ownerName, ' +
-      '(SELECT COUNT(*) FROM members x WHERE x.project_id = p.id) AS memberCount ' +
+      `SELECT ${cols} m.role, (SELECT COUNT(*) FROM members x WHERE x.project_id = p.id) AS memberCount ` +
       'FROM members m JOIN projects p ON p.id = m.project_id JOIN users u ON u.id = p.owner_id ' +
-      'WHERE m.user_id = ? AND (? IS NULL OR p.kind = ?) ORDER BY p.updated_at DESC'
+      'WHERE m.user_id = ? AND p.parent_id IS NULL AND (? IS NULL OR p.kind = ?) ORDER BY p.updated_at DESC'
     ).bind(user.id, kind, kind).all();
-    return json({ projects: results });
+    return json({ projects: results.map(withInfo) });
   }
 
+  // body: { kind, doc, id?, parent? }. With parent, the document goes inside that production
+  // (owners and editors of the production can add to it).
   if (pathname === '/api/projects' && method === 'POST') {
     const body = await readJson(req);
     if (!KINDS.includes(body.kind)) throw new HttpError(400, 'Unknown project type.');
     const doc = body.doc;
     if (!doc || typeof doc !== 'object' || Array.isArray(doc)) throw new HttpError(400, 'Missing document.');
-    const id = newId();
+    let parent = null;
+    let role = 'owner';
+    let ownerId = user.id;
+    let ownerName = user.name;
+    if (body.parent != null) {
+      role = await requireRole(env, String(body.parent), user.id, ['owner', 'editor']);
+      parent = await env.DB.prepare('SELECT p.id, p.kind, p.parent_id, p.owner_id, u.name FROM projects p JOIN users u ON u.id = p.owner_id WHERE p.id = ?')
+        .bind(String(body.parent)).first();
+      if (!parent || parent.kind !== 'shotsheet' || parent.parent_id) throw new HttpError(400, 'Documents can only go inside a production.');
+      if (body.kind === 'shotsheet') throw new HttpError(400, 'A production can’t go inside another production.');
+      ownerId = parent.owner_id; // the production's owner owns everything in it
+      ownerName = parent.name;
+    }
+    let id = newId();
+    if (body.id != null) {
+      if (!validId(body.id)) throw new HttpError(400, 'Invalid id.');
+      if (await env.DB.prepare('SELECT 1 FROM projects WHERE id = ?').bind(body.id).first()) throw new HttpError(409, 'That document is already online.');
+      id = body.id;
+    }
     doc.id = id;
     const title = String(doc.title || 'Untitled').slice(0, 200);
     const now = Date.now();
-    await env.DB.batch([
-      env.DB.prepare('INSERT INTO projects (id, kind, title, owner_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
-        .bind(id, body.kind, title, user.id, now, now),
+    const insert = env.DB.prepare('INSERT INTO projects (id, kind, title, owner_id, created_at, updated_at, parent_id, info) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(id, body.kind, title, ownerId, now, now, parent ? parent.id : null, infoOf(doc));
+    await env.DB.batch(parent ? [insert] : [
+      insert,
       env.DB.prepare("INSERT INTO members (project_id, user_id, role, added_at) VALUES (?, ?, 'owner', ?)").bind(id, user.id, now),
     ]);
     await roomCall(env, id, '/init', { projectId: id, doc });
-    return json({ project: { id, kind: body.kind, title, updatedAt: now, role: 'owner', ownerName: user.name, memberCount: 1 } });
+    return json({ project: { id, kind: body.kind, title, updatedAt: now, role, ownerName, memberCount: 1, parentId: parent ? parent.id : null, ...JSON.parse(infoOf(doc)) } });
   }
 
+  // Move a script or call sheet that was shared on its own into a production. Its owner must
+  // be an owner or editor of the production; from then on the production's people have access,
+  // and anyone who only had the document is disconnected.
+  if ((m = pathname.match(/^\/api\/projects\/([\w-]+)$/)) && method === 'PATCH') {
+    const id = m[1];
+    const body = await readJson(req);
+    const doc = await env.DB.prepare('SELECT id, kind, parent_id FROM projects WHERE id = ?').bind(id).first();
+    if (!doc || (await roleOf(env, id, user.id)) !== 'owner') throw new HttpError(404, 'Project not found.');
+    if (doc.parent_id || doc.kind === 'shotsheet') throw new HttpError(400, 'Only a script or call sheet shared on its own can be moved into a production.');
+    const parentId = String(body.parent || '');
+    await requireRole(env, parentId, user.id, ['owner', 'editor']);
+    const parent = await env.DB.prepare('SELECT id, kind, parent_id, owner_id FROM projects WHERE id = ?').bind(parentId).first();
+    if (!parent || parent.kind !== 'shotsheet' || parent.parent_id) throw new HttpError(400, 'That isn’t a production.');
+    const { results: before } = await env.DB.prepare('SELECT user_id FROM members WHERE project_id = ?').bind(id).all();
+    await env.DB.batch([
+      env.DB.prepare('UPDATE projects SET parent_id = ?, owner_id = ? WHERE id = ?').bind(parentId, parent.owner_id, id),
+      env.DB.prepare('DELETE FROM members WHERE project_id = ?').bind(id),
+    ]);
+    for (const { user_id: uid } of before) {
+      if (!(await roleOf(env, id, uid))) await roomCall(env, id, '/kick', { userId: uid });
+    }
+    return json({ project: { id, kind: doc.kind, parentId } });
+  }
+
+  // The current document, read-only (e.g. the shot sheet reading a production's script).
+  if ((m = pathname.match(/^\/api\/projects\/([\w-]+)\/doc$/)) && method === 'GET') {
+    const id = m[1];
+    await requireRole(env, id, user.id);
+    const res = await room(env, id).fetch('https://room/doc', { method: 'POST', body: '{}' });
+    if (!res.ok) throw new HttpError(404, 'Project not found.');
+    return json({ doc: await res.json() });
+  }
+
+  // Delete: a production's owner deletes it with everything inside; a document inside a
+  // production can be deleted by its owners and editors. Anyone else leaves the production.
   if ((m = pathname.match(/^\/api\/projects\/([\w-]+)$/)) && method === 'DELETE') {
     const id = m[1];
     const role = await requireRole(env, id, user.id);
-    if (role === 'owner') {
-      await env.DB.batch([
-        env.DB.prepare('DELETE FROM members WHERE project_id = ?').bind(id),
-        env.DB.prepare('DELETE FROM projects WHERE id = ?').bind(id),
-      ]);
+    const row = await env.DB.prepare('SELECT parent_id FROM projects WHERE id = ?').bind(id).first();
+    if (row && row.parent_id) {
+      if (role === 'viewer') throw new HttpError(403, "You don't have permission to change this.");
+      await env.DB.prepare('DELETE FROM projects WHERE id = ?').bind(id).run();
       await roomCall(env, id, '/destroy');
       return json({ ok: true, deleted: true });
     }
+    if (role === 'owner') {
+      const ids = await roomsOf(env, id);
+      await env.DB.batch([
+        env.DB.prepare('DELETE FROM members WHERE project_id = ?').bind(id),
+        env.DB.prepare('DELETE FROM projects WHERE id = ? OR parent_id = ?').bind(id, id),
+      ]);
+      await Promise.all(ids.map((x) => roomCall(env, x, '/destroy')));
+      return json({ ok: true, deleted: true });
+    }
     await env.DB.prepare('DELETE FROM members WHERE project_id = ? AND user_id = ?').bind(id, user.id).run();
-    await roomCall(env, id, '/kick', { userId: user.id });
+    await roomCallAll(env, id, '/kick', { userId: user.id });
     return json({ ok: true, left: true });
   }
 
+  // Members are kept on the production; asking about a document inside it means its production.
   if ((m = pathname.match(/^\/api\/projects\/([\w-]+)\/members$/))) {
-    const id = m[1];
+    const id = (await rootOf(env, m[1])) || m[1];
     if (method === 'GET') {
       await requireRole(env, id, user.id);
       return json({ members: await listMembers(env, id) });
@@ -298,7 +408,7 @@ async function route(req, env, url) {
       if (existing === 'owner') throw new HttpError(400, 'That person owns this project.');
       if (existing) {
         await env.DB.prepare('UPDATE members SET role = ? WHERE project_id = ? AND user_id = ?').bind(role, id, target.id).run();
-        await roomCall(env, id, '/role', { userId: target.id, role });
+        await roomCallAll(env, id, '/role', { userId: target.id, role });
       } else {
         await env.DB.prepare('INSERT INTO members (project_id, user_id, role, added_at) VALUES (?, ?, ?, ?)').bind(id, target.id, role, Date.now()).run();
       }
@@ -307,7 +417,8 @@ async function route(req, env, url) {
   }
 
   if ((m = pathname.match(/^\/api\/projects\/([\w-]+)\/members\/([\w-]+)$/))) {
-    const [, id, targetId] = m;
+    const id = (await rootOf(env, m[1])) || m[1];
+    const targetId = m[2];
     const myRole = await requireRole(env, id, user.id);
     const targetRole = await roleOf(env, id, targetId);
     if (!targetRole) throw new HttpError(404, 'That person is not in this project.');
@@ -317,13 +428,13 @@ async function route(req, env, url) {
       const body = await readJson(req);
       if (!ROLES.includes(body.role)) throw new HttpError(400, 'Unknown role.');
       await env.DB.prepare('UPDATE members SET role = ? WHERE project_id = ? AND user_id = ?').bind(body.role, id, targetId).run();
-      await roomCall(env, id, '/role', { userId: targetId, role: body.role });
+      await roomCallAll(env, id, '/role', { userId: targetId, role: body.role });
       return json({ members: await listMembers(env, id) });
     }
     if (method === 'DELETE') {
       if (myRole !== 'owner' && targetId !== user.id) throw new HttpError(403, 'Only the project owner can do that.');
       await env.DB.prepare('DELETE FROM members WHERE project_id = ? AND user_id = ?').bind(id, targetId).run();
-      await roomCall(env, id, '/kick', { userId: targetId });
+      await roomCallAll(env, id, '/kick', { userId: targetId });
       return json({ members: await listMembers(env, id) });
     }
   }
@@ -371,6 +482,7 @@ export class ProjectRoom extends DurableObject {
       this.version = (await ctx.storage.get('version')) ?? 0;
       this.projectId = (await ctx.storage.get('pid')) ?? null;
       this.title = this.doc ? this.doc.title : null;
+      this.info = this.doc ? infoOf(this.doc) : null;
       this.touchedAt = 0;
     });
   }
@@ -389,6 +501,10 @@ export class ProjectRoom extends DurableObject {
         await this.ctx.storage.put({ doc: this.doc, version: 0, pid: body.projectId });
       }
       return new Response('ok');
+    }
+    if (url.pathname === '/doc') {
+      if (!this.doc) return new Response('Not found', { status: 404 });
+      return new Response(JSON.stringify(this.doc), { headers: { 'Content-Type': 'application/json' } });
     }
     if (url.pathname === '/destroy') {
       for (const ws of this.ctx.getWebSockets()) {
@@ -487,16 +603,18 @@ export class ProjectRoom extends DurableObject {
     await this.updateListing();
   }
 
-  // Keep the project list (title, last edited) in D1 roughly current.
+  // Keep the project list (title, last edited, type / episode) in D1 roughly current.
   async updateListing() {
     const now = Date.now();
-    const titleChanged = this.doc.title !== this.title;
-    if (!titleChanged && now - this.touchedAt < 60_000) return;
+    const info = infoOf(this.doc);
+    const changed = this.doc.title !== this.title || info !== this.info;
+    if (!changed && now - this.touchedAt < 60_000) return;
     this.title = this.doc.title;
+    this.info = info;
     this.touchedAt = now;
     try {
-      await this.env.DB.prepare('UPDATE projects SET title = ?, updated_at = ? WHERE id = ?')
-        .bind(String(this.title || 'Untitled').slice(0, 200), now, this.projectId).run();
+      await this.env.DB.prepare('UPDATE projects SET title = ?, updated_at = ?, info = ? WHERE id = ?')
+        .bind(String(this.title || 'Untitled').slice(0, 200), now, info, this.projectId).run();
     } catch (err) {
       console.error('listing update failed', err);
     }

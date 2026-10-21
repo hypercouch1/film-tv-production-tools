@@ -89,16 +89,49 @@
 
   async function renderShared() {
     const wrap = $('shared');
-    if (!window.Cloud.signedIn || !window.Cloud.serverUrl()) { $('sharedSection').hidden = true; return; }
+    if (!window.Cloud.signedIn || !window.Cloud.serverUrl()) { $('sharedSection').hidden = true; $('looseSection').hidden = true; return; }
     try {
       const list = await window.Cloud.projects('shotsheet');
       $('sharedSection').hidden = !list.length;
       wrap.replaceChildren(...list.map((p) => card({ id: p.id, title: p.title, type: p.type || 'film', updatedAt: p.updatedAt },
         { shared: p.role === 'owner' ? 'Yours' : p.ownerName })));
+      renderLoose(list);
     } catch (err) {
       $('sharedSection').hidden = false;
       wrap.replaceChildren(el('div', { class: 'list-note' }, err.message));
     }
+  }
+
+  // Scripts and call sheets shared on their own before productions existed: their owner can
+  // move each into a shared production (its people then get access).
+  async function renderLoose(productions) {
+    const [scripts, sheets] = await Promise.all([window.Cloud.projects('script'), window.Cloud.projects('callsheet')]).catch(() => [[], []]);
+    const loose = [...scripts, ...sheets];
+    $('looseSection').hidden = !loose.length;
+    const targets = productions.filter((p) => p.role === 'owner' || p.role === 'editor');
+    $('loose').replaceChildren(...loose.map((d) => {
+      const kind = d.kind === 'script' ? 'Script' : 'Call sheet';
+      let action;
+      if (d.role !== 'owner') action = el('span', { class: 'muted small' }, `Shared by ${d.ownerName}. Ask them to move it into a production.`);
+      else if (!targets.length) action = el('span', { class: 'muted small' }, 'Share a production first, then move this into it.');
+      else {
+        const pick = el('select', { class: 'field' }, ...targets.map((p) => el('option', { value: p.id }, p.title)));
+        action = el('span', { class: 'loose-move' }, pick, el('button', { class: 'ghost-btn', type: 'button', onclick: async (e) => {
+          const target = targets.find((p) => p.id === pick.value);
+          if (!confirm(`Move "${d.title}" into "${target.title}"?\n\nEveryone in "${target.title}" will be able to open it. People who only had this ${kind.toLowerCase()} lose access unless they're in the production.`)) return;
+          e.target.disabled = true;
+          try {
+            await window.Cloud.moveInto(d.id, target.id);
+            toast(`Moved into "${target.title}"`);
+            renderShared();
+          } catch (err) { alert(err.message); e.target.disabled = false; }
+        } }, 'Move into production'));
+      }
+      return el('div', { class: 'loose-row' },
+        el('span', { class: 'loose-kind' }, kind),
+        el('span', { class: 'loose-title' }, d.title || 'Untitled'),
+        action);
+    }));
   }
 
   async function init() {

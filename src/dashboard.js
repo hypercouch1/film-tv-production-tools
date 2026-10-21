@@ -75,10 +75,17 @@
 
   let shots = null;     // the 'shotsheets' store (productions)
   let prod = null;      // this production
-  let scripts = [];     // this production's scripts
+  let scripts = [];     // this production's scripts ({ id, title, episodeId })
   let sheets = [];      // this production's call sheets
+  let session = null;   // a shared production: its live connection
+  let role = 'owner';   // your role in a shared production
 
-  const saveProduction = async () => { prod.updatedAt = Date.now(); await api.saveStore('shotsheets', shots); };
+  const readOnly = () => !!session && role === 'viewer';
+  const saveProduction = async () => {
+    prod.updatedAt = Date.now();
+    if (session) session.commit();
+    else await api.saveStore('shotsheets', shots);
+  };
 
   // The tools, in tile order (number keys 1–7 open them).
   function systems() {
@@ -157,6 +164,7 @@
   }
 
   async function deleteEpisode(e) {
+    if (readOnly()) { toast('You have view-only access'); return; }
     if (prod.episodes.length === 1) { toast('A TV show needs at least one episode'); return; }
     const scenes = prod.scenes.filter((s) => s.episodeId === e.id);
     const script = scripts.find((s) => s.episodeId === e.id);
@@ -165,7 +173,10 @@
     prod.episodes.splice(prod.episodes.indexOf(e), 1);
     prod.scenes = prod.scenes.filter((s) => s.episodeId !== e.id);
     await saveProduction();
-    if (script) {
+    if (script && session) {
+      try { await window.Cloud.deleteProject(script.id); } catch (err) { alert(err.message); }
+      scripts = scripts.filter((s) => s !== script);
+    } else if (script) {
       const data = (await api.loadStore('scripts')) || {};
       data.scripts = (data.scripts || []).filter((s) => s.id !== script.id);
       await api.saveStore('scripts', data);
@@ -205,6 +216,9 @@
     $('homeSub').textContent = prod.type === 'tv'
       ? 'Cast, crew, locations and the schedule are shared by every episode. Each episode has its own script and shot list.'
       : 'Everything for this film: script, shot list, schedule, cast & crew and call sheets.';
+    $('shareBtn').textContent = session ? 'People' : 'Share';
+    $('deleteProduction').textContent = session && role !== 'owner' ? 'Leave production' : session ? 'Delete for everyone' : 'Delete production';
+    document.body.classList.toggle('read-only', readOnly());
   }
 
   function render() {
@@ -230,7 +244,20 @@
 
   async function deleteProduction() {
     const parts = [scripts.length && plural(scripts.length, 'script'), prod.scenes.length && plural(prod.scenes.length, 'scene'), sheets.length && plural(sheets.length, 'call sheet')].filter(Boolean);
-    if (!confirm(`Delete "${prod.title}"${parts.length ? ` and everything in it (${parts.join(', ')})` : ''}? This can't be undone.`)) return;
+    if (session && role !== 'owner') {
+      if (!confirm(`Leave "${prod.title}"? You'll lose access until the owner adds you again.`)) return;
+      session.close();
+      try { await window.Cloud.deleteProject(prod.id); } catch (err) { alert(err.message); return; }
+      P.goPicker();
+      return;
+    }
+    if (!confirm(`Delete "${prod.title}"${session ? ' for everyone' : ''}${parts.length ? ` and everything in it (${parts.join(', ')})` : ''}? This can't be undone.`)) return;
+    if (session) {
+      session.close();
+      try { await window.Cloud.deleteProject(prod.id); } catch (err) { alert(err.message); return; }
+      P.goPicker();
+      return;
+    }
     shots.projects = shots.projects.filter((p) => p.id !== prod.id);
     await api.saveStore('shotsheets', shots);
     const sd = (await api.loadStore('scripts')) || {};
@@ -242,25 +269,69 @@
     P.goPicker();
   }
 
+  // A shared production: connect live, so renames and episodes sync with everyone.
+  function connect(pid) {
+    return new Promise((resolve) => {
+      let first = true;
+      session = window.Cloud.connect(pid, {
+        getLocal: () => prod,
+        onDoc: (doc) => {
+          prod = window.ShotFormats.upgradeProject({ ...doc, id: pid });
+          if (first) { first = false; resolve(true); } else render();
+        },
+        onStatus: (s) => { const n = $('liveStatus'); n.hidden = false; n.className = 'live-status ' + s; n.textContent = { live: 'Live', connecting: 'Connecting…', offline: 'Offline · will sync', gone: 'Disconnected' }[s] || s; },
+        onRole: (r) => { role = r; if (!first) render(); },
+        onError: (msg) => toast(msg),
+        onGone: (msg) => { alert(msg); P.goPicker(); },
+      });
+      // Not reachable (or no access): back to the list after a while.
+      setTimeout(() => { if (first) resolve(false); }, 15000);
+    });
+  }
+
+  async function share() {
+    if (session) {
+      P.openPeople(prod.id, { title: prod.title, role, onDelete: deleteProduction });
+      return;
+    }
+    if (await P.share(prod.id)) location.reload();
+  }
+
   async function init() {
     const pid = P.id();
     await P.migrate();
     shots = (await api.loadStore('shotsheets')) || { projects: [] };
     shots.projects = Array.isArray(shots.projects) ? shots.projects : [];
     prod = shots.projects.find((p) => p.id === pid);
-    if (!prod) { P.goPicker(); return; }
-    window.ShotFormats.upgradeProject(prod);
-    const sd = (await api.loadStore('scripts')) || {};
-    scripts = (sd.scripts || []).filter((s) => s.productionId === pid);
-    const cd = (await api.loadStore('callsheets')) || {};
-    sheets = (cd.sheets || []).filter((s) => s.productionId === pid);
+    $('account').append(window.Collab.accountButton());
+    if (!prod) {
+      if (!pid) { P.goPicker(); return; }
+      if (!window.Cloud.signedIn) {
+        $('homeSub').textContent = 'This production is shared online. Sign in to open it.';
+        window.Cloud.onAuth(() => location.reload());
+        return;
+      }
+      $('homeSub').textContent = 'Opening the shared production…';
+      if (!(await connect(pid))) { alert("Couldn't open this production. Check your connection, or ask the owner to add you."); P.goPicker(); return; }
+      try {
+        scripts = await window.Cloud.projects('script', pid);
+        sheets = await window.Cloud.projects('callsheet', pid);
+      } catch { /* offline: counts fill in later */ }
+    } else {
+      window.ShotFormats.upgradeProject(prod);
+      const sd = (await api.loadStore('scripts')) || {};
+      scripts = (sd.scripts || []).filter((s) => s.productionId === pid);
+      const cd = (await api.loadStore('callsheets')) || {};
+      sheets = (cd.sheets || []).filter((s) => s.productionId === pid);
+    }
     render();
     wireTitle();
+    $('shareBtn').addEventListener('click', share);
     $('addEpisode').addEventListener('click', addEpisode);
     $('deleteProduction').addEventListener('click', deleteProduction);
     $('backLink').addEventListener('click', (e) => { e.preventDefault(); P.goPicker(); });
+    window.addEventListener('pagehide', () => session && session.close());
 
-    $('account').append(window.Collab.accountButton());
     window.Cloud.refreshMe();
     window.Common.initUpdates();
     document.addEventListener('keydown', (e) => {

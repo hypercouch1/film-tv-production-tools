@@ -7,6 +7,8 @@
     "deploy": "wrangler deploy",
     "db:init": "wrangler d1 execute production-hub --remote --file=schema.sql",
     "db:init:local": "wrangler d1 execute production-hub --local --file=schema.sql",
+    "db:migrate": "wrangler d1 execute production-hub --remote --file=migrations/0002_productions.sql",
+    "db:migrate:local": "wrangler d1 execute production-hub --local --file=migrations/0002_productions.sql",
     "test": "node test/api.test.mjs"
   },
   "devDependencies": {

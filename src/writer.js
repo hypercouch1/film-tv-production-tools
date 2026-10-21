@@ -9,9 +9,19 @@
   // The production this page works in: scripts are its scripts (one per episode for TV).
   const P = window.Production;
   let prod = null;      // { id, title, type, episodes }
+  let cloudProd = false; // a shared production: its scripts live on the server
   const isTv = () => !!prod && prod.type === 'tv';
   const mine = () => state.scripts.filter((d) => d.productionId === (prod && prod.id) || (d._cloud && !d.productionId));
   const episodeOf = (d) => (isTv() && d ? prod.episodes.find((e) => e.id === d.episodeId) : null);
+  // Every script in this production: on this computer, plus (shared production) the ones
+  // online, as { id, title, episodeId, updatedAt, doc? }.
+  function entries() {
+    const local = collab.localOnly(mine()).map((d) => ({ id: d.id, title: d.title, episodeId: d.episodeId, updatedAt: d.updatedAt, doc: d }));
+    const open = state.scripts.find((d) => d._cloud);
+    const online = collab.shared.map((x) => ({ ...x, doc: open && open._cloud.id === x.id ? open : null }));
+    return [...online, ...local];
+  }
+  const openEntry = (x) => (x.doc && !x.doc._cloud ? selectScript(x.id) : collab.open(x.id));
 
   // Shared (cloud) scripts live on the server, so only local scripts are saved here.
   const store = window.Common.createStore('scripts', () => ({ ...state, scripts: collab.localOnly(state.scripts) }));
@@ -69,16 +79,37 @@
     normalize: (doc) => S.upgradeDoc(doc),
     selectLocal: () => selectFirstLocal(),
     onRoleChange: () => {},
+    production: true,
+    parent: () => (cloudProd ? prod.id : null),
+    productionTitle: () => (cloudProd ? prod.title : null),
+    // Share: the whole production (or, in a shared one, this script left on the computer).
+    share: async () => {
+      const d = active();
+      if (cloudProd && d) {
+        try {
+          await window.Cloud.createProject('script', window.SyncCore.stripLocal(JSON.parse(JSON.stringify(d))), { id: d.id, parent: prod.id });
+          state.scripts = state.scripts.filter((x) => x !== d);
+          await store.flush();
+          await collab.refreshList();
+          collab.open(d.id);
+        } catch (err) { alert(err.message); }
+        return;
+      }
+      await store.flush();
+      if (await P.share(prod.id)) location.reload();
+    },
   });
   const readOnly = () => collab.readOnly();
 
-  // Opens this production's script (the first episode's, for TV), or the empty screen.
-  function selectFirstLocal() {
-    const local = collab.localOnly(mine());
-    const first = isTv()
-      ? prod.episodes.map((e) => local.find((d) => d.episodeId === e.id)).find(Boolean)
-      : local.sort((a, b) => b.updatedAt - a.updatedAt)[0];
-    selectScript(first ? first.id : null);
+  // Opens this production's script (the episode asked for, or the first episode's for TV),
+  // or the empty screen.
+  function selectFirstLocal(episodeId) {
+    const all = entries();
+    const first = episodeId ? all.find((x) => x.episodeId === episodeId)
+      : isTv() ? prod.episodes.map((e) => all.find((x) => x.episodeId === e.id)).find(Boolean)
+        : all.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
+    if (first) openEntry(first);
+    else selectScript(null);
   }
 
   function selectScript(id) {
@@ -105,20 +136,24 @@
     $('listHeading').textContent = isTv() ? 'Episodes' : 'Scripts';
     const list = $('list');
     list.innerHTML = '';
-    const local = collab.localOnly(mine());
-    const row = (d, name, onclick) => {
-      const st = d && S.stats(d);
-      list.append(el('li', { class: d && d.id === state.activeId ? 'active' : '', onclick },
+    const all = entries();
+    const row = (x, name, onclick) => {
+      const st = x && x.doc && S.stats(x.doc);
+      const meta = !x ? 'No script yet — click to start'
+        : st ? `${st.pages} pg · ${st.scenes} scenes · ${relTime(x.updatedAt || Date.now())}`
+          : `☁ Shared · edited ${relTime(x.updatedAt || Date.now())}`;
+      list.append(el('li', { class: x && x.id === state.activeId ? 'active' : '', onclick },
         el('div', { class: 'name' }, name),
-        el('div', { class: 'meta' }, st ? `${st.pages} pg · ${st.scenes} scenes · ${relTime(d.updatedAt)}` : 'No script yet — click to start')));
+        el('div', { class: 'meta' }, meta)));
     };
+    if (collab.error) list.append(el('li', { class: 'list-note' }, collab.error));
     if (isTv()) {
       for (const e of prod.episodes) {
-        const d = local.find((x) => x.episodeId === e.id);
-        row(d, P.episodeLabel(e), () => (d ? selectScript(d.id) : newScript(e.id)));
+        const x = all.find((y) => y.episodeId === e.id);
+        row(x, P.episodeLabel(e), () => (x ? openEntry(x) : newScript(e.id)));
       }
     } else {
-      local.sort((a, b) => b.updatedAt - a.updatedAt).forEach((d) => row(d, d.title || 'Untitled Script', () => selectScript(d.id)));
+      all.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).forEach((x) => row(x, x.title || 'Untitled Script', () => openEntry(x)));
     }
   }
 
@@ -814,13 +849,21 @@
   function addScript(doc, episodeId) {
     doc.productionId = prod.id;
     if (isTv()) {
-      const cur = episodeOf(active());
-      const free = prod.episodes.find((e) => !collab.localOnly(mine()).some((d) => d.episodeId === e.id));
-      doc.episodeId = episodeId || (cur && !mine().some((d) => d.episodeId === cur.id) ? cur.id : free ? free.id : null);
+      const taken = new Set(entries().map((x) => x.episodeId));
+      const wanted = episodeId || P.episode();
+      const free = prod.episodes.find((e) => !taken.has(e.id));
+      doc.episodeId = wanted && !taken.has(wanted) ? wanted : free ? free.id : null;
       if (!doc.episodeId) {
-        alert('Every episode already has a script. Add an episode on the production page first, or open the episode and replace its script.');
+        alert('Every episode already has a script. Add an episode on the production page first.');
         return false;
       }
+    }
+    if (cloudProd) {
+      // A shared production: the script is created online, inside it.
+      window.Cloud.createProject('script', doc, { parent: prod.id })
+        .then(async (project) => { await collab.refreshList(); collab.open(project.id); })
+        .catch((err) => alert(err.message));
+      return true;
     }
     state.scripts.push(doc);
     selectScript(doc.id);
@@ -862,7 +905,7 @@
       return;
     }
     $('numbersToggle').textContent = doc.sceneNumbers ? 'Hide scene numbers' : 'Show scene numbers';
-    $('deleteLabel').textContent = collab.isCloud(doc) ? (doc._cloud.role === 'owner' ? 'Delete for everyone' : 'Leave shared script') : 'Delete script';
+    $('deleteLabel').textContent = collab.isCloud(doc) ? collab.deleteLabel(doc) : 'Delete script';
     $('app').classList.toggle('read-only', readOnly());
     renderPaper(doc, { fresh: !!(opts.fresh || opts.opened) });
     // A newly opened script starts a fresh undo history; a collaborator's edit becomes the
@@ -974,9 +1017,15 @@
     // This page works in one production (?production=<id>, &episode=<id> for a TV episode).
     await P.migrate();
     const pid = P.id();
-    const productions = await P.list();
-    prod = productions.find((p) => p.id === pid);
-    if (!prod) { P.goPicker(); return; }
+    if (!pid) { P.goPicker(); return; }
+    prod = (await P.list()).find((p) => p.id === pid);
+    if (!prod) {
+      // A shared production: read its name, type and episodes from the server.
+      try {
+        prod = P.upgrade({ ...(await window.Cloud.doc(pid)), id: pid });
+        cloudProd = true;
+      } catch { P.goPicker(); return; }
+    }
     const stored = await api.loadStore('scripts');
     state = { sidebarHidden: false, ...(stored || {}), scripts: stored && Array.isArray(stored.scripts) ? stored.scripts.map((d) => S.normalizeDoc(d)) : [] };
     const wanted = P.episode();
@@ -991,6 +1040,11 @@
     collab.mountToolbar(document.querySelector('.toolbar'), $('titlePageBtn'));
     render({ fresh: true });
     collab.init();
+    if (cloudProd) {
+      // Open the episode's (or the production's) script from the server.
+      await collab.refreshList();
+      if (!pick) selectFirstLocal(wanted || undefined);
+    }
     window.Common.initUpdates();
     const pending = await api.takePendingFile();
     if (pending) openImported({ script: fileToScript(pending) });

@@ -18,12 +18,15 @@ CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
 
 CREATE TABLE IF NOT EXISTS projects (
   id          TEXT PRIMARY KEY,
-  kind        TEXT NOT NULL,          -- 'callsheet' | 'shotsheet'
+  kind        TEXT NOT NULL,          -- 'shotsheet' (a production) | 'script' | 'callsheet'
   title       TEXT NOT NULL,
   owner_id    TEXT NOT NULL,
   created_at  INTEGER NOT NULL,
-  updated_at  INTEGER NOT NULL
+  updated_at  INTEGER NOT NULL,
+  parent_id   TEXT,                   -- the production a script / call sheet belongs to
+  info        TEXT                    -- JSON for lists: { type, episodeId }
 );
+CREATE INDEX IF NOT EXISTS projects_parent ON projects(parent_id);
 
 CREATE TABLE IF NOT EXISTS members (
   project_id  TEXT NOT NULL,
