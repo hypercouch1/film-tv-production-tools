@@ -69,6 +69,25 @@
     return k;
   }
 
+  // Script breakdown categories (colours follow the usual breakdown-sheet convention).
+  // Cast isn't here: characters are the cast.
+  const BREAKDOWN = [
+    { id: 'props', label: 'Props', color: '#a98be8' },
+    { id: 'wardrobe', label: 'Wardrobe', color: '#4fc1b8' },
+    { id: 'makeup', label: 'Makeup & hair', color: '#f08bb4' },
+    { id: 'extras', label: 'Extras', color: '#6fcf7a' },
+    { id: 'stunts', label: 'Stunts', color: '#f2994a' },
+    { id: 'vehicles', label: 'Vehicles', color: '#ef6fa0' },
+    { id: 'animals', label: 'Animals', color: '#b5d35f' },
+    { id: 'sfx', label: 'Special effects', color: '#5aa9f0' },
+    { id: 'vfx', label: 'Visual effects', color: '#7fd0ea' },
+    { id: 'sound', label: 'Sound & music', color: '#c49a6c' },
+    { id: 'setdressing', label: 'Set dressing', color: '#9fb0c4' },
+    { id: 'equipment', label: 'Special equipment', color: '#e6cf2e' },
+  ];
+  const breakdownCategory = (id) => BREAKDOWN.find((c) => c.id === id) || null;
+  const elementKey = (category, name) => category + ':' + String(name || '').trim().toLowerCase();
+
   const ids = (list, map) => (Array.isArray(list) ? list.map((x) => map[x] || null).filter(Boolean) : []);
 
   // Call sheet details for a shoot day (all free text), besides date / call / wrap / location / notes.
@@ -172,6 +191,8 @@
       id: uid(), title: str(raw.title, fallbackTitle || 'Untitled Project'), updatedAt: Date.now(), scenes, days, characters, crew,
       scriptLink: link, comments: Array.isArray(raw.comments) ? raw.comments : [],
       type: raw.type === 'tv' ? 'tv' : 'film', episodes, availability,
+      elements: (Array.isArray(raw.elements) ? raw.elements : []).filter((e) => e && typeof e === 'object')
+        .map((e) => ({ ...e, id: uid(), sceneIds: ids(e.sceneIds, sceneMap) })),
     });
   }
 
@@ -236,6 +257,13 @@
     });
     p.availability = cleanAvailability(p.availability, new Set([...p.characters, ...p.crew].map((x) => x.id)));
     const dayIds = new Set(p.days.map((d) => d.id));
+    const sceneIds = new Set(p.scenes.map((s) => s.id));
+    // Breakdown elements added by hand (script tags are read from the scripts):
+    // { id, category, name, notes, sceneIds }. An entry with no scenes just holds notes.
+    p.elements = items(p.elements).filter((e) => breakdownCategory(e.category)).map((e) => ({
+      id: e.id, category: e.category, name: String(e.name == null ? '' : e.name).slice(0, 200), notes: String(e.notes == null ? '' : e.notes).slice(0, 1000),
+      sceneIds: idList(e.sceneIds).filter((id) => sceneIds.has(id)),
+    }));
     if (!p.scriptLink || typeof p.scriptLink.scriptId !== 'string') p.scriptLink = null;
     else {
       p.scriptLink.auto = p.scriptLink.auto !== false; // keep in step with the script automatically
@@ -328,6 +356,7 @@
           sceneOrder: d.sceneOrder || [],
         })),
       availability: p.availability || {},
+      elements: (p.elements || []).map(({ category, name, notes, sceneIds }) => ({ category, name, notes, sceneIds })),
       scriptLink: p.scriptLink || null,
       comments: p.comments || [],
       type: p.type === 'tv' ? 'tv' : 'film',
@@ -500,7 +529,7 @@
   }
 
   window.ShotFormats = {
-    OPTIONS, SHOT_DEFAULTS, CREW_ROLES, crewRoles, setCrewRoles, upgradeProduction, newShot, shotLetter, normalizeProject, upgradeProject, listItems, shotEquipment,
+    OPTIONS, SHOT_DEFAULTS, CREW_ROLES, crewRoles, setCrewRoles, upgradeProduction, newShot, BREAKDOWN, breakdownCategory, elementKey, shotLetter, normalizeProject, upgradeProject, listItems, shotEquipment,
     importFile, toShotsheet, toBackup, toCSV, toICS,
   };
 })();

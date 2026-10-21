@@ -91,6 +91,7 @@
       elements,
       revisions: cleanRevisions(raw.revisions),
       comments: cleanComments(raw.comments),
+      tags: cleanTags(raw.tags, elements),
       // The production (and TV episode) this script belongs to.
       ...(typeof raw.productionId === 'string' ? { productionId: raw.productionId } : {}),
       ...(typeof raw.episodeId === 'string' ? { episodeId: raw.episodeId } : {}),
@@ -105,6 +106,32 @@
       elements: r.elements.filter(isItem).map((e) => ({ id: e.id, type: TYPES.includes(e.type) ? e.type : 'action', text: String(e.text || '') })),
     }));
   }
+  // Breakdown tags: words in the script marked as a prop, wardrobe, vehicle…
+  // { id, lineId, text, category }. Tags on lines that no longer exist are dropped.
+  function cleanTags(list, elements) {
+    const lines = new Set((elements || []).map((e) => e.id));
+    return (Array.isArray(list) ? list : []).filter((t) => isItem(t) && lines.has(t.lineId) && typeof t.category === 'string')
+      .map((t) => ({ id: t.id, lineId: t.lineId, text: String(t.text || '').trim().slice(0, 200), category: t.category.slice(0, 40) }))
+      .filter((t) => t.text);
+  }
+  // Tags per scene: Map(scene heading line id → [tag]). Tags before the first heading are left out.
+  function tagsByScene(doc) {
+    const out = new Map();
+    const lineScene = new Map();
+    let heading = null;
+    for (const e of doc.elements) {
+      if (e.type === 'heading') heading = e.id;
+      lineScene.set(e.id, heading);
+    }
+    for (const t of doc.tags || []) {
+      const h = lineScene.get(t.lineId);
+      if (!h) continue;
+      if (!out.has(h)) out.set(h, []);
+      out.get(h).push(t);
+    }
+    return out;
+  }
+
   // Comments are shared by all three systems: { id, target, text, author, authorId, at, resolved }.
   function cleanComments(list) {
     return (Array.isArray(list) ? list : []).filter(isItem).map((c) => ({
@@ -128,6 +155,7 @@
     }
     d.revisions = n.revisions;
     d.comments = n.comments;
+    d.tags = cleanTags(d.tags, d.elements);
     return d;
   }
 
@@ -467,7 +495,7 @@
 
   root.Screenplay = {
     TYPES, LABELS, NEXT_ON_ENTER, NEXT_ON_TAB, PREV_ON_TAB, UPPERCASE, TRANSITIONS, TIMES, REVISION_COLORS,
-    autoType, displayText, wrapParens, cleanCharacter, newDoc, normalizeDoc, upgradeDoc,
+    autoType, displayText, wrapParens, cleanCharacter, newDoc, normalizeDoc, upgradeDoc, tagsByScene,
     fromImport, toParseInput, paginate, scenes, characters, stats, suggestions, toFountain, toFdx, toCallsheet,
     wrapLines, splitSpeech, speakerOf, nextRevisionColor, revisionHex, makeRevision, revisionChanges,
     sceneHash, sceneLinks,

@@ -106,7 +106,11 @@
         stats: `${plural(prod.characters.length, 'character')} · ${prod.crew.length} crew` },
       { id: 'callsheet', name: 'Call Sheets', tag: 'Cue checklists for the shoot or live show', page: 'callsheet.html', accent: '#e2332b',
         stats: sheets.length ? plural(sheets.length, 'call sheet') : 'No call sheets yet' },
-      { id: 'breakdown', name: 'Breakdown', tag: 'Props, wardrobe, vehicles and more, per scene', soon: true },
+      { id: 'breakdown', name: 'Breakdown', tag: 'Props, wardrobe, vehicles and more, per scene', page: 'breakdown.html', accent: '#a98be8',
+        stats: (() => {
+          const n = (prod.elements || []).filter((e) => e.sceneIds.length).length;
+          return n ? `${plural(n, 'item')} added by hand · plus script tags` : 'Tag the script, or add items per scene';
+        })() },
       { id: 'locations', name: 'Locations', tag: 'Addresses, contacts, permits and parking', soon: true },
     ];
   }

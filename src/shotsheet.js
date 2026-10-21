@@ -5,11 +5,17 @@
   const safeFileName = (s) => window.Common.safeFileName(s, 'shot-sheet');
 
   let state = { projects: [], activeId: null, sidebarHidden: false };
-  // This file runs two pages: the Shot Sheet (shot list, cast & crew) and the Schedule
-  // (calendar, stripboard, day out of days, availability and call sheets).
-  const MODE = document.body.dataset.mode === 'schedule' ? 'schedule' : 'shots';
-  const VIEWS = MODE === 'schedule' ? ['schedule', 'strips', 'dood', 'availability', 'summary'] : ['shots', 'people'];
-  let view = VIEWS[0];         // 'shots' | 'people' | 'schedule' (calendar) | 'strips' | 'dood' | 'availability' | 'summary'
+  // This file runs the production pages that work on the production document: the Shot Sheet
+  // (shot list, cast & crew), the Schedule (calendar, stripboard, day out of days, availability,
+  // call sheets) and the Breakdown. body[data-mode] says which page this is.
+  const PAGES = {
+    shots: { page: 'shotsheet.html', label: 'Shot Sheet', views: ['shots', 'people'] },
+    schedule: { page: 'schedule.html', label: 'Schedule', views: ['schedule', 'strips', 'dood', 'availability', 'summary'] },
+    breakdown: { page: 'breakdown.html', label: 'Breakdown', views: ['sheets', 'elements'] },
+  };
+  const MODE = PAGES[document.body.dataset.mode] ? document.body.dataset.mode : 'shots';
+  const VIEWS = PAGES[MODE].views;
+  let view = VIEWS[0];         // e.g. 'shots' | 'people' | 'schedule' (calendar) | 'strips' | 'dood' | 'availability' | 'summary' | 'sheets' | 'elements'
   let summaryDayId = null;     // shoot day shown in the 'summary' view
   let editing = false;
   let dayFilter = 'all';       // 'all' | 'none' | <dayId>
@@ -197,7 +203,9 @@
   // The production this page belongs to, and for TV its episodes (each has its own shot list).
   function renderSidebar() {
     const p = active();
-    $('app').classList.toggle('sidebar-hidden', MODE === 'schedule' || state.sidebarHidden);
+    // The Schedule covers every episode, so it has no sidebar; the Breakdown only needs one
+    // for a TV show's episodes.
+    $('app').classList.toggle('sidebar-hidden', MODE === 'schedule' || (MODE === 'breakdown' && !isTv(p)) || state.sidebarHidden);
     $('sidebarTitle').textContent = p ? p.title || 'Untitled' : 'Production';
     $('sidebarSub').textContent = p ? window.Production.typeLabel(p) + (collab.isCloud(p) ? ' · shared' : '') : '';
     const list = $('list');
@@ -231,11 +239,11 @@
   function renderHeader(p) {
     const vis = visibleShots(p);
     const done = vis.filter((x) => x.shot.done).length;
-    document.title = `${p.title} — ${MODE === 'schedule' ? 'Schedule' : 'Shot Sheet'}`;
+    document.title = `${p.title} — ${PAGES[MODE].label}`;
     $('title').textContent = p.title;
     $('title').hidden = editing;
     const ep = currentEpisode(p);
-    $('episodeLabel').hidden = !ep || view === 'people' || view === 'schedule' || view === 'summary';
+    $('episodeLabel').hidden = !ep || !['shots', 'sheets'].includes(view);
     if (ep) $('episodeLabel').textContent = window.Production.episodeLabel(ep);
     const ti = $('titleInput');
     ti.hidden = !editing;
@@ -1216,10 +1224,23 @@
       ]),
       ...F.shotEquipment(shots).map((g) => ({ item: g.item, refs: g.refs, fromShots: true })),
     ];
-    const props = collect(scenes.flatMap((s) => F.listItems(s.props).map((i) => [i, 'SC ' + s.number])));
+    // The breakdown for these scenes (script tags and items added on the Breakdown page):
+    // props and special equipment join those lists; the rest get their own section.
+    const groups = window.BreakdownViews ? window.BreakdownViews.forScenes(p, scenes, window.BreakdownViews.tagIndex(scripts)) : [];
+    const refsOf = (it) => it.sceneIds.map((id) => p.scenes.find((s) => s.id === id)).filter(Boolean).map((s) => 'SC ' + sceneCode(p, s));
+    const bdProps = (groups.find((g) => g.category.id === 'props') || { items: [] }).items;
+    const bdGear = (groups.find((g) => g.category.id === 'equipment') || { items: [] }).items;
+    const named = (it) => (it.notes ? `${it.name} (${it.notes})` : it.name);
+    const props = collect([
+      ...scenes.flatMap((s) => F.listItems(s.props).map((i) => [i, 'SC ' + s.number])),
+      ...bdProps.flatMap((it) => refsOf(it).map((r) => [named(it), r])),
+    ]);
+    equipment.push(...collect(bdGear.flatMap((it) => refsOf(it).map((r) => [named(it), r]))));
+    const breakdown = groups.filter((g) => g.category.id !== 'props' && g.category.id !== 'equipment')
+      .map((g) => ({ label: g.category.label, items: g.items.map((it) => ({ item: it.name, refs: refsOf(it), notes: it.notes })) }));
     const shotNotes = shots.filter((x) => x.shot.notes.trim());
     const eighths = scenes.reduce((n, s) => n + (s.eighths || 0), 0);
-    return { scenes, shots, cast, crew, equipment, props, shotNotes, eighths };
+    return { scenes, shots, cast, crew, equipment, props, breakdown, shotNotes, eighths };
   }
 
   // The industry-style call sheet for a shoot day. Logistics (call times, parking, hospital,
@@ -1361,6 +1382,9 @@
         el('div', { class: 'sum-columns' },
           el('div', {}, el('h3', {}, 'Equipment'), list(d.equipment, 'No equipment listed.')),
           el('div', {}, el('h3', {}, 'Props'), list(d.props, 'No props listed.'))),
+        d.breakdown.length ? el('div', { class: 'sum-columns sum-breakdown' },
+          ...d.breakdown.map((g) => el('div', {}, el('h3', {}, g.label),
+            list(g.items.map((x) => ({ ...x, item: x.notes ? `${x.item} (${x.notes})` : x.item })), '')))) : null,
 
         d.shotNotes.length ? el('h3', {}, 'Shot notes') : null,
         d.shotNotes.length ? el('ul', { class: 'sum-list' }, ...d.shotNotes.map((x) => el('li', {}, el('strong', {}, x.code + ' '), x.shot.notes))) : null,
@@ -1416,6 +1440,7 @@
     renderHeader(p);
     if (view === 'schedule') renderSchedule(p);
     else if (view === 'strips' || view === 'dood' || view === 'availability') $('sections').replaceChildren(window.ScheduleViews[view](scheduleCtx(p)));
+    else if (view === 'sheets' || view === 'elements') $('sections').replaceChildren(window.BreakdownViews[view](scheduleCtx(p)));
     else if (view === 'people') renderPeople(p);
     else if (view === 'summary') renderSummary(p);
     else if (editing) renderEdit(p);
@@ -1429,9 +1454,11 @@
   }
 
   function setView(v) {
-    // The other page's views: Shot List / Cast & Crew ↔ Schedule.
+    // Another page's view (e.g. Schedule from the Shot Sheet): go there.
     if (!VIEWS.includes(v)) {
-      store.flush().then(() => { location.href = window.Production.link(MODE === 'schedule' ? 'shotsheet.html' : 'schedule.html', { view: v }); });
+      const other = Object.values(PAGES).find((x) => x.views.includes(v));
+      if (!other) return;
+      store.flush().then(() => { location.href = window.Production.link(other.page, { view: v, episode: episodeFilter }); });
       return;
     }
     view = v;
@@ -1443,14 +1470,15 @@
     $('sheet').scrollTop = 0;
   }
 
-  // What the stripboard, Day Out of Days and availability views need from this page.
+  // What the schedule and breakdown views need from this page.
   function scheduleCtx(p) {
     return {
       p, el, uid, toast, save, render,
       readOnly: () => collab.readOnly(),
-      sortedDays, dayNum, fmtDate, todayStr, ymd, parseYmd, sceneCode,
+      sortedDays, dayNum, fmtDate, todayStr, ymd, parseYmd, sceneCode, epScenes, daysForScene,
       formatEighths: (n) => window.ScriptParse.formatEighths(n),
       addDay, openSummary,
+      scripts, linkedScript: !!linkOf(p),
       availabilityActions: window.Availability ? () => window.Availability.actions(p, { save, render, readOnly: collab.readOnly, isCloud: collab.isCloud(p) }) : null,
     };
   }
@@ -1679,8 +1707,8 @@
     let saved = null;
     if (kind === 'pdf' && view === 'summary' && dayById(p, summaryDayId)) {
       saved = await api.exportPdf({ defaultName: `${name} - Day ${dayNum(p, summaryDayId)} call sheet.pdf` });
-    } else if (kind === 'pdf' && MODE === 'schedule') {
-      const label = { schedule: 'Shoot days', strips: 'Stripboard', dood: 'Day Out of Days', availability: 'Availability' }[view] || 'Schedule';
+    } else if (kind === 'pdf' && MODE !== 'shots') {
+      const label = { schedule: 'Shoot days', strips: 'Stripboard', dood: 'Day Out of Days', availability: 'Availability', sheets: 'Breakdown sheets', elements: 'Breakdown elements' }[view] || PAGES[MODE].label;
       saved = await api.exportPdf({ defaultName: `${name} - ${label}.pdf` });
     } else if (kind === 'pdf') {
       const prev = { view, editing };
@@ -1780,7 +1808,8 @@
     state.activeId = local ? pid : null;
     episodeFilter = q.get('episode');
     if (VIEWS.includes(q.get('view')) && q.get('view') !== 'summary') view = q.get('view');
-    if (q.get('day')) { if (MODE === 'shots') dayFilter = q.get('day'); else { summaryDayId = q.get('day'); view = 'summary'; } }
+    if (q.get('day') && MODE === 'shots') dayFilter = q.get('day');
+    if (q.get('day') && MODE === 'schedule') { summaryDayId = q.get('day'); view = 'summary'; }
     if (q.get('date')) {
       selectedDate = q.get('date');
       const d = parseYmd(selectedDate);

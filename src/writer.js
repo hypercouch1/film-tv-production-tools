@@ -206,7 +206,50 @@
     return node;
   }
 
-  // Comment badges and revision marks ("*" in the right margin for changed lines).
+  // ---------- Breakdown tags (props, wardrobe, vehicles… marked in the script) ----------
+  const CATS = () => window.ShotFormats.BREAKDOWN;
+  const catOf = (id) => window.ShotFormats.breakdownCategory(id) || { label: id, color: '#888' };
+
+  // Tags on a line, shown in the left margin (outside the text, so page breaks don't move).
+  function tagChips(doc, item) {
+    const tags = (doc.tags || []).filter((t) => t.lineId === item.id);
+    if (!tags.length) return null;
+    return el('div', { class: 'el-tags' }, ...tags.map((t) => el('span', {
+      class: 'el-tag', style: `--tag:${catOf(t.category).color}`, title: `${catOf(t.category).label}: ${t.text}` + (readOnly() ? '' : ' — click to remove'),
+      onmousedown: (e) => e.preventDefault(),
+      onclick: () => {
+        if (readOnly()) return;
+        doc.tags = doc.tags.filter((x) => x.id !== t.id);
+        save(); updateBadges(); updateStatus();
+      },
+    }, t.text)));
+  }
+
+  // Tag the selected words on the current line for the breakdown.
+  function tagSelection() {
+    const doc = active();
+    const ta = document.activeElement;
+    const node = ta && ta.closest && ta.closest('.paper .el');
+    if (!doc || readOnly()) return;
+    const text = node && ta.selectionEnd > ta.selectionStart ? ta.value.slice(ta.selectionStart, ta.selectionEnd).replace(/\s+/g, ' ').trim() : '';
+    if (!text) { toast('Select words in the script first (e.g. "chipped mug"), then tag them.'); return; }
+    const lineId = node.dataset.item;
+    const body = el('div', { class: 'tag-pick' },
+      el('p', { class: 'muted small' }, `“${text}” is a…`),
+      el('div', { class: 'tag-cats' }, ...CATS().map((c) => el('button', {
+        class: 'tag-cat', type: 'button', style: `--tag:${c.color}`,
+        onclick: () => {
+          doc.tags = [...(doc.tags || []), { id: uid(), lineId, text, category: c.id }];
+          m.close();
+          save(); updateBadges(); updateStatus();
+          toast(`Tagged as ${c.label}. It shows up in the production's Breakdown.`);
+          focusElement(lineId, ta.selectionEnd);
+        },
+      }, c.label))));
+    const m = window.Common.modal('Tag for the breakdown', body);
+  }
+
+  // Comment badges, revision marks ("*" in the right margin for changed lines) and tags.
   function updateBadges() {
     const doc = active();
     if (!doc) return;
@@ -215,6 +258,10 @@
     for (const item of doc.elements) {
       const node = nodes.get(item.id);
       if (!node) continue;
+      const oldTags = node.querySelector(':scope > .el-tags');
+      if (oldTags) oldTags.remove();
+      const chips = tagChips(doc, item);
+      if (chips) node.append(chips);
       const old = node.querySelector(':scope > .cm-badge');
       if (old) old.remove();
       const b = comments.badge(item.id);
@@ -977,6 +1024,11 @@
     $('revisionsBtn').addEventListener('click', openRevisions);
     $('commentBtn').addEventListener('mousedown', (e) => e.preventDefault()); // keep the current line
     $('commentBtn').addEventListener('click', () => comments.open(currentId || undefined));
+    $('tagBtn').addEventListener('mousedown', (e) => e.preventDefault()); // keep the selection
+    $('tagBtn').addEventListener('click', tagSelection);
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 't') { e.preventDefault(); tagSelection(); }
+    });
     window.Common.wireDropdowns();
     document.querySelectorAll('[data-export]').forEach((b) => b.addEventListener('click', () => exportAs(b.dataset.export)));
     document.querySelectorAll('[data-send]').forEach((b) => b.addEventListener('click', () => sendTo(b.dataset.send)));

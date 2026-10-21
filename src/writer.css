@@ -124,6 +124,30 @@ textarea.el-text::placeholder { color: #aaa; text-transform: none; }
 .paper .el-dialogue > .cm-badge { left: -2.4in; }
 .paper .el.has-comment:focus-within::before { display: none; }
 
+/* Breakdown tags: small coloured pills in the left margin (they don't change line heights,
+   so the page breaks still match the PDF). Click one to remove it. */
+.paper .el > .el-tags {
+  position: absolute; top: 0; left: -1.42in; width: 1.2in; display: flex; flex-direction: column; gap: 2px; z-index: 1;
+}
+.paper .el-character > .el-tags { left: -3.62in; }
+.paper .el-parenthetical > .el-tags { left: -3.02in; }
+.paper .el-dialogue > .el-tags { left: -2.42in; }
+.paper .el.has-comment > .el-tags { top: 20px; }
+.paper .el:has(> .el-tags):focus-within::before { display: none; }
+.el-tag {
+  font: 600 10px/14px var(--body); color: #222; background: color-mix(in srgb, var(--tag) 35%, #fff);
+  border-left: 3px solid var(--tag); border-radius: 3px; padding: 0 5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+}
+.read-only .el-tag { cursor: default; }
+.tag-cats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+.tag-cat {
+  border: 1px solid var(--line); border-left: 4px solid var(--tag); border-radius: 6px; background: var(--panel-2);
+  padding: 8px 10px; text-align: left; font-size: 13px;
+}
+.tag-cat:hover { border-color: var(--tag); }
+@media print { .el-tags { display: none !important; } }
+
 /* Revisions dialog */
 .rev-list { display: grid; gap: 6px; margin: 8px 0 4px; max-height: 300px; overflow-y: auto; }
 .rev-row {
