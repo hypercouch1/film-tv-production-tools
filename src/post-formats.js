@@ -96,7 +96,12 @@
   }
 
   // ---- CSV ----
-  const field = (v) => { const x = String(v == null ? '' : v); return /[",\n\r]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x; };
+  // Cells starting with = + - @ would run as formulas in a spreadsheet: they get a leading '.
+  const field = (v) => {
+    let x = String(v == null ? '' : v);
+    if (/^[=+\-@\t\r]/.test(x)) x = "'" + x;
+    return /[",\n\r]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x;
+  };
   const csv = (rows) => rows.map((r) => r.map(field).join(',')).join('\n') + '\n';
   const statusLabel = (v, list) => (list.find(([k]) => k === v) || [v, v])[1];
 

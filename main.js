@@ -385,7 +385,11 @@ handle('media:pick', async (_e, { folder = false } = {}) => {
 // (e.g. the drive isn't connected).
 handle('media:reveal', (_e, filePath) => {
   const p = String(filePath || '');
-  if (!path.isAbsolute(p) || !fs.existsSync(p)) return false;
+  // Only local paths. A network path (\\server\share, //server) in a shared production's
+  // catalogue would make Windows connect to that server when checking it, which can send
+  // it the user's login hash.
+  if (/^[\\/]{2}/.test(p) || !path.isAbsolute(p)) return false;
+  if (!fs.existsSync(p)) return false;
   shell.showItemInFolder(p);
   return true;
 });

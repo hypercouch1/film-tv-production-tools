@@ -115,7 +115,7 @@
             e.preventDefault();
             addItem(p, s, c.id, e.target.value);
             ctx.save(); ctx.render({ keepScroll: true });
-            const again = document.querySelector(`[data-bd="${s.id}:${c.id}"] .bd-add`);
+            const again = document.querySelector(`[data-bd="${CSS.escape(`${s.id}:${c.id}`)}"] .bd-add`);
             if (again) again.focus();
           },
         });

@@ -87,12 +87,18 @@
       } else field += c;
     }
     if (field !== '' || row.length) { row.push(field); rows.push(row); }
-    return rows.filter((r) => r.some((f) => f.trim() !== ''));
+    return rows.filter((r) => r.some((f) => f.trim() !== '')).map((r) => r.map(uncsv));
   }
+  // A cell starting with = + - @ (or a tab / return) would run as a formula in Excel or Sheets,
+  // and shared projects hold text other people typed: such cells get a leading ' (which the
+  // CSV import here removes again).
+  const FORMULA = /^[=+\-@\t\r]/;
   function csvField(v) {
-    const s = String(v == null ? '' : v);
+    let s = String(v == null ? '' : v);
+    if (FORMULA.test(s)) s = "'" + s;
     return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   }
+  const uncsv = (s) => (/^'[=+\-@\t\r]/.test(s) ? s.slice(1) : s);
 
   // ---- Debounced store saving that can be flushed before leaving the page ----
   function createStore(key, getData) {
