@@ -1,5 +1,6 @@
 /* Post page: take log, media catalogue, post tracker, cuts & notes. */
 .post-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 6px 0 10px; }
+.post-bar > .field { width: auto; max-width: 320px; min-width: 150px; }
 .post-daybar { margin-bottom: 6px; }
 
 /* Take log */

@@ -302,6 +302,12 @@
         p.availabilityLinks[id] = { code: l.code, at: Number(l.at) || 0, start: String(l.start || ''), end: String(l.end || '') };
       }
     }
+    // Personal crew pages (call sheets, "Got it", calendar): { [personId]: { code, at } }.
+    const pages = p.crewLinks && typeof p.crewLinks === 'object' && !Array.isArray(p.crewLinks) ? p.crewLinks : {};
+    p.crewLinks = {};
+    for (const [id, l] of Object.entries(pages)) {
+      if (people.has(id) && l && typeof l.code === 'string' && /^[A-Z0-9]{6,20}$/.test(l.code)) p.crewLinks[id] = { code: l.code, at: Number(l.at) || 0 };
+    }
     const dayIds = new Set(p.days.map((d) => d.id));
     const sceneIds = new Set(p.scenes.map((s) => s.id));
     // Locations: { id, name, address, contact, parking, hospital, power, permit, permitNotes,

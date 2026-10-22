@@ -30,7 +30,7 @@ function migrateFromOldName() {
 migrateFromOldName();
 
 // Each system keeps its own store file in the user data folder.
-const STORES = ['callsheets', 'shotsheets', 'scripts', 'post', 'budget'];
+const STORES = ['callsheets', 'shotsheets', 'scripts', 'post', 'budget', 'onset', 'gear'];
 const storePath = (key) => {
   if (!STORES.includes(key)) throw new Error('Unknown store: ' + key);
   return path.join(app.getPath('userData'), key + '.json');
@@ -393,6 +393,23 @@ handle('media:reveal', (_e, filePath) => {
   shell.showItemInFolder(p);
   return true;
 });
+
+// ---- Continuity photos (On Set page) ----
+// JPEGs the page has already made smaller, kept by id in the app's data folder.
+const photoPath = (id) => {
+  if (!/^[\w-]{8,40}$/.test(String(id))) throw new Error('Invalid photo id');
+  return path.join(app.getPath('userData'), 'photos', id + '.jpg');
+};
+handle('photo:save', (_e, id, bytes) => {
+  const buf = Buffer.from(bytes);
+  if (buf.length > 3_000_000 || buf[0] !== 0xff || buf[1] !== 0xd8 || buf[2] !== 0xff) throw new Error('Photos must be JPEG images.');
+  const target = photoPath(id);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, buf);
+  return true;
+});
+handle('photo:load', (_e, id) => { try { return fs.readFileSync(photoPath(id)); } catch { return null; } });
+handle('photo:delete', (_e, id) => { try { fs.unlinkSync(photoPath(id)); } catch { /* already gone */ } return true; });
 
 // Called by a page after startup: hands over a double-clicked file meant for it.
 handle('update:get', () => updater.get());

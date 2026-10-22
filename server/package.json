@@ -13,7 +13,9 @@
     "db:migrate:availability:local": "wrangler d1 execute production-hub --local --file=migrations/0003_availability.sql",
     "db:migrate:admin": "wrangler d1 execute production-hub --remote --file=migrations/0004_admin.sql",
     "db:migrate:admin:local": "wrangler d1 execute production-hub --local --file=migrations/0004_admin.sql",
-    "test": "node test/api.test.mjs"
+    "db:migrate:crew": "wrangler d1 execute production-hub --remote --file=migrations/0005_crew_backups.sql",
+    "db:migrate:crew:local": "wrangler d1 execute production-hub --local --file=migrations/0005_crew_backups.sql",
+    "test": "node test/crew.test.mjs && node test/api.test.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.151.0"

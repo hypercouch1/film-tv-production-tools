@@ -1,9 +1,12 @@
 // A production's budget: one budget document per production (store 'budget', or a shared
 // 'budget' document inside a shared production, visible to its owner and editors only).
 //   { id, productionId, title, currency, fringe (% on labour), contingency (%),
-//     lines: [{ id, cat, desc, qty, unit, rate, labour, actual, notes, link, auto }] }
+//     lines: [{ id, cat, desc, qty, unit, rate, labour, actual, notes, link, auto }],
+//     costs: [{ id, date, cat, lineId, vendor, desc, ref, paidBy, amount }] }
 // link: what a line was built from ('cast:<id>', 'crew:<id>', 'location:<id>', 'element:<key>',
-// 'catering'). auto: its quantity follows the schedule until someone changes it by hand.
+// 'gear:<id>', 'catering'). auto: its quantity follows the schedule until someone changes it by
+// hand. costs: money spent (receipts, invoices), each against an account and optionally a line;
+// a line's actual is its own actual plus its costs.
 (function (root) {
   const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
@@ -96,19 +99,40 @@
       actual: num(l.actual), notes: String(l.notes || '').slice(0, 1000),
       link: typeof l.link === 'string' ? l.link.slice(0, 200) : null, auto: !!l.auto,
     }));
+    const lineIds = new Set(d.lines.map((l) => l.id));
+    d.costs = (Array.isArray(d.costs) ? d.costs : []).filter(isItem).map((c) => ({
+      id: c.id, date: typeof c.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(c.date) ? c.date : '',
+      cat: category(c.cat) ? c.cat : 'office', lineId: typeof c.lineId === 'string' && lineIds.has(c.lineId) ? c.lineId : null,
+      vendor: String(c.vendor || '').slice(0, 200), desc: String(c.desc || '').slice(0, 300), ref: String(c.ref || '').slice(0, 100),
+      paidBy: String(c.paidBy || '').slice(0, 100), amount: num(c.amount),
+    }));
     d.comments = Array.isArray(d.comments) ? d.comments : [];
     return d;
   }
-  const newBudget = (productionId) => normalizeBudget({ id: uid(), productionId, title: 'Budget', currency: '$', fringe: 0, contingency: 10, lines: [] });
+  const newBudget = (productionId) => normalizeBudget({ id: uid(), productionId, title: 'Budget', currency: '$', fringe: 0, contingency: 10, lines: [], costs: [] });
+  const newCost = (fields = {}) => ({ id: uid(), date: '', cat: 'office', lineId: null, vendor: '', desc: '', ref: '', paidBy: '', amount: 0, ...fields });
 
-  // Totals: per account, per group and overall (estimate = qty × rate; fringes on labour lines).
+  // A cost's account: its line's, if it has one.
+  function costCat(b, c) {
+    const l = c.lineId && b.lines.find((x) => x.id === c.lineId);
+    return l ? l.cat : c.cat;
+  }
+  // Spent against a line through costs.
+  const lineCosts = (b, l) => (b.costs || []).filter((c) => c.lineId === l.id).reduce((n, c) => n + c.amount, 0);
+
+  // Totals: per account, per group and overall (estimate = qty × rate; fringes on labour lines;
+  // actual = the lines' actuals plus costs).
   function totals(b) {
-    const byCat = new Map(CATEGORIES.map((c) => [c.id, { est: 0, actual: 0, fringe: 0, lines: 0 }]));
+    const byCat = new Map(CATEGORIES.map((c) => [c.id, { est: 0, actual: 0, fringe: 0, lines: 0, costs: 0 }]));
     for (const l of b.lines) {
       const t = byCat.get(l.cat);
       const est = l.qty * l.rate;
       t.est += est; t.actual += l.actual; t.lines++;
       if (l.labour) t.fringe += est * (b.fringe / 100);
+    }
+    for (const c of b.costs || []) {
+      const t = byCat.get(costCat(b, c));
+      if (t) { t.actual += c.amount; t.costs++; }
     }
     const groups = GROUPS.map((g) => {
       const cats = CATEGORIES.filter((c) => c.group === g.id);
@@ -150,8 +174,10 @@
     const t = totals(b);
     const rows = [['Account', 'Category', 'Description', 'Qty', 'Unit', 'Rate', 'Estimate', 'Fringe', 'Actual', 'Notes']];
     for (const c of CATEGORIES) {
+      const loose = (b.costs || []).filter((x) => !x.lineId && x.cat === c.id).reduce((n, x) => n + x.amount, 0);
+      if (loose) rows.push([c.code, c.label, 'Other costs', '', '', '', '', '', loose.toFixed(2), '']);
       for (const l of b.lines.filter((x) => x.cat === c.id)) {
-        rows.push([c.code, c.label, l.desc, l.qty, l.unit, l.rate, (l.qty * l.rate).toFixed(2), l.labour ? 'yes' : '', l.actual.toFixed(2), l.notes]);
+        rows.push([c.code, c.label, l.desc, l.qty, l.unit, l.rate, (l.qty * l.rate).toFixed(2), l.labour ? 'yes' : '', (l.actual + lineCosts(b, l)).toFixed(2), l.notes]);
       }
     }
     rows.push([], ['', 'Subtotal', '', '', '', '', t.subtotal.toFixed(2), '', t.actual.toFixed(2)],
@@ -160,6 +186,17 @@
       ['', 'Total', '', '', '', '', t.total.toFixed(2), '', t.actual.toFixed(2)]);
     return rows.map((r) => r.map(field).join(',')).join('\n') + '\n';
   }
+  function costsCSV(b) {
+    const rows = [['Date', 'Account', 'Category', 'Line', 'Vendor', 'Description', 'Receipt / invoice', 'Paid by', 'Amount']];
+    const sorted = [...(b.costs || [])].sort((x, y) => (x.date || '').localeCompare(y.date || ''));
+    for (const c of sorted) {
+      const cat = category(costCat(b, c));
+      const l = c.lineId && b.lines.find((x) => x.id === c.lineId);
+      rows.push([c.date, cat.code, cat.label, l ? l.desc : '', c.vendor, c.desc, c.ref, c.paidBy, c.amount.toFixed(2)]);
+    }
+    rows.push([], ['', '', 'Total', '', '', '', '', '', sorted.reduce((n, c) => n + c.amount, 0).toFixed(2)]);
+    return rows.map((r) => r.map(field).join(',')).join('\n') + '\n';
+  }
 
-  root.BudgetFormats = { uid, GROUPS, CATEGORIES, UNITS, category, roleCategory, ELEMENT_CATEGORY, parseMoney, normalizeBudget, newBudget, totals, sync, budgetCSV };
+  root.BudgetFormats = { uid, GROUPS, CATEGORIES, UNITS, category, roleCategory, ELEMENT_CATEGORY, parseMoney, normalizeBudget, newBudget, newCost, costCat, lineCosts, totals, sync, budgetCSV, costsCSV };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -25,12 +25,15 @@
         <div class="seg" id="viewToggle">
           <button data-view="top">Top sheet</button>
           <button data-view="detail">Detail</button>
+          <button data-view="costs">Costs</button>
+          <button data-view="report">Cost report</button>
         </div>
         <div class="toolbar-spacer"></div>
         <div class="menu-wrap">
           <button class="ghost-btn" data-menu="exportMenu">Export ▾</button>
           <div class="menu" id="exportMenu" hidden>
             <button data-export="csv">Budget as CSV (.csv)</button>
+            <button data-export="costs">Expenses as CSV (.csv)</button>
             <button data-export="pdf">This view as PDF (.pdf)</button>
           </div>
         </div>
@@ -63,6 +66,7 @@
   <script src="schedule-views.js"></script>
   <script src="breakdown-views.js"></script>
   <script src="budget-formats.js"></script>
+  <script src="gear-formats.js"></script>
   <script src="budget.js"></script>
 </body>
 </html>

@@ -2,3 +2,5 @@ node_modules/
 dist/
 Call-Sheet-source.zip
 .wrangler/
+# The local test admin's authenticator key (server/test/api.test.mjs).
+.admin-totp

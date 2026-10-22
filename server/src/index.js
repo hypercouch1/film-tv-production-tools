@@ -6,13 +6,17 @@ import { DurableObject } from 'cloudflare:workers';
 import '../../src/sync-core.js';
 import { AVAILABILITY_HTML } from './availability-page.js';
 import { ADMIN_HTML } from './admin-page.js';
+import { CREW_HTML } from './crew-page.js';
+import { findPerson, crewDays, crewCalendar } from './crew.js';
+import { newSecret, checkCode, otpauthUri } from './totp.js';
 
 const { applyAll, clone } = globalThis.SyncCore;
 
-// shotsheet = a production; script, callsheet, post (take log, media, post tracker, cuts) and
-// budget can live inside one. post and budget only exist inside a production.
-const KINDS = ['callsheet', 'shotsheet', 'script', 'post', 'budget'];
-const CHILD_ONLY = ['post', 'budget'];
+// shotsheet = a production; script, callsheet, post (take log, media, post tracker, cuts),
+// budget, onset (daily production reports, continuity) and gear (equipment and rentals) can
+// live inside one. The last four only exist inside a production.
+const KINDS = ['callsheet', 'shotsheet', 'script', 'post', 'budget', 'onset', 'gear'];
+const CHILD_ONLY = ['post', 'budget', 'onset', 'gear'];
 // Kinds view-only members don't get to see at all (a production's budget).
 const HIDDEN_FROM_VIEWERS = ['budget'];
 const ROLES = ['editor', 'viewer'];
@@ -20,6 +24,17 @@ const SESSION_DAYS = 30;
 const MAX_DOC_BYTES = 1_500_000;
 const MAX_FAILURES = 10;
 const FAILURE_WINDOW_MS = 15 * 60 * 1000;
+const DAY_MS = 86400_000;
+// The admin page asks for the authenticator code again after this long.
+const ADMIN_FRESH_MS = 12 * 3600_000;
+// Continuity photos: JPEGs the app has already made smaller.
+const MAX_PHOTO_BYTES = 800_000;
+const MAX_PHOTOS = 3000;
+// Backups: a copy of each shared document before its first change of the day; the last 14
+// are kept, and a deleted document's copies for 30 days.
+const BACKUP_EVERY_MS = 20 * 3600_000;
+const BACKUPS_KEPT = 14;
+const DELETED_KEPT_MS = 30 * DAY_MS;
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -29,7 +44,7 @@ const CORS = {
 };
 
 class HttpError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
+  constructor(status, message, extra) { super(message); this.status = status; this.extra = extra; }
 }
 
 const json = (data, status = 200) =>
@@ -104,7 +119,7 @@ async function authUser(req, env, url) {
   const tokenHash = await sha256Hex(token);
   const now = Date.now();
   const row = await env.DB.prepare(
-    'SELECT u.id, u.email, u.name, u.disabled, u.last_seen, u.app_version, s.expires_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?'
+    'SELECT u.id, u.email, u.name, u.disabled, u.last_seen, u.app_version, s.expires_at, s.admin_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?'
   ).bind(tokenHash, now).first();
   if (!row) throw new HttpError(401, 'Your session has expired. Please sign in again.');
   if (row.disabled) throw new HttpError(401, 'This account has been switched off. Contact the app’s admin.');
@@ -120,13 +135,64 @@ async function authUser(req, env, url) {
     await env.DB.prepare('UPDATE users SET last_seen = ?, app_version = ? WHERE id = ?')
       .bind(now, versionChanged ? version : row.app_version, row.id).run();
   }
-  return { id: row.id, email: row.email, name: row.name, sessionHash: tokenHash };
+  return { id: row.id, email: row.email, name: row.name, sessionHash: tokenHash, adminAt: row.admin_at || 0 };
 }
 
 // The admin page and admin API: only for the accounts in ADMIN_EMAILS.
 function requireAdmin(env, user) {
   const admins = String(env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
   if (!admins.includes(user.email.toLowerCase())) throw new HttpError(403, 'Only the admin can do that.');
+}
+async function adminLog(env, user, action, target = null, detail = null) {
+  await env.DB.prepare('INSERT INTO admin_log (at, admin_email, action, target, detail) VALUES (?, ?, ?, ?, ?)')
+    .bind(Date.now(), user.email, action, target ? String(target).slice(0, 200) : null, detail ? String(detail).slice(0, 500) : null).run();
+}
+
+// Wrong passwords, codes and authenticator codes: 10 in 15 minutes locks that key.
+async function checkFailures(env, key, message) {
+  const fail = await env.DB.prepare('SELECT count, window_start FROM auth_failures WHERE email = ?').bind(key).first();
+  if (fail && fail.count >= MAX_FAILURES && Date.now() - fail.window_start < FAILURE_WINDOW_MS) throw new HttpError(429, message);
+  return fail;
+}
+async function recordFailure(env, key, fail) {
+  const now = Date.now();
+  if (!fail || now - fail.window_start >= FAILURE_WINDOW_MS) {
+    await env.DB.prepare('INSERT OR REPLACE INTO auth_failures (email, count, window_start) VALUES (?, 1, ?)').bind(key, now).run();
+  } else {
+    await env.DB.prepare('UPDATE auth_failures SET count = count + 1 WHERE email = ?').bind(key).run();
+  }
+}
+
+// ---------- Backups ----------
+// row: the project (id, kind, title, parent_id, owner_id). Old copies are pruned as new
+// ones are made, and photos that belong to nothing any more go with them.
+async function saveBackup(env, row, docText, { deleted = false, meta = null } = {}) {
+  const now = Date.now();
+  await env.DB.batch([
+    env.DB.prepare('INSERT INTO backups (project_id, kind, title, parent_id, owner_id, taken_at, size, deleted, meta, doc) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(row.id, row.kind, String(row.title || 'Untitled').slice(0, 200), row.parent_id || null, row.owner_id || null, now, docText.length, deleted ? 1 : 0, meta ? JSON.stringify(meta) : null, docText),
+    env.DB.prepare('DELETE FROM backups WHERE project_id = ? AND deleted = 0 AND id NOT IN (SELECT id FROM backups WHERE project_id = ? AND deleted = 0 ORDER BY taken_at DESC LIMIT ?)')
+      .bind(row.id, row.id, BACKUPS_KEPT),
+    env.DB.prepare('DELETE FROM backups WHERE deleted = 1 AND taken_at < ?').bind(now - DELETED_KEPT_MS),
+    env.DB.prepare('DELETE FROM photos WHERE root_id NOT IN (SELECT id FROM projects) AND root_id NOT IN (SELECT project_id FROM backups)'),
+  ]);
+}
+// Before documents are deleted: a final copy of each, kept for 30 days (with the people in
+// a production, so restoring it brings them back).
+async function backupBeforeDelete(env, ids) {
+  for (const id of ids) {
+    const row = await env.DB.prepare('SELECT id, kind, title, parent_id, owner_id FROM projects WHERE id = ?').bind(id).first();
+    if (!row) continue;
+    const res = await room(env, id).fetch('https://room/doc', { method: 'POST', body: '{}' });
+    if (!res.ok) continue;
+    let meta = null;
+    if (!row.parent_id) {
+      const { results } = await env.DB.prepare('SELECT user_id AS userId, role FROM members WHERE project_id = ?').bind(id).all();
+      meta = { members: results };
+    }
+    await env.DB.prepare('UPDATE backups SET deleted = 1 WHERE project_id = ?').bind(id).run();
+    await saveBackup(env, row, await res.text(), { deleted: true, meta });
+  }
 }
 
 // Disconnects a user's live connections in every project they belong to (and everything
@@ -209,6 +275,32 @@ function availabilityCode() {
 
 const adminPage = () => htmlPage(ADMIN_HTML);
 const availabilityPage = () => htmlPage(AVAILABILITY_HTML);
+const crewPage = () => htmlPage(CREW_HTML);
+
+// A personal crew link: the person (as the production lists them now), their shoot days and
+// the call sheets sent so far.
+async function openCrewLink(env, code) {
+  const link = await env.DB.prepare('SELECT * FROM crew_links WHERE code_hash = ?').bind(await sha256Hex(code.toUpperCase())).first();
+  if (!link) throw new HttpError(404, "This link isn't valid any more. Ask the production for a new one.");
+  const res = await room(env, link.project_id).fetch('https://room/doc', { method: 'POST', body: '{}' });
+  if (!res.ok) throw new HttpError(404, "This production isn't available any more.");
+  const doc = await res.json();
+  const person = findPerson(doc, link.person_id);
+  if (!person) throw new HttpError(404, "You're no longer listed in this production. Ask the production for a new link.");
+  const { results: sends } = await env.DB.prepare('SELECT day_id, sent_at FROM sheet_sends WHERE project_id = ?').bind(link.project_id).all();
+  const { results: confirms } = await env.DB.prepare('SELECT day_id, confirmed_at FROM sheet_confirms WHERE project_id = ? AND person_id = ?')
+    .bind(link.project_id, link.person_id).all();
+  const days = crewDays(doc, person, {
+    sends: new Map(sends.map((r) => [r.day_id, r.sent_at])),
+    confirms: new Map(confirms.map((r) => [r.day_id, r.confirmed_at])),
+  });
+  return { link, doc, person, days };
+}
+// A production (not a document inside one), or 404.
+async function requireProduction(env, id) {
+  const row = await env.DB.prepare('SELECT kind, parent_id FROM projects WHERE id = ?').bind(id).first();
+  if (!row || row.kind !== 'shotsheet' || row.parent_id) throw new HttpError(404, 'Project not found.');
+}
 function htmlPage(html) {
   const nonce = randomToken(16);
   return new Response(html.replace(/__NONCE__/g, nonce), {
@@ -371,6 +463,32 @@ async function route(req, env, url) {
     }
   }
 
+  // ---- Personal crew pages (no account needed: the personal code is the key) ----
+  // The page (film.prismdashboard.cc/c/<code>) and the calendar people subscribe to.
+  if (method === 'GET' && (m = pathname.match(/^\/c\/([A-Za-z0-9]{6,20})\/calendar\.ics$/))) {
+    const { person, doc, days } = await openCrewLink(env, m[1]);
+    return new Response(crewCalendar(doc, person, days, { pageUrl: `${url.origin}/c/${m[1].toUpperCase()}` }), {
+      headers: { 'Content-Type': 'text/calendar; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' },
+    });
+  }
+  if (method === 'GET' && (pathname === '/c' || pathname.startsWith('/c/'))) return crewPage();
+  if ((m = pathname.match(/^\/api\/crew\/([A-Za-z0-9]{6,20})(\/confirm)?$/))) {
+    const { link, doc, person, days } = await openCrewLink(env, m[1]);
+    if (method === 'GET' && !m[2]) {
+      await env.DB.prepare('UPDATE crew_links SET opened_at = ? WHERE code_hash = ?').bind(Date.now(), link.code_hash).run();
+      return json({ production: String(doc.title || 'Untitled').slice(0, 200), name: person.name, role: person.role, days });
+    }
+    if (method === 'POST' && m[2]) {
+      const body = await readJson(req, 2_000);
+      const day = days.find((d) => d.id === body.dayId);
+      if (!day || !day.sentAt) throw new HttpError(400, 'That call sheet hasn’t been sent.');
+      const now = Date.now();
+      await env.DB.prepare('INSERT OR REPLACE INTO sheet_confirms (project_id, day_id, person_id, confirmed_at) VALUES (?, ?, ?, ?)')
+        .bind(link.project_id, day.id, link.person_id, now).run();
+      return json({ ok: true, confirmedAt: now });
+    }
+  }
+
   const user = await authUser(req, env, url);
 
   if (pathname === '/api/me' && method === 'GET') return json({ user: publicUser(user) });
@@ -379,7 +497,125 @@ async function route(req, env, url) {
   if (pathname.startsWith('/api/admin/')) {
     requireAdmin(env, user);
     const now = Date.now();
-    const DAY = 86400_000;
+    const DAY = DAY_MS;
+    // Two-step sign-in: the admin's password, then a code from their authenticator app
+    // (asked again every 12 hours). Set up the first time the admin page is opened.
+    const twoStep = await env.DB.prepare('SELECT totp_secret, totp_pending, totp_last FROM users WHERE id = ?').bind(user.id).first();
+    const verified = !!twoStep.totp_secret && now - user.adminAt < ADMIN_FRESH_MS;
+    if (pathname === '/api/admin/2fa' && method === 'GET') return json({ enabled: !!twoStep.totp_secret, verified, email: user.email });
+    if (pathname === '/api/admin/2fa/setup' && method === 'POST') {
+      if (twoStep.totp_secret) throw new HttpError(409, 'Two-step sign-in is already set up.');
+      const secret = newSecret();
+      await env.DB.prepare('UPDATE users SET totp_pending = ? WHERE id = ?').bind(secret, user.id).run();
+      return json({ secret, uri: otpauthUri(secret, user.email) });
+    }
+    if ((pathname === '/api/admin/2fa/enable' || pathname === '/api/admin/2fa/verify') && method === 'POST') {
+      const enabling = pathname.endsWith('/enable');
+      const key = '2fa:' + user.id;
+      const fail = await checkFailures(env, key, 'Too many wrong codes. Try again in 15 minutes.');
+      const body = await readJson(req, 2_000);
+      const secret = enabling ? (twoStep.totp_secret ? null : twoStep.totp_pending) : twoStep.totp_secret;
+      const step = await checkCode(secret, body.code, now);
+      // Each code works once.
+      if (step === null || (!enabling && twoStep.totp_last != null && step <= twoStep.totp_last)) {
+        await recordFailure(env, key, fail);
+        throw new HttpError(401, enabling && !secret ? 'Start the setup again.' : 'That code isn’t right. Check your phone’s clock and try the newest code.');
+      }
+      await env.DB.batch([
+        enabling
+          ? env.DB.prepare('UPDATE users SET totp_secret = totp_pending, totp_pending = NULL, totp_last = ? WHERE id = ?').bind(step, user.id)
+          : env.DB.prepare('UPDATE users SET totp_last = ? WHERE id = ?').bind(step, user.id),
+        env.DB.prepare('UPDATE sessions SET admin_at = ? WHERE token_hash = ?').bind(now, user.sessionHash),
+        env.DB.prepare('DELETE FROM auth_failures WHERE email = ?').bind(key),
+      ]);
+      await adminLog(env, user, enabling ? 'Set up two-step sign-in' : 'Signed in to the admin page');
+      return json({ ok: true });
+    }
+    if (!verified) throw new HttpError(403, 'Enter the code from your authenticator app.', { twoStep: true });
+
+    if (pathname === '/api/admin/log' && method === 'GET') {
+      const { results } = await env.DB.prepare('SELECT at, admin_email AS admin, action, target, detail FROM admin_log ORDER BY id DESC LIMIT 200').all();
+      return json({ log: results });
+    }
+
+    // ---- Backups ----
+    if (pathname === '/api/admin/backups' && method === 'GET') {
+      const { results } = await env.DB.prepare(
+        'SELECT b.id, b.project_id AS projectId, b.kind, b.title, b.parent_id AS parentId, b.taken_at AS takenAt, b.size, b.deleted, ' +
+        '(SELECT 1 FROM projects p WHERE p.id = b.project_id) AS live FROM backups b ORDER BY b.taken_at DESC LIMIT 3000'
+      ).all();
+      const total = await env.DB.prepare('SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes FROM backups').first();
+      return json({ backups: results.map((r) => ({ ...r, deleted: !r.live, live: undefined })), total });
+    }
+    if (pathname === '/api/admin/backups/now' && method === 'POST') {
+      const { results } = await env.DB.prepare('SELECT id, kind, title, parent_id, owner_id FROM projects').all();
+      let n = 0;
+      for (const row of results) {
+        const res = await room(env, row.id).fetch('https://room/doc', { method: 'POST', body: '{}' });
+        if (!res.ok) continue;
+        await saveBackup(env, row, await res.text());
+        n++;
+      }
+      await adminLog(env, user, 'Backed up every document', null, `${n} document${n === 1 ? '' : 's'}`);
+      return json({ ok: true, count: n });
+    }
+    if ((m = pathname.match(/^\/api\/admin\/backups\/(\d+)(\/restore)?$/))) {
+      const b = await env.DB.prepare('SELECT * FROM backups WHERE id = ?').bind(Number(m[1])).first();
+      if (!b) throw new HttpError(404, 'No such backup.');
+      if (method === 'GET' && !m[2]) {
+        await adminLog(env, user, 'Downloaded a backup', b.title, new Date(b.taken_at).toISOString());
+        return new Response(b.doc, { headers: { ...CORS, 'Content-Type': 'application/json', 'Content-Disposition': `attachment; filename="backup-${b.project_id}-${b.taken_at}.json"` } });
+      }
+      if (method === 'POST' && m[2]) {
+        const doc = JSON.parse(b.doc);
+        const existing = await env.DB.prepare('SELECT id, kind, title, parent_id, owner_id FROM projects WHERE id = ?').bind(b.project_id).first();
+        if (existing) {
+          // Keep a copy of what's there now, so a restore can itself be undone.
+          const cur = await room(env, b.project_id).fetch('https://room/doc', { method: 'POST', body: '{}' });
+          if (cur.ok) await saveBackup(env, existing, await cur.text());
+          await roomCall(env, b.project_id, '/restore', { doc });
+          await env.DB.prepare('UPDATE projects SET title = ?, updated_at = ? WHERE id = ?').bind(String(doc.title || b.title).slice(0, 200), now, b.project_id).run();
+        } else {
+          if (b.parent_id && !(await env.DB.prepare('SELECT 1 FROM projects WHERE id = ?').bind(b.parent_id).first())) {
+            throw new HttpError(409, 'This was inside a production that’s been deleted. Restore the production first.');
+          }
+          if (!b.owner_id || !(await env.DB.prepare('SELECT 1 FROM users WHERE id = ?').bind(b.owner_id).first())) {
+            throw new HttpError(409, 'Its owner’s account no longer exists.');
+          }
+          const meta = b.meta ? JSON.parse(b.meta) : {};
+          const stmts = [env.DB.prepare('INSERT INTO projects (id, kind, title, owner_id, created_at, updated_at, parent_id, info) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+            .bind(b.project_id, b.kind, b.title, b.owner_id, now, now, b.parent_id, infoOf(doc))];
+          if (!b.parent_id) {
+            const people = Array.isArray(meta.members) && meta.members.length ? meta.members : [{ userId: b.owner_id, role: 'owner' }];
+            for (const p of people) {
+              stmts.push(env.DB.prepare('INSERT OR IGNORE INTO members (project_id, user_id, role, added_at) SELECT ?, id, ?, ? FROM users WHERE id = ?')
+                .bind(b.project_id, p.role, now, p.userId));
+            }
+          }
+          stmts.push(env.DB.prepare('UPDATE backups SET deleted = 0 WHERE project_id = ?').bind(b.project_id));
+          await env.DB.batch(stmts);
+          await roomCall(env, b.project_id, '/init', { projectId: b.project_id, doc });
+        }
+        await adminLog(env, user, 'Restored a backup', b.title, `copy from ${new Date(b.taken_at).toISOString()}`);
+        return json({ ok: true, restored: existing ? 'replaced' : 'recreated' });
+      }
+    }
+    // Everything on the server in one file (accounts without passwords, every document).
+    if (pathname === '/api/admin/export' && method === 'GET') {
+      const { results: accounts } = await env.DB.prepare('SELECT id, email, name, created_at AS createdAt, last_seen AS lastSeen, disabled FROM users').all();
+      const { results: projects } = await env.DB.prepare('SELECT id, kind, title, owner_id AS ownerId, parent_id AS parentId, created_at AS createdAt, updated_at AS updatedAt FROM projects').all();
+      const { results: members } = await env.DB.prepare('SELECT project_id AS projectId, user_id AS userId, role FROM members').all();
+      const docs = {};
+      for (const p of projects) {
+        const res = await room(env, p.id).fetch('https://room/doc', { method: 'POST', body: '{}' });
+        if (res.ok) docs[p.id] = await res.json();
+      }
+      await adminLog(env, user, 'Downloaded everything', null, `${projects.length} documents`);
+      return new Response(JSON.stringify({ format: 'production-hub-export', version: 1, exportedAt: new Date(now).toISOString(), accounts, projects, members, docs }), {
+        headers: { ...CORS, 'Content-Type': 'application/json', 'Content-Disposition': `attachment; filename="production-hub-${new Date(now).toISOString().slice(0, 10)}.json"` },
+      });
+    }
+
     if (pathname === '/api/admin/stats' && method === 'GET') {
       const u = await env.DB.prepare(
         'SELECT COUNT(*) AS total, SUM(created_at > ?) AS new7, SUM(created_at > ?) AS new30, SUM(last_seen > ?) AS active1, ' +
@@ -400,7 +636,10 @@ async function route(req, env, url) {
       const weeks = Array.from({ length: 12 }, (_, i) => ({ start: now - (12 - i) * 7 * DAY, n: 0 }));
       for (const r of joined) { const w = weeks.findIndex((x) => r.created_at >= x.start && r.created_at < x.start + 7 * DAY); if (w >= 0) weeks[w].n++; }
       const codes = await env.DB.prepare('SELECT COUNT(*) AS n, SUM(used_at IS NOT NULL) AS used FROM reset_codes WHERE created_at > ?').bind(now - 30 * DAY).first();
-      return json({ users: u, sessions, kinds, members, links, versions, signupsByWeek: weeks, resetCodes: codes });
+      const crewLinks = await env.DB.prepare('SELECT COUNT(*) AS n, SUM(opened_at IS NOT NULL) AS opened FROM crew_links').first();
+      const sheets = await env.DB.prepare('SELECT (SELECT COUNT(*) FROM sheet_sends) AS sent, (SELECT COUNT(*) FROM sheet_confirms) AS confirmed').first();
+      const backups = await env.DB.prepare('SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes, MAX(taken_at) AS latest FROM backups').first();
+      return json({ users: u, sessions, kinds, members, links, versions, signupsByWeek: weeks, resetCodes: codes, crewLinks, sheets, backups });
     }
     if (pathname === '/api/admin/users' && method === 'GET') {
       const q = String(url.searchParams.get('q') || '').trim().slice(0, 100);
@@ -428,11 +667,13 @@ async function route(req, env, url) {
           env.DB.prepare('INSERT INTO reset_codes (code_hash, user_id, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?)')
             .bind(await sha256Hex(code), target.id, user.id, now, expiresAt),
         ]);
+        await adminLog(env, user, 'Made a one-time password code', target.email);
         return json({ code, expiresAt, email: target.email });
       }
       if (action === 'signout' && method === 'POST') {
         await env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(target.id).run();
         await revokeLive(env, target.id);
+        await adminLog(env, user, 'Signed out everywhere', target.email);
         return json({ ok: true });
       }
       if (action === 'disable' && method === 'POST') {
@@ -443,6 +684,7 @@ async function route(req, env, url) {
           await env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(target.id).run();
           await revokeLive(env, target.id);
         }
+        await adminLog(env, user, body.disabled ? 'Switched an account off' : 'Switched an account on', target.email);
         return json({ ok: true });
       }
       if (!action && method === 'PATCH') {
@@ -455,6 +697,8 @@ async function route(req, env, url) {
           throw new HttpError(409, 'Another account already uses that email.');
         }
         await env.DB.prepare('UPDATE users SET name = ?, email = ? WHERE id = ?').bind(name, email, target.id).run();
+        const changes = [name !== target.name && `name “${target.name}” → “${name}”`, email !== target.email && `email ${target.email} → ${email}`].filter(Boolean);
+        if (changes.length) await adminLog(env, user, 'Edited an account', target.email, changes.join('; '));
         return json({ ok: true });
       }
       // Deleting an account: only once it owns nothing (its productions are deleted or handed on first).
@@ -469,6 +713,7 @@ async function route(req, env, url) {
           env.DB.prepare('DELETE FROM reset_codes WHERE user_id = ?').bind(target.id),
           env.DB.prepare('DELETE FROM users WHERE id = ?').bind(target.id),
         ]);
+        await adminLog(env, user, 'Deleted an account', target.email, target.name);
         return json({ ok: true });
       }
     }
@@ -624,6 +869,96 @@ async function route(req, env, url) {
     }
   }
 
+  // Personal crew pages for a shared production's cast and crew (call sheets, "Got it",
+  // calendar). Owners and editors create them (one per person; a new one replaces the old)
+  // and revoke them; members see who has opened theirs.
+  if ((m = pathname.match(/^\/api\/projects\/([\w-]+)\/crew\/links(?:\/([\w-]+))?$/))) {
+    const [, id, personId] = m;
+    await requireProduction(env, id);
+    if (method === 'GET' && !personId) {
+      await requireRole(env, id, user.id);
+      const { results } = await env.DB.prepare(
+        'SELECT person_id AS personId, name, role, created_at AS createdAt, opened_at AS openedAt FROM crew_links WHERE project_id = ? ORDER BY name'
+      ).bind(id).all();
+      return json({ links: results });
+    }
+    await requireRole(env, id, user.id, ['owner', 'editor']);
+    if (method === 'POST' && !personId) {
+      const body = await readJson(req, 100_000);
+      const people = (Array.isArray(body.people) ? body.people : []).filter((x) => x && typeof x.personId === 'string' && /^[\w-]{1,64}$/.test(x.personId)).slice(0, 300);
+      if (!people.length) throw new HttpError(400, 'Choose at least one person.');
+      const now = Date.now();
+      const links = [];
+      const stmts = [];
+      for (const x of people) {
+        const code = availabilityCode();
+        links.push({ personId: x.personId, code });
+        stmts.push(env.DB.prepare('DELETE FROM crew_links WHERE project_id = ? AND person_id = ?').bind(id, x.personId));
+        stmts.push(env.DB.prepare('INSERT INTO crew_links (code_hash, project_id, person_id, name, role, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+          .bind(await sha256Hex(code), id, x.personId, String(x.name || 'Cast or crew').slice(0, 100), String(x.role || '').slice(0, 100), now));
+      }
+      await env.DB.batch(stmts);
+      return json({ links });
+    }
+    if (method === 'DELETE' && personId) {
+      await env.DB.prepare('DELETE FROM crew_links WHERE project_id = ? AND person_id = ?').bind(id, personId).run();
+      return json({ ok: true });
+    }
+  }
+
+  // A shoot day's call sheet: send it to everyone's personal page (again, after changes),
+  // and see who has confirmed the latest one.
+  if ((m = pathname.match(/^\/api\/projects\/([\w-]+)\/callsheets\/([\w-]{1,64})(\/send)?$/))) {
+    const [, id, dayId, send] = m;
+    await requireProduction(env, id);
+    if (method === 'GET' && !send) {
+      await requireRole(env, id, user.id);
+      const sent = await env.DB.prepare('SELECT sent_at FROM sheet_sends WHERE project_id = ? AND day_id = ?').bind(id, dayId).first();
+      const sentAt = sent ? sent.sent_at : null;
+      const { results } = sentAt ? await env.DB.prepare('SELECT person_id AS personId, confirmed_at AS confirmedAt FROM sheet_confirms WHERE project_id = ? AND day_id = ? AND confirmed_at >= ?')
+        .bind(id, dayId, sentAt).all() : { results: [] };
+      return json({ sentAt, confirms: results });
+    }
+    if (method === 'POST' && send) {
+      await requireRole(env, id, user.id, ['owner', 'editor']);
+      const now = Date.now();
+      await env.DB.prepare('INSERT OR REPLACE INTO sheet_sends (project_id, day_id, sent_at, sent_by) VALUES (?, ?, ?, ?)').bind(id, dayId, now, user.id).run();
+      return json({ sentAt: now });
+    }
+  }
+
+  // Continuity photos (JPEG) in a shared production: editors add and delete them, anyone in
+  // the production sees them.
+  if ((m = pathname.match(/^\/api\/projects\/([\w-]+)\/photos(?:\/([\w-]{8,40}))?$/))) {
+    const [, id, photoId] = m;
+    const rootId = await rootOf(env, id);
+    if (!rootId) throw new HttpError(404, 'Project not found.');
+    if (method === 'POST' && !photoId) {
+      await requireRole(env, id, user.id, ['owner', 'editor']);
+      const buf = new Uint8Array(await req.arrayBuffer());
+      if (buf.length > MAX_PHOTO_BYTES) throw new HttpError(413, 'That photo is too large.');
+      if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8 || buf[2] !== 0xff) throw new HttpError(400, 'Photos must be JPEG images.');
+      const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM photos WHERE root_id = ?').bind(rootId).first();
+      if (count.n >= MAX_PHOTOS) throw new HttpError(409, 'This production has too many photos. Delete some first.');
+      const pid = newId();
+      await env.DB.prepare('INSERT INTO photos (id, project_id, root_id, created_by, created_at, size, data) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .bind(pid, id, rootId, user.id, Date.now(), buf.length, buf.buffer).run();
+      return json({ id: pid });
+    }
+    if (method === 'GET' && photoId) {
+      await requireRole(env, id, user.id);
+      const row = await env.DB.prepare('SELECT data FROM photos WHERE id = ? AND root_id = ?').bind(photoId, rootId).first();
+      if (!row) throw new HttpError(404, 'Photo not found.');
+      const bytes = row.data instanceof ArrayBuffer ? new Uint8Array(row.data) : Uint8Array.from(row.data);
+      return new Response(bytes, { headers: { ...CORS, 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=604800', 'X-Content-Type-Options': 'nosniff' } });
+    }
+    if (method === 'DELETE' && photoId) {
+      await requireRole(env, id, user.id, ['owner', 'editor']);
+      await env.DB.prepare('DELETE FROM photos WHERE id = ? AND root_id = ?').bind(photoId, rootId).run();
+      return json({ ok: true });
+    }
+  }
+
   // Your own availability, for anyone in the production (view-only people included):
   // first say which cast or crew entry is you (once; nobody else can claim it), then mark
   // the days you can't work. The room checks the claim, so you can only change your own.
@@ -665,16 +1000,21 @@ async function route(req, env, url) {
     const row = await env.DB.prepare('SELECT parent_id FROM projects WHERE id = ?').bind(id).first();
     if (row && row.parent_id) {
       if (role === 'viewer') throw new HttpError(403, "You don't have permission to change this.");
+      await backupBeforeDelete(env, [id]);
       await env.DB.prepare('DELETE FROM projects WHERE id = ?').bind(id).run();
       await roomCall(env, id, '/destroy');
       return json({ ok: true, deleted: true });
     }
     if (role === 'owner') {
       const ids = await roomsOf(env, id);
+      await backupBeforeDelete(env, ids);
       await env.DB.batch([
         env.DB.prepare('DELETE FROM members WHERE project_id = ?').bind(id),
         env.DB.prepare('DELETE FROM projects WHERE id = ? OR parent_id = ?').bind(id, id),
         env.DB.prepare('DELETE FROM availability_links WHERE project_id = ?').bind(id),
+        env.DB.prepare('DELETE FROM crew_links WHERE project_id = ?').bind(id),
+        env.DB.prepare('DELETE FROM sheet_sends WHERE project_id = ?').bind(id),
+        env.DB.prepare('DELETE FROM sheet_confirms WHERE project_id = ?').bind(id),
       ]);
       await Promise.all(ids.map((x) => roomCall(env, x, '/destroy')));
       return json({ ok: true, deleted: true });
@@ -758,7 +1098,7 @@ export default {
     try {
       return await route(req, env, url);
     } catch (err) {
-      if (err instanceof HttpError) return json({ error: err.message }, err.status);
+      if (err instanceof HttpError) return json({ error: err.message, ...(err.extra || {}) }, err.status);
       console.error(err);
       return json({ error: 'Server error. Please try again.' }, 500);
     }
@@ -779,6 +1119,7 @@ export class ProjectRoom extends DurableObject {
       this.title = this.doc ? this.doc.title : null;
       this.info = this.doc ? infoOf(this.doc) : null;
       this.touchedAt = 0;
+      this.backedUpAt = (await ctx.storage.get('backedUpAt')) ?? 0;
     });
   }
 
@@ -825,6 +1166,18 @@ export class ProjectRoom extends DurableObject {
       if (!this.doc) return new Response('Not found', { status: 404 });
       if (this.objectAt('claims')[body.personId] !== body.userId) return new Response('Say which person you are first.', { status: 403 });
       return this.serverEdit([this.setInMap('availability', String(body.personId), body.entry)]);
+    }
+    // A backup put back by the admin: everyone connected gets it as a fresh copy.
+    if (url.pathname === '/restore') {
+      if (!this.doc || !body.doc || typeof body.doc !== 'object') return new Response('Not found', { status: 404 });
+      this.doc = body.doc;
+      this.version++;
+      await this.ctx.storage.put({ doc: this.doc, version: this.version });
+      for (const ws of this.ctx.getWebSockets()) {
+        const att = ws.deserializeAttachment();
+        this.safeSend(ws, { type: 'snapshot', doc: this.doc, v: this.version, clientId: att.clientId, role: att.role, reset: true });
+      }
+      return new Response('ok');
     }
     if (url.pathname === '/destroy') {
       for (const ws of this.ctx.getWebSockets()) {
@@ -887,6 +1240,7 @@ export class ProjectRoom extends DurableObject {
   }
   // Applies the ops, saves, and sends them to everyone connected (like any edit).
   async serverEdit(ops) {
+    this.maybeBackup();
     const next = clone(this.doc);
     const applied = applyAll(next, ops);
     if (!applied.length || JSON.stringify(next).length > MAX_DOC_BYTES) return new Response('Not saved', { status: 400 });
@@ -895,6 +1249,26 @@ export class ProjectRoom extends DurableObject {
     await this.ctx.storage.put({ doc: this.doc, version: this.version });
     this.broadcast({ type: 'ops', ops: applied, v: this.version, from: 'server', batch: 0 });
     return new Response('ok');
+  }
+
+  // A copy of the document as it was before the day's first change (at most one a day).
+  // The copy is taken now; saving it doesn't hold up the edit (awaiting here would let a
+  // later message overtake this one).
+  maybeBackup() {
+    const now = Date.now();
+    if (!this.doc || !this.projectId || now - this.backedUpAt < BACKUP_EVERY_MS) return;
+    this.backedUpAt = now;
+    this.ctx.storage.put('backedUpAt', now);
+    const text = JSON.stringify(this.doc);
+    const projectId = this.projectId;
+    this.ctx.waitUntil((async () => {
+      try {
+        const row = await this.env.DB.prepare('SELECT id, kind, title, parent_id, owner_id FROM projects WHERE id = ?').bind(projectId).first();
+        if (row) await saveBackup(this.env, row, text);
+      } catch (err) {
+        console.error('backup failed', err);
+      }
+    })());
   }
 
   connect(req) {
@@ -934,6 +1308,7 @@ export class ProjectRoom extends DurableObject {
     };
     if (att.role === 'viewer') return resync('You have view-only access to this project.');
 
+    if (Array.isArray(msg.ops) && msg.ops.length) this.maybeBackup();
     const next = clone(this.doc);
     const applied = applyAll(next, msg.ops);
     if (JSON.stringify(next).length > MAX_DOC_BYTES) return resync('This project is too large to save more changes.');

@@ -54,8 +54,34 @@
     }
     return data;
   }
+  // A request whose body or answer isn't JSON (photos). Errors as request() gives them.
+  async function rawRequest(method, path, body, type) {
+    const base = serverUrl();
+    if (!base) throw new Error('No server address set. Add it under Account → Server.');
+    let res;
+    try {
+      res = await fetch(base + path, { method, headers: { ...(type ? { 'Content-Type': type } : {}), ...(token ? { Authorization: 'Bearer ' + token } : {}) }, body });
+    } catch {
+      throw new Error("Can't reach the server. Check your internet connection.");
+    }
+    if (!res.ok) {
+      let data = {};
+      try { data = await res.json(); } catch { /* not JSON */ }
+      const err = new Error(data.error || `Server error (${res.status}).`);
+      err.status = res.status;
+      throw err;
+    }
+    return res;
+  }
+  // Pages for cast and crew (no account): /a/<code> availability, /c/<code> call sheets — on
+  // the availability site, or on the server for someone using their own.
+  function siteLink(kind, code) {
+    const site = ((window.APP_CONFIG && window.APP_CONFIG.availabilityUrl) || '').replace(/\/+$/, '');
+    const configured = ((window.APP_CONFIG && window.APP_CONFIG.serverUrl) || '').replace(/\/+$/, '');
+    return `${site && serverUrl() === configured ? site : serverUrl()}/${kind}/${code}`;
+  }
 
-  const PING_MS = 25000;          // keep-alive interval; the server answers each with 'pong'
+  const PING_MS = 25000;         // keep-alive interval; the server answers each with 'pong'
   const PONG_GRACE_MS = 10000;    // silence beyond a ping interval plus this = dead connection
   const CONNECT_TIMEOUT_MS = 15000;
 
@@ -359,12 +385,19 @@
     claimPerson: (id, personId) => request('POST', `/api/projects/${encodeURIComponent(id)}/me/claim`, { personId }),
     setMyAvailability: (id, personId, entry) => request('POST', `/api/projects/${encodeURIComponent(id)}/me/availability`, { personId, ...entry }),
     // The address cast and crew open: /a/<code> on the availability site (or this server).
-    availabilityLink: (code) => {
-      const site = ((window.APP_CONFIG && window.APP_CONFIG.availabilityUrl) || '').replace(/\/+$/, '');
-      const configured = ((window.APP_CONFIG && window.APP_CONFIG.serverUrl) || '').replace(/\/+$/, '');
-      // Someone using their own server gets links on that server.
-      return `${site && serverUrl() === configured ? site : serverUrl()}/a/${code}`;
-    },
+    availabilityLink: (code) => siteLink('a', code),
+    // Personal crew pages (each person's shoot days, call sheets once sent, calendar).
+    crewLinks: (id) => request('GET', `/api/projects/${encodeURIComponent(id)}/crew/links`).then((r) => r.links),
+    createCrewLinks: (id, people) => request('POST', `/api/projects/${encodeURIComponent(id)}/crew/links`, { people }).then((r) => r.links),
+    revokeCrewLink: (id, personId) => request('DELETE', `/api/projects/${encodeURIComponent(id)}/crew/links/${encodeURIComponent(personId)}`),
+    crewLink: (code) => siteLink('c', code),
+    // A shoot day's call sheet: when it was last sent, and who has confirmed it since.
+    callSheetStatus: (id, dayId) => request('GET', `/api/projects/${encodeURIComponent(id)}/callsheets/${encodeURIComponent(dayId)}`),
+    sendCallSheet: (id, dayId) => request('POST', `/api/projects/${encodeURIComponent(id)}/callsheets/${encodeURIComponent(dayId)}/send`).then((r) => r.sentAt),
+    // Continuity photos (JPEG) in a shared production.
+    uploadPhoto: (id, blob) => rawRequest('POST', `/api/projects/${encodeURIComponent(id)}/photos`, blob, 'image/jpeg').then((r) => r.json()).then((r) => r.id),
+    photo: (id, photoId) => rawRequest('GET', `/api/projects/${encodeURIComponent(id)}/photos/${encodeURIComponent(photoId)}`).then((r) => r.blob()),
+    deletePhoto: (id, photoId) => request('DELETE', `/api/projects/${encodeURIComponent(id)}/photos/${encodeURIComponent(photoId)}`),
     deleteProject: (id) => request('DELETE', `/api/projects/${encodeURIComponent(id)}`),
     members: (id) => request('GET', `/api/projects/${encodeURIComponent(id)}/members`).then((r) => r.members),
     addMember: (id, email, role) => request('POST', `/api/projects/${encodeURIComponent(id)}/members`, { email, role }).then((r) => r.members),

@@ -41,4 +41,20 @@ const csv = B.budgetCSV(b).split('\n');
 assert.strictEqual(csv[0], 'Account,Category,Description,Qty,Unit,Rate,Estimate,Fringe,Actual,Notes');
 assert.ok(csv.some((l) => l.startsWith(',Total,,,,,4180.00')));
 console.log('  ✓ CSV export');
+
+// Costs: receipts against an account or a line; they add to actuals.
+const c = B.normalizeBudget({ lines: [{ id: 'l1', cat: 'locations', desc: 'Diner', qty: 1, rate: 1000, actual: 100 }], costs: [
+  { id: 'x1', date: '2026-11-03', cat: 'cast', lineId: 'l1', vendor: 'Rosie', amount: '400' }, // the line's account wins
+  { id: 'x2', date: 'soon', cat: 'catering', vendor: '=HYPERLINK("x")', amount: 250.555 },
+  { id: 'x3', cat: 'props', lineId: 'nope', amount: -5 },
+] });
+assert.deepStrictEqual(c.costs.map((x) => [x.date, x.lineId, x.amount]), [['2026-11-03', 'l1', 400], ['', null, 250.56], ['', null, -5]], 'cleaned');
+assert.deepStrictEqual([B.costCat(c, c.costs[0]), B.lineCosts(c, c.lines[0])], ['locations', 400]);
+const ct = B.totals(c);
+assert.deepStrictEqual([ct.byCat.get('locations').actual, ct.byCat.get('catering').actual, ct.byCat.get('catering').costs, ct.actual], [500, 250.56, 1, 745.56]);
+const costRows = B.costsCSV(c).split('\n');
+assert.strictEqual(costRows[0], 'Date,Account,Category,Line,Vendor,Description,Receipt / invoice,Paid by,Amount');
+assert.ok(costRows.some((l) => l.includes(`"'=HYPERLINK(""x"")"`)), 'formulas defused');
+assert.ok(B.budgetCSV(c).includes('3000,Catering & craft services,Other costs'), 'costs without a line show in the budget CSV');
+console.log('  ✓ costs: against accounts and lines, in actuals, CSV');
 console.log('budget: all checks passed');

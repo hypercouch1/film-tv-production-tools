@@ -67,7 +67,7 @@ Everything for a film or TV show lives in one **production**.
 - **Start screen:** lists your productions (on this computer and shared with you), with upcoming shoot days. **New production** asks for a title and **Film** or **TV show**.
 - **Film:** one script and one shot list.
 - **TV show:** episodes, each with its own script, shot list and breakdown. Cast, crew, locations and the schedule are shared by every episode. Add, number and name episodes on the production's home page; scene codes in shared views read "2-5" (episode 2, scene 5).
-- **Production home:** tiles for Script, Shot Sheet, Schedule, Cast & Crew, Call Sheets, Breakdown and Locations (or press **1**–**7**), the episodes, upcoming shoot days, rename and delete. **Ctrl/⌘+H** or ⌂ in any tool returns here.
+- **Production home:** tiles for Script, Shot Sheet, Schedule, Cast & Crew, Call Sheets, Breakdown, On Set, Post, Budget, Equipment and Locations (or press **1**–**9** for the first nine), the episodes, upcoming shoot days, rename and delete. **Ctrl/⌘+H** or ⌂ in any tool returns here.
 - **Older data:** the first time 1.3.0 runs, each existing shot sheet becomes a film, scripts join the production they're linked to (or get their own), and call sheets go into a "Call Sheets" production.
 
 Code: `src/production.js` (current production, links, migration, sharing), `src/home.js` (start screen), `src/dashboard.js` (production home). The production document is the shot sheet project (`shotsheets` store / shared kind `shotsheet`); scripts and call sheets carry `productionId` (and `episodeId` for TV). `shotsheet.js` runs the Shot Sheet, Schedule, Breakdown and Locations pages (`body[data-mode]`).
@@ -93,13 +93,49 @@ Code: `src/production.js` (current production, links, migration, sharing), `src/
 - **Cuts & notes:** cuts by stage (assembly, rough, fine, picture lock, online), with a review link or file path and timecoded notes to resolve.
 - In a shared production the post document is online inside it (made the first time someone who can edit opens Post).
 
+## Call sheets on phones
+
+Shared productions only (`crewlinks.js`; the page is `server/src/crew-page.js`, built by `server/src/crew.js`):
+
+- **Send…** on a shoot day (Schedule calendar) or **Send to cast & crew…** on its call sheet lists everyone on that day with their call time. **Send call sheet** makes a personal page for anyone without one (`film.prismdashboard.cc/c/<code>`), then marks the call sheet as sent. **Copy messages for everyone** copies a text per person with their call time and link, ready to paste into texts or email.
+- **Their page** shows their shoot days and call times (from the schedule, always current), their scenes, and each day's full call sheet once it's sent: crew call, shooting call, wrap, weather, parking, hospital, notes, cast and crew calls. Contact details aren't shown. **Got it** confirms it. Sending again after changes asks everyone to confirm the new version.
+- **Calendar:** each page has a calendar feed (`/c/<code>/calendar.ics`) for Apple, Google or Outlook Calendar. Each event runs from their call time to wrap, so schedule changes reach their calendar.
+- **Crew pages…** (Schedule → Availability) lists everyone's page: copy links, see who has opened theirs, make pages, or stop one working. Codes are kept in the production (`p.crewLinks`).
+
+## On Set
+
+**On Set** on the production home (`onset.html`, `onset.js`; data in its own document, `onset-formats.js`):
+
+- **Production report** (one per shoot day; pick the day at the top):
+  - times: crew call, first shot, lunch, first shot after lunch, camera wrap, last out
+  - each scheduled scene marked completed or part shot, plus scenes shot that weren't planned
+  - setups and takes, counted from the Post take log unless typed
+  - cards and media; cast arrived and wrapped; delays, incidents, equipment problems and notes
+  - progress: scenes and pages today and to date, and how far ahead of or behind schedule
+- **Continuity:** notes by scene (and shot and take), with a category and photos. Photos are shrunk to 1600 px JPEGs:
+  - on this computer: kept in the app's data folder (`photos/`)
+  - in a shared production: kept on the server (`/api/projects/:id/photos`), where everyone in the production can see them and editors can add them
+  - sharing a production uploads its photos
+
+## Equipment
+
+**Equipment** on the production home (`gear.html`, `gear.js`; data in its own document, `gear-formats.js`):
+
+- **List:** items by department with quantity, source (owned, rental, borrowed), vendor, rate (per day, per week or flat), pickup and return dates, status, who has it, which shoot days it's needed, serial numbers and notes. **Check out** / **Check in** records who and when (**Check-out log**). Items still out after their return date are flagged as overdue.
+- **By day:** what's needed each shoot day, and what to pick up or return on each date.
+- **Budget:** rentals with a rate become budget lines (by department) through **Build from production**.
+
 ## Budget
 
 **Budget** on the production home (`budget.html`, `budget.js`; data in its own budget document, `budget-formats.js`):
 
 - **Build from production:** adds lines for cast (work and hold days from the Day Out of Days), crew (by role: Director, Camera, Grip & electric, Sound…), locations (their fee as the rate), breakdown elements (props, wardrobe, vehicles, extras and animals per day…) and catering per shoot day. Lines made this way follow the schedule (↻); building again updates their quantities and descriptions but keeps rates, actuals and notes. Typing a quantity stops a line following. Lines whose source has gone are marked.
 - **Top sheet:** accounts grouped above the line, production, post and other, with fringes (a percentage of labour lines), contingency (a percentage of subtotal and fringes), total, actual and remaining. **Detail:** every line by account with quantity, unit, rate, estimate, fringe, actual and notes; **+ Add a line to…** for anything else.
-- **Export** as CSV or PDF.
+- **Costs:** receipts and invoices (date, account, optional budget line, vendor, receipt number, who paid, amount). They add to the actuals on the top sheet and in Detail. A line's actual is what's typed on it plus its costs.
+- **Cost report:**
+  - budget (with fringes), spent and remaining for each account, with what share is used
+  - for each shoot day: its planned cost (the day rates of the cast, crew and locations working that day, with fringes, plus catering) against expenses dated that day
+- **Export** as CSV (budget or expenses) or PDF.
 - In a shared production the budget is online inside it, but only the owner and editors can see or open it; the server hides it from view-only members.
 
 ## Forgot password
@@ -108,7 +144,26 @@ Code: `src/production.js` (current production, links, migration, sharing), `src/
 
 ## Admin page
 
-`https://<server>/admin` (e.g. `https://production-hub.sosdorfm.workers.dev/admin`), for the emails in `ADMIN_EMAILS` (`server/wrangler.toml`). Sign in with your app account to see usage (accounts, people active in the last day/week/month, documents by kind, sharing, availability links, app versions in use, signups by week) and manage accounts: one-time password codes, sign out everywhere, edit name and email, switch off and on, delete (only accounts that don't own shared projects).
+`https://<server>/admin` (e.g. `https://production-hub.sosdorfm.workers.dev/admin`), for the emails in `ADMIN_EMAILS` (`server/wrangler.toml`).
+
+- **Signing in:** sign in with your app account, then enter a code from an authenticator app.
+  - The first time, the page shows a setup key to add to the app.
+  - The code is asked for again every 12 hours.
+- **Usage:**
+  - accounts, and people active in the last day, week and month
+  - documents by kind, sharing, crew pages and "Got it"s, availability links
+  - app versions in use, signups by week
+- **Accounts:**
+  - one-time password codes
+  - sign out everywhere
+  - edit name and email
+  - switch off and on
+  - delete (only accounts that don't own shared projects)
+- **Backups:** every shared document is copied before its first change each day, and the last 14 copies are kept. A deleted document's final copy is kept for 30 days.
+  - Download any copy, or restore it. Restoring keeps a copy of the current version first, and everyone with the document open gets the restored version.
+  - A deleted production comes back with its people.
+  - **Back up everything now** takes a copy of every document. **Download everything** saves one JSON file with every account (without passwords) and every document.
+- **Admin log:** what admins did: codes made, accounts edited, switched off or deleted, restores, downloads and sign-ins.
 
 ## Breakdown
 

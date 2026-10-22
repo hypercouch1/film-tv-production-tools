@@ -9,7 +9,10 @@ CREATE TABLE IF NOT EXISTS users (
   created_at  INTEGER NOT NULL,
   last_seen   INTEGER,                -- for usage stats (updated at most once an hour)
   app_version TEXT,                   -- the app version they last used
-  disabled    INTEGER NOT NULL DEFAULT 0
+  disabled    INTEGER NOT NULL DEFAULT 0,
+  totp_secret TEXT,                   -- admins: authenticator app key (two-step sign-in)
+  totp_pending TEXT,                  -- a key being set up, until its first code is entered
+  totp_last   INTEGER                 -- the last code's time step (a code works once)
 );
 
 -- One-time password codes (see migrations/0004_admin.sql).
@@ -26,7 +29,8 @@ CREATE INDEX IF NOT EXISTS reset_codes_user ON reset_codes(user_id);
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash  TEXT PRIMARY KEY,       -- SHA-256 of the bearer token; the token itself is never stored
   user_id     TEXT NOT NULL,
-  expires_at  INTEGER NOT NULL
+  expires_at  INTEGER NOT NULL,
+  admin_at    INTEGER                 -- when an admin entered their authenticator code on it
 );
 CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id);
 
@@ -64,6 +68,66 @@ CREATE TABLE IF NOT EXISTS availability_links (
   responded_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS availability_project ON availability_links(project_id, person_id);
+
+-- Personal crew pages, call sheets sent, "Got it", continuity photos, the admin log and
+-- backups (see migrations/0005_crew_backups.sql).
+CREATE TABLE IF NOT EXISTS crew_links (
+  code_hash   TEXT PRIMARY KEY,
+  project_id  TEXT NOT NULL,
+  person_id   TEXT NOT NULL,
+  name        TEXT NOT NULL,
+  role        TEXT NOT NULL,
+  created_at  INTEGER NOT NULL,
+  opened_at   INTEGER
+);
+CREATE INDEX IF NOT EXISTS crew_links_project ON crew_links(project_id, person_id);
+CREATE TABLE IF NOT EXISTS sheet_sends (
+  project_id  TEXT NOT NULL,
+  day_id      TEXT NOT NULL,
+  sent_at     INTEGER NOT NULL,
+  sent_by     TEXT,
+  PRIMARY KEY (project_id, day_id)
+);
+CREATE TABLE IF NOT EXISTS sheet_confirms (
+  project_id   TEXT NOT NULL,
+  day_id       TEXT NOT NULL,
+  person_id    TEXT NOT NULL,
+  confirmed_at INTEGER NOT NULL,
+  PRIMARY KEY (project_id, day_id, person_id)
+);
+CREATE TABLE IF NOT EXISTS photos (
+  id          TEXT PRIMARY KEY,
+  project_id  TEXT NOT NULL,
+  root_id     TEXT NOT NULL,
+  created_by  TEXT,
+  created_at  INTEGER NOT NULL,
+  size        INTEGER NOT NULL,
+  data        BLOB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS photos_root ON photos(root_id);
+CREATE TABLE IF NOT EXISTS admin_log (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  at           INTEGER NOT NULL,
+  admin_email  TEXT NOT NULL,
+  action       TEXT NOT NULL,
+  target       TEXT,
+  detail       TEXT
+);
+CREATE INDEX IF NOT EXISTS admin_log_at ON admin_log(at);
+CREATE TABLE IF NOT EXISTS backups (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id  TEXT NOT NULL,
+  kind        TEXT NOT NULL,
+  title       TEXT NOT NULL,
+  parent_id   TEXT,
+  owner_id    TEXT,
+  taken_at    INTEGER NOT NULL,
+  size        INTEGER NOT NULL,
+  deleted     INTEGER NOT NULL DEFAULT 0,
+  meta        TEXT,
+  doc         TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS backups_project ON backups(project_id, taken_at);
 
 -- Failed sign-in attempts per email, for basic brute-force protection.
 CREATE TABLE IF NOT EXISTS auth_failures (

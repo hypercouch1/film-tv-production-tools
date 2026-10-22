@@ -1,7 +1,9 @@
 // End-to-end test against a running server: `npm run dev` in one terminal, then `npm test`.
 // Set SERVER=https://... to point it somewhere else.
 import assert from 'node:assert/strict';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import '../../src/sync-core.js';
+import { codeAt, stepAt } from '../src/totp.js';
 
 const BASE = process.env.SERVER || 'http://127.0.0.1:8787';
 const { diff, applyAll, clone } = globalThis.SyncCore;
@@ -315,6 +317,65 @@ assert.deepEqual([docNow.availability.c2.off, docNow.availability.c2.source, doc
 assert.equal((await api('POST', `/api/projects/${prodId}/me/claim`, { personId: null }, D)).status, 200);
 assert.equal((await api('GET', `/api/projects/${prodId}/doc`, null, A)).doc.claims.c2, undefined, 'letting go');
 assert.equal((await api('POST', `/api/projects/${prodId}/me/claim`, { personId: 'c2' }, B)).status, 404, 'non-members can’t');
+
+// Personal crew pages: each person's shoot days, the call sheet once it's sent, "Got it", calendar.
+owner.send({ type: 'ops', batch: 2, ops: [
+  { t: 'set', p: ['days'], v: [{ id: 'd1', date: '2026-11-03', call: '08:00', crewCall: '07:00', wrap: '18:00', location: 'Pier 9', parking: 'Lot C', calls: {} }] },
+  { t: 'set', p: ['scenes'], v: [{ id: 's1', number: '1', heading: 'EXT. PIER - DAY', castIds: ['c1'], crewIds: [], shots: [], dayId: 'd1' }] },
+] });
+await owner.next((m) => m.type === 'ops' && m.from === snapO.clientId);
+assert.equal((await api('POST', `/api/projects/${prodId}/crew/links`, { people: [{ personId: 'c1', name: 'Ann', role: 'Maya' }] }, D)).status, 403, 'view-only people can’t make links');
+const crewRes = await api('POST', `/api/projects/${prodId}/crew/links`, { people: [{ personId: 'c1', name: 'Ann', role: 'Maya' }, { personId: 'c2', name: 'Dan', role: 'Lou' }] }, A);
+assert.equal(crewRes.status, 200, crewRes.error);
+const annCrew = crewRes.links.find((l) => l.personId === 'c1').code;
+const danCrew = crewRes.links.find((l) => l.personId === 'c2').code;
+let crewPage = await api('GET', `/api/crew/${annCrew.toLowerCase()}`);
+assert.deepEqual([crewPage.production, crewPage.name, crewPage.role, crewPage.days.length, crewPage.days[0].call, crewPage.days[0].sentAt],
+  ['Harbour Lights', 'Ann', 'Maya', 1, '08:00', null], 'their days and call, from the production');
+assert.equal(crewPage.days[0].sheet, undefined, 'no call sheet until it’s sent');
+assert.equal((await api('GET', `/api/crew/${danCrew}`)).days.length, 0, 'Lou isn’t in a scene yet');
+assert.equal((await api('POST', `/api/crew/${annCrew}/confirm`, { dayId: 'd1' })).status, 400, 'nothing to confirm yet');
+assert.equal((await api('POST', `/api/projects/${prodId}/callsheets/d1/send`, null, D)).status, 403, 'view-only people can’t send');
+const firstSend = await api('POST', `/api/projects/${prodId}/callsheets/d1/send`, null, C);
+assert.equal(firstSend.status, 200, firstSend.error);
+crewPage = await api('GET', `/api/crew/${annCrew}`);
+assert.deepEqual([crewPage.days[0].sheet.parking, crewPage.days[0].sheet.cast[0].actor], ['Lot C', 'Ann'], 'the call sheet once sent');
+const gotIt = await api('POST', `/api/crew/${annCrew}/confirm`, { dayId: 'd1' });
+assert.equal(gotIt.status, 200, gotIt.error);
+assert.deepEqual((await api('GET', `/api/projects/${prodId}/callsheets/d1`, null, D)).confirms.map((x) => x.personId), ['c1'], 'everyone in the production sees who has it');
+await new Promise((r) => setTimeout(r, 5));
+await api('POST', `/api/projects/${prodId}/callsheets/d1/send`, null, A);
+assert.deepEqual((await api('GET', `/api/projects/${prodId}/callsheets/d1`, null, A)).confirms, [], 'sent again after changes: confirm again');
+assert.equal((await api('GET', `/api/crew/${annCrew}`)).days[0].confirmedAt, null);
+const ics = await fetch(BASE + `/c/${annCrew}/calendar.ics`);
+assert.match(ics.headers.get('content-type'), /text\/calendar/);
+assert.match(await ics.text(), /DTSTART:20261103T080000\r\nDTEND:20261103T180000/);
+const crewHtml = await fetch(BASE + `/c/${annCrew}`);
+assert.match(crewHtml.headers.get('content-security-policy'), /script-src 'nonce-/);
+assert.match(await crewHtml.text(), /Call sheet/);
+assert.deepEqual((await api('GET', `/api/projects/${prodId}/crew/links`, null, D)).links.map((l) => [l.personId, !!l.openedAt]), [['c1', true], ['c2', true]]);
+assert.equal((await api('GET', `/api/projects/${prodId}/crew/links`, null, B)).status, 404, 'non-members see nothing');
+await api('DELETE', `/api/projects/${prodId}/crew/links/c2`, null, A);
+assert.equal((await api('GET', `/api/crew/${danCrew}`)).status, 404, 'revoked');
+step('crew pages: days and calls, call sheet once sent, "Got it" per version, calendar feed, revoke');
+
+// Continuity photos: editors add and delete, anyone in the production sees them.
+const onset = await api('POST', '/api/projects', { kind: 'onset', parent: prodId, doc: { title: 'On set' } }, A);
+assert.equal(onset.status, 200, onset.error);
+assert.equal((await api('POST', '/api/projects', { kind: 'gear', doc: { title: 'Gear' } }, A)).status, 400, 'equipment lists live in a production');
+const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4, 5, 0xff, 0xd9]);
+const upload = (bytes, token) => fetch(`${BASE}/api/projects/${onset.project.id}/photos`, { method: 'POST', headers: { 'Content-Type': 'image/jpeg', Authorization: 'Bearer ' + token }, body: bytes });
+assert.equal((await upload(jpeg, D)).status, 403, 'view-only people can’t add photos');
+assert.equal((await upload(new Uint8Array([1, 2, 3, 4]), A)).status, 400, 'JPEG only');
+const photo = await (await upload(jpeg, C)).json();
+assert.ok(photo.id);
+const got = await fetch(`${BASE}/api/projects/${onset.project.id}/photos/${photo.id}`, { headers: { Authorization: 'Bearer ' + D } });
+assert.equal(got.headers.get('content-type'), 'image/jpeg');
+assert.deepEqual([...new Uint8Array(await got.arrayBuffer())], [...jpeg], 'view-only people see them');
+assert.equal((await fetch(`${BASE}/api/projects/${onset.project.id}/photos/${photo.id}`, { headers: { Authorization: 'Bearer ' + B } })).status, 404, 'non-members don’t');
+assert.equal((await api('DELETE', `/api/projects/${onset.project.id}/photos/${photo.id}`, null, C)).status, 200);
+assert.equal((await fetch(`${BASE}/api/projects/${onset.project.id}/photos/${photo.id}`, { headers: { Authorization: 'Bearer ' + A } })).status, 404);
+step('continuity photos: JPEG only, editors add and delete, members see them');
 owner.close();
 assert.equal((await api('POST', '/api/projects', { kind: 'post', doc: { title: 'Post' } }, A)).status, 400, 'post documents only live inside a production');
 assert.equal((await api('POST', '/api/projects', { kind: 'post', parent: prodId, doc: { title: 'Post' } }, A)).status, 200);
@@ -354,6 +415,42 @@ assert.equal(admin.status, 200, admin.error);
 const ADM = admin.token;
 assert.equal((await api('GET', '/api/admin/stats', null, C)).status, 403, 'only the admin');
 assert.equal((await api('GET', '/api/admin/users', null)).status, 401);
+
+// Two-step sign-in: the admin's authenticator app (set up on first use; the test keeps the
+// key in test/.admin-totp so later runs against the same database can sign in).
+const twoStepNow = await api('GET', '/api/admin/2fa', null, ADM);
+assert.equal(twoStepNow.verified, false);
+const refused = await api('GET', '/api/admin/stats', null, ADM);
+assert.deepEqual([refused.status, refused.twoStep], [403, true], 'the password alone isn’t enough');
+const SECRET_FILE = new URL('./.admin-totp', import.meta.url);
+let secret;
+const nowStep = stepAt(Date.now());
+if (!twoStepNow.enabled) {
+  assert.equal((await api('POST', '/api/admin/2fa/verify', { code: '123456' }, ADM)).status, 401, 'set it up first');
+  const setup = await api('POST', '/api/admin/2fa/setup', null, ADM);
+  assert.match(setup.uri, /^otpauth:\/\/totp\/.+secret=/);
+  assert.equal((await api('POST', '/api/admin/2fa/enable', { code: '000000' }, ADM)).status, 401, 'wrong code');
+  const on = await api('POST', '/api/admin/2fa/enable', { code: await codeAt(setup.secret, nowStep) }, ADM);
+  assert.equal(on.status, 200, on.error);
+  secret = setup.secret;
+  writeFileSync(SECRET_FILE, secret);
+  assert.equal((await api('POST', '/api/admin/2fa/setup', null, ADM)).status, 409, 'can’t be set up again with just the password');
+} else {
+  if (!existsSync(SECRET_FILE)) throw new Error('The test admin already has two-step sign-in but test/.admin-totp is missing. Reset it with: npx wrangler d1 execute production-hub --local --command "UPDATE users SET totp_secret = NULL WHERE email = \'admin@example.test\'"');
+  secret = readFileSync(SECRET_FILE, 'utf8').trim();
+  const ok = await api('POST', '/api/admin/2fa/verify', { code: await codeAt(secret, nowStep) }, ADM);
+  assert.equal(ok.status, 200, ok.error);
+}
+// Another device: needs its own code, and each code works once.
+const admin2 = await api('POST', '/api/login', { email: 'admin@example.test', password: 'correct horse admin' });
+assert.equal((await api('GET', '/api/admin/users', null, admin2.token)).status, 403);
+const nextCode = await codeAt(secret, nowStep + 1);
+assert.equal((await api('POST', '/api/admin/2fa/verify', { code: nextCode }, admin2.token)).status, 200);
+assert.equal((await api('GET', '/api/admin/users', null, admin2.token)).status, 200);
+const admin3 = await api('POST', '/api/login', { email: 'admin@example.test', password: 'correct horse admin' });
+assert.equal((await api('POST', '/api/admin/2fa/verify', { code: nextCode }, admin3.token)).status, 401, 'a code can’t be used twice');
+assert.equal((await api('POST', '/api/admin/2fa/setup', null, C)).status, 403, 'not for anyone else');
+step('admin: two-step sign-in with an authenticator app, set up once, a code works once');
 await fetch(BASE + '/api/me', { headers: { Authorization: 'Bearer ' + C, 'X-App-Version': '1.4.0' } });
 const stats = await api('GET', '/api/admin/stats', null, ADM);
 assert.ok(stats.users.total >= 4 && stats.users.active1 >= 1, 'counts accounts and who was active');
@@ -393,6 +490,51 @@ await api('DELETE', `/api/projects/${keep.project.id}`, null, A);
 assert.equal((await api('DELETE', `/api/admin/users/${viewer.user.id}`, null, ADM)).status, 200);
 assert.equal((await api('POST', '/api/login', { email: `dan.${run}@example.com`, password: 'correct horse' })).status, 401, 'deleted');
 step('admin: switch accounts off and on, edit, delete (not owners of shared projects)');
+
+const C3 = (await api('POST', '/api/login', { email: `carol.${run}@example.com`, password: 'new password 1' })).token;
+const log = (await api('GET', '/api/admin/log', null, ADM)).log;
+for (const what of ['Made a one-time password code', 'Switched an account off', 'Edited an account', 'Deleted an account']) {
+  assert.ok(log.some((x) => x.action === what && x.admin === 'admin@example.test'), what + ' is logged');
+}
+assert.ok(log.some((x) => x.action === 'Edited an account' && /Carol B/.test(x.detail)), 'with what changed');
+assert.equal((await api('GET', '/api/admin/log', null, C3)).status, 403);
+step('admin log: what admins did, and to whom');
+
+// Backups: deleted documents keep their final copy and can be brought back, with their people.
+let backups = (await api('GET', '/api/admin/backups', null, ADM)).backups;
+const prodCopy = backups.find((b) => b.projectId === prodId);
+assert.ok(prodCopy && prodCopy.deleted, 'the deleted production has a final copy');
+assert.ok(backups.some((b) => b.projectId === childId), 'and so does what was inside');
+assert.equal((await api('POST', `/api/admin/backups/${backups.find((b) => b.projectId === childId).id}/restore`, null, ADM)).status, 409, 'a document inside needs its production back first');
+const back = await api('POST', `/api/admin/backups/${prodCopy.id}/restore`, null, ADM);
+assert.deepEqual([back.status, back.restored], [200, 'recreated'], back.error);
+const restoredDoc = (await api('GET', `/api/projects/${prodId}/doc`, null, A)).doc;
+assert.deepEqual([restoredDoc.title, restoredDoc.days[0].id], ['Harbour Lights', 'd1'], 'the production is back as it was');
+assert.equal((await api('GET', `/api/projects/${prodId}/doc`, null, C3)).status, 200, 'with its people');
+const childBack = await api('POST', `/api/admin/backups/${backups.find((b) => b.projectId === childId).id}/restore`, null, ADM);
+assert.equal(childBack.status, 200, childBack.error);
+assert.equal((await api('GET', `/api/projects/${childId}/doc`, null, A)).doc.title, 'Ep 1');
+// Restoring over a document in use puts it back for everyone connected, keeping a copy first.
+const now1 = await api('POST', '/api/admin/backups/now', null, ADM);
+assert.ok(now1.count >= 2, 'back up everything now');
+const watching = live(prodId, A);
+const snapW = await watching.next((m) => m.type === 'snapshot');
+watching.send({ type: 'ops', batch: 1, ops: [{ t: 'set', p: ['title'], v: 'Renamed by mistake' }] });
+await watching.next((m) => m.type === 'ops' && m.from === snapW.clientId);
+backups = (await api('GET', '/api/admin/backups', null, ADM)).backups;
+const before = backups.filter((b) => b.projectId === prodId)[0];
+assert.equal((await api('POST', `/api/admin/backups/${before.id}/restore`, null, ADM)).restored, 'replaced');
+assert.equal((await watching.next((m) => m.type === 'snapshot' && m.reset)).doc.title, 'Harbour Lights', 'open copies get the restored one');
+watching.close();
+const dl = await fetch(`${BASE}/api/admin/backups/${before.id}`, { headers: { Authorization: 'Bearer ' + ADM } });
+assert.equal(JSON.parse(await dl.text()).title, 'Harbour Lights');
+const everything = await (await fetch(`${BASE}/api/admin/export`, { headers: { Authorization: 'Bearer ' + ADM } })).json();
+assert.equal(everything.docs[prodId].title, 'Harbour Lights');
+assert.ok(everything.accounts.every((x) => !('pw' in x) && !('totp_secret' in x)), 'no passwords or keys in the download');
+assert.equal((await api('GET', '/api/admin/backups', null, C3)).status, 403);
+assert.ok((await api('GET', '/api/admin/log', null, ADM)).log.some((x) => x.action === 'Restored a backup'));
+await api('DELETE', `/api/projects/${prodId}`, null, A);
+step('backups: daily copies, deleted documents brought back with their people, restore for open copies, download');
 
 // Brute-force protection.
 for (let i = 0; i < 10; i++) await api('POST', '/api/login', { email: `bob.${run}@example.com`, password: 'nope nope' });

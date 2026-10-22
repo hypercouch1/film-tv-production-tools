@@ -76,6 +76,22 @@
         <circle cx="21" cy="50" r="2.6" fill="currentColor"/><circle cx="32" cy="50" r="2.6" fill="currentColor"/>
         <rect x="40" y="47.5" width="6" height="5" rx="1.5" fill="#e2332b"/>
       </svg>`,
+    onset: `
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <rect x="6" y="12" width="36" height="24" rx="4" fill="none" stroke="currentColor" stroke-width="3.5"/>
+        <path d="M42 20l14-7v22l-14-7z" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linejoin="round"/>
+        <circle cx="14" cy="20" r="3.2" fill="#e2332b"/>
+        <rect x="20" y="26" width="16" height="5" rx="1.5" fill="#e6cf2e"/>
+        <path d="M24 36l-10 22M24 36l10 22M24 36v22" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+      </svg>`,
+    gear: `
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <rect x="12" y="8" width="30" height="26" rx="5" fill="none" stroke="currentColor" stroke-width="3.5"/>
+        <circle cx="27" cy="21" r="7.5" fill="#e6cf2e"/>
+        <path d="M42 13l12-5v26l-12-5" fill="none" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
+        <path d="M27 34v14M27 48l-12 10M27 48l12 10M27 48v10" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"/>
+        <circle cx="50" cy="50" r="5" fill="#e2332b"/>
+      </svg>`,
     callsheet: `
       <svg viewBox="0 0 64 64" aria-hidden="true">
         <rect x="12" y="8" width="40" height="50" rx="5" fill="none" stroke="currentColor" stroke-width="3.5"/>
@@ -99,6 +115,8 @@
   let sheets = [];      // this production's call sheets
   let post = null;      // this production's post document (on this computer)
   let budget = null;    // this production's budget (on this computer)
+  let onset = null;     // this production's reports and continuity notes (on this computer)
+  let gear = null;      // this production's equipment list (on this computer)
   let session = null;   // a shared production: its live connection
   let role = 'owner';   // your role in a shared production
 
@@ -133,14 +151,28 @@
           const n = (prod.elements || []).filter((e) => e.sceneIds.length).length;
           return n ? `${plural(n, 'item')} added by hand · plus script tags` : 'Tag the script, or add items per scene';
         })() },
+      { id: 'onset', name: 'On Set', tag: 'Daily production reports and continuity notes with photos', page: 'onset.html', accent: '#f08bb4',
+        stats: onset ? [onset.reports.length && plural(onset.reports.length, 'report'), onset.notes.length && plural(onset.notes.length, 'continuity note')].filter(Boolean).join(' · ') || 'No reports yet'
+          : session ? 'Reports and continuity' : 'No reports yet' },
       { id: 'post', name: 'Post', tag: 'Take log, media catalogue, post tracker, cuts & notes', page: 'post.html', accent: '#7fd0ea',
         stats: post ? [post.takes.length && plural(post.takes.length, 'take'), post.media.length && plural(post.media.length, 'file'),
           post.tasks.filter((t) => t.status !== 'done').length && plural(post.tasks.filter((t) => t.status !== 'done').length, 'open task')].filter(Boolean).join(' · ') || 'Nothing logged yet'
           : session ? 'Take log, media, tracker and cuts' : 'Nothing logged yet' },
       // The budget is for the owner and editors of a shared production only.
-      ...(session && role === 'viewer' ? [] : [{ id: 'budget', name: 'Budget', tag: 'Top sheet and detail, built from the schedule', page: 'budget.html', accent: '#6fcf7a',
-        stats: budget ? (budget.lines.length ? `${budget.currency}${Math.round(window.BudgetFormats.totals(budget).total).toLocaleString()} · ${plural(budget.lines.length, 'line')}` : 'No lines yet')
+      ...(session && role === 'viewer' ? [] : [{ id: 'budget', name: 'Budget', tag: 'Top sheet, detail, costs and cost report', page: 'budget.html', accent: '#6fcf7a',
+        stats: budget ? (budget.lines.length || budget.costs.length ? (() => {
+          const t = window.BudgetFormats.totals(budget);
+          const m = (n) => `${budget.currency}${Math.round(n).toLocaleString()}`;
+          return `${m(t.total)} · ${t.actual ? m(t.actual) + ' spent' : plural(budget.lines.length, 'line')}`;
+        })() : 'No lines yet')
           : session ? 'Owner and editors only' : 'Not started yet' }]),
+      { id: 'gear', name: 'Equipment', tag: 'Gear lists, rentals and check-out', page: 'gear.html', accent: '#e6cf2e',
+        stats: gear ? (gear.items.length ? (() => {
+          const out = gear.items.filter((i) => i.status === 'out').length;
+          const late = gear.items.filter((i) => window.GearFormats.overdue(i, todayStr())).length;
+          return [plural(gear.items.length, 'item'), out && `${out} out`, late && `${late} overdue`].filter(Boolean).join(' · ');
+        })() : 'Nothing listed yet')
+          : session ? 'Gear, rentals and check-out' : 'Nothing listed yet' },
       { id: 'locations', name: 'Locations', tag: 'Addresses, contacts, permits and parking', page: 'locations.html', accent: '#f2994a',
         stats: (() => {
           const locs = prod.locations || [];
@@ -305,10 +337,13 @@
     const cd = (await api.loadStore('callsheets')) || {};
     cd.sheets = (cd.sheets || []).filter((s) => s.productionId !== prod.id);
     await api.saveStore('callsheets', cd);
-    for (const key of ['post', 'budget']) {
+    for (const key of ['post', 'budget', 'onset', 'gear']) {
       const data = (await api.loadStore(key)) || {};
+      const gone = (data.docs || []).filter((s) => s.productionId === prod.id);
       data.docs = (data.docs || []).filter((s) => s.productionId !== prod.id);
       await api.saveStore(key, data);
+      // Continuity photos kept on this computer go too.
+      if (key === 'onset') for (const d of gone) for (const n of d.notes || []) for (const id of n.photos || []) await api.deletePhoto(id).catch(() => {});
     }
     P.goPicker();
   }
@@ -373,6 +408,12 @@
       const bd = (await api.loadStore('budget')) || {};
       const rawBudget = (bd.docs || []).find((x) => x.productionId === pid);
       budget = rawBudget ? window.BudgetFormats.normalizeBudget(rawBudget) : null;
+      const od = (await api.loadStore('onset')) || {};
+      const rawOnset = (od.docs || []).find((x) => x.productionId === pid);
+      onset = rawOnset ? window.OnsetFormats.normalizeOnset(rawOnset) : null;
+      const gd = (await api.loadStore('gear')) || {};
+      const rawGear = (gd.docs || []).find((x) => x.productionId === pid);
+      gear = rawGear ? window.GearFormats.normalizeGear(rawGear) : null;
     }
     render();
     wireTitle();

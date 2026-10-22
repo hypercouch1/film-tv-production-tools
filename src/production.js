@@ -160,7 +160,7 @@
         } catch (err) { failed.push(`${d.title || kind}: ${err.message}`); }
       }
       store[key] = (store[key] || []).filter((d) => !done.has(d.id));
-      await api.saveStore({ script: 'scripts', callsheet: 'callsheets', post: 'post', budget: 'budget' }[kind], store);
+      await api.saveStore({ script: 'scripts', callsheet: 'callsheets', post: 'post', budget: 'budget', onset: 'onset', gear: 'gear' }[kind], store);
     };
     await upload('script', myScripts, scripts, 'scripts');
     await upload('callsheet', mySheets, sheets, 'sheets');
@@ -172,6 +172,31 @@
     const budget = (await api.loadStore('budget')) || {};
     const myBudget = (budget.docs || []).filter((d) => d.productionId === pid);
     if (myBudget.length) await upload('budget', myBudget, budget, 'docs');
+    // Equipment, and on-set reports and continuity notes. Continuity photos go up first (into
+    // the production), and the notes point at their new ids.
+    const gear = (await api.loadStore('gear')) || {};
+    const myGear = (gear.docs || []).filter((d) => d.productionId === pid);
+    if (myGear.length) await upload('gear', myGear, gear, 'docs');
+    const onset = (await api.loadStore('onset')) || {};
+    const myOnset = (onset.docs || []).filter((d) => d.productionId === pid);
+    const localNotes = new Map(myOnset.map((d) => [d.id, JSON.stringify(d.notes || [])]));
+    for (const d of myOnset) {
+      for (const n of Array.isArray(d.notes) ? d.notes : []) {
+        n.photos = await Promise.all((n.photos || []).map(async (id) => {
+          try {
+            const bytes = await api.loadPhoto(id);
+            return bytes ? await Cloud.uploadPhoto(pid, new Blob([bytes], { type: 'image/jpeg' })) : id;
+          } catch (err) { failed.push(`A continuity photo: ${err.message}`); return id; }
+        }));
+      }
+    }
+    if (myOnset.length) {
+      await upload('onset', myOnset, onset, 'docs');
+      // Anything that stayed on this computer keeps pointing at its photos here.
+      const stayed = onset.docs.filter((d) => localNotes.has(d.id));
+      stayed.forEach((d) => { d.notes = JSON.parse(localNotes.get(d.id)); });
+      if (stayed.length) await api.saveStore('onset', onset);
+    }
     if (failed.length) alert('These couldn’t be moved online and are still on this computer:\n\n' + failed.join('\n'));
     return true;
   }

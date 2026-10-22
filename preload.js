@@ -20,6 +20,10 @@ if (location.protocol === 'file:') contextBridge.exposeInMainWorld('api', {
   // Media catalogue: pick files or a folder (names, paths, sizes, dates); show one in its folder.
   pickMedia: (opts) => ipcRenderer.invoke('media:pick', opts),
   revealMedia: (filePath) => ipcRenderer.invoke('media:reveal', filePath),
+  // Continuity photos on this computer (JPEG bytes by id).
+  savePhoto: (id, bytes) => ipcRenderer.invoke('photo:save', id, bytes),
+  loadPhoto: (id) => ipcRenderer.invoke('photo:load', id),
+  deletePhoto: (id) => ipcRenderer.invoke('photo:delete', id),
   onMenu: (cb) => ipcRenderer.on('menu', (_e, channel, arg) => cb(channel, arg)),
   onFileOpened: (cb) => ipcRenderer.on('file:opened', (_e, file) => cb(file)),
   platform: process.platform,

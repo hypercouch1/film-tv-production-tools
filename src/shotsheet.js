@@ -1010,6 +1010,7 @@
           el('div', { class: 'panel-date' }, fmtDate(day.date, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }))),
         el('div', { class: 'panel-actions' },
           el('button', { class: 'ghost-btn', title: 'The printable call sheet for this day: call times, weather, location, scenes, cast and crew', onclick: () => openSummary(day.id) }, 'Call sheet'),
+          window.CrewLinks ? el('button', { class: 'ghost-btn', title: 'Send this day’s call sheet to cast and crew’s phones, and see who has it', onclick: () => sendCallSheet(p, day) }, 'Send…') : null,
           el('button', { class: 'primary-btn', title: 'Open this day’s shots as a checklist in the Shot Sheet', onclick: () => {
             store.flush().then(() => { location.href = window.Production.link('shotsheet.html', { day: day.id }); });
           } }, 'Run day ▶'))),
@@ -1219,6 +1220,14 @@
     if (changed) save();
   }
 
+  // Call sheets on cast and crew's phones (crewlinks.js; shared productions).
+  const crewOpts = (p, extra = {}) => ({
+    save, render, readOnly: collab.readOnly, isCloud: collab.isCloud(p), cloudId: collab.isCloud(p) ? p._cloud.id : null, ...extra,
+  });
+  function sendCallSheet(p, day) {
+    store.flush().then(() => window.CrewLinks.sendDialog(p, day, crewOpts(p, { dayNum: dayNum(p, day.id) })));
+  }
+
   function daySummaryData(p, day) {
     const scenes = scenesOnDay(p, day.id);
     const shots = allShots(p).filter((x) => x.shot.dayId === day.id);
@@ -1348,6 +1357,7 @@
       el('div', { class: 'summary-actions' },
         el('button', { class: 'ghost-btn', onclick: () => { view = 'schedule'; selectedDate = day.date; render(); } }, '← Back to schedule'),
         el('span', { class: 'muted small' }, ro ? 'View only' : 'Click any field on the sheet to edit it.'),
+        window.CrewLinks ? el('button', { class: 'ghost-btn', title: 'Send it to cast and crew’s phones, and see who has it', onclick: () => sendCallSheet(p, day) }, 'Send to cast & crew…') : null,
         el('button', { class: 'primary-btn', onclick: () => exportAs('pdf') }, 'Export PDF')),
       el('article', { class: 'summary-paper call-sheet' },
         el('header', { class: 'cs-top' },
@@ -1509,7 +1519,8 @@
         claim: (personId) => window.Cloud.claimPerson(p._cloud.id, personId),
         setMine: (personId, entry) => window.Cloud.setMyAvailability(p._cloud.id, personId, entry),
       } : null,
-      availabilityActions: window.Availability ? () => window.Availability.actions(p, { save, render, readOnly: collab.readOnly, isCloud: collab.isCloud(p) }) : null,
+      availabilityActions: window.Availability ? () => window.Availability.actions(p, { save, render, readOnly: collab.readOnly, isCloud: collab.isCloud(p),
+        crewPages: window.CrewLinks ? () => window.CrewLinks.pagesDialog(p, crewOpts(p)) : null }) : null,
     };
   }
 

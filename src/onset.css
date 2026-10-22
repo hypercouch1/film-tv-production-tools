@@ -1,0 +1,46 @@
+/* On Set: daily production report and continuity notes. */
+.pr-head { display: flex; gap: 16px; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; margin-top: 12px; max-width: 1100px; }
+.pr-day { font-family: var(--display); font-size: 30px; letter-spacing: 1px; color: var(--yellow); line-height: 1; }
+.pr-date { font-size: 18px; font-weight: 600; margin-top: 4px; }
+.pr-by { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.pr-by .field { width: 200px; }
+.pr-progress { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 10px 14px; display: grid; gap: 4px; min-width: 300px; }
+.pr-progress > div { display: flex; gap: 10px; justify-content: space-between; align-items: baseline; }
+.pr-ahead { color: var(--green, #6fcf7a); font-weight: 700; }
+.pr-behind { color: #ff8a80; font-weight: 700; }
+.pr-box { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 10px 14px; margin-top: 12px; max-width: 1100px; }
+.pr-box h3 { margin: 0 0 8px; font-size: 12px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); }
+.pr-times { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.pr-times label { display: grid; gap: 3px; }
+.pr-times .pr-wide { grid-column: span 3; }
+.pr-table { max-width: none; margin-top: 0; }
+.pr-table .field { width: 100%; }
+.pr-scene.s-done td:first-child { box-shadow: inset 3px 0 0 var(--green, #6fcf7a); }
+.pr-scene.s-part td:first-child { box-shadow: inset 3px 0 0 var(--yellow); }
+.pr-added { font-size: 10px; text-transform: uppercase; color: var(--cyan, #7fd0ea); }
+.pr-notes { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.pr-note { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+
+.cn-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px; }
+.onset-continuity .section-title { margin-top: 20px; }
+.cn-card { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 10px; background: var(--panel); padding: 10px; display: grid; gap: 8px; }
+.cn-top { display: grid; grid-template-columns: 1fr 1fr 1fr 64px; gap: 6px; }
+.cn-cat { font-weight: 600; }
+.cn-photos { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.cn-photo { position: relative; }
+.cn-thumb { width: 96px; height: 72px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); cursor: zoom-in; background: var(--panel2, #1e1a15); display: block; }
+.cn-thumb.missing { opacity: .3; cursor: default; }
+.cn-del { position: absolute; top: 2px; right: 2px; border: 0; border-radius: 50%; width: 20px; height: 20px; font-size: 11px; background: rgba(0, 0, 0, .7); color: #fff; cursor: pointer; display: none; }
+.cn-photo:hover .cn-del { display: block; }
+.cn-add { width: 96px; height: 72px; border: 1px dashed var(--line); border-radius: 6px; background: none; font-size: 22px; cursor: pointer; color: var(--muted); }
+.cn-add:hover { border-color: var(--muted); }
+.cn-foot { display: flex; justify-content: space-between; align-items: center; }
+.lightbox { position: fixed; inset: 0; background: rgba(0, 0, 0, .88); display: grid; place-items: center; z-index: 1000; cursor: zoom-out; padding: 20px; }
+.lb-img { max-width: 100%; max-height: 100%; border-radius: 6px; }
+
+@media print {
+  .pr-box, .pr-progress, .cn-card { background: #fff; color: #000; border-color: #ccc; }
+  .pr-day { color: #000; }
+  .cn-add, .cn-del, .cn-foot .icon-btn { display: none !important; }
+  .field { color: #000 !important; border: 0 !important; background: none !important; }
+}

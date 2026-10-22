@@ -1,3 +1,30 @@
+# Production Tools 1.5.0
+
+## Call sheets on everyone's phone
+- **Send to cast & crew:** on a shoot day (Schedule → **Send…**, or on the call sheet), send the call sheet out. Each person gets a personal page on their phone with their call time, their scenes and the full call sheet. No app or account needed.
+- **"Got it":** everyone taps **Got it** and you can see who has confirmed. Changed something? Send it again and everyone confirms the new version.
+- **Calendar:** from their page, people add their shoot days to Apple, Google or Outlook Calendar. Changes to the schedule show up there automatically.
+- **Crew pages** (Schedule → Availability) lists everyone's page: copy their link, see who has opened theirs, or stop a page working.
+
+## On Set
+A new **On Set** page for each production:
+- **Daily production report:** call, first shot, lunch and wrap times; which scenes were completed or part shot; setups and takes (counted from the take log); cast in and out; delays, accidents and equipment problems. It shows progress against the schedule, today and to date. Export it as a PDF.
+- **Continuity:** notes per scene, shot and take (wardrobe, props, hair and makeup, blocking…) with photos. Paste a picture or add photos from your computer; in a shared production everyone sees them.
+
+## Equipment
+A new **Equipment** page: gear by department, owned, rented or borrowed, with vendor, rate, pickup and return dates.
+- **Check out and check in**, with a log of who has what. Overdue items are flagged.
+- **By day:** what's needed each shoot day, and what to pick up or return.
+- **Rentals go into the budget:** Budget → Build from production adds them as lines.
+
+## Budget
+- **Costs:** log receipts and invoices against an account or a budget line. They count towards actuals on the top sheet and in Detail. Export them as CSV.
+- **Cost report:** budget, spent and remaining for each account, plus each shoot day's planned cost against what was spent that day.
+
+This version needs the updated server.
+
+---
+
 # Production Tools 1.4.0
 
 ## Budget

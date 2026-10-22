@@ -28,9 +28,29 @@
 .bl-gone { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #ff8a80; border: 1px solid #ff8a80; border-radius: 999px; padding: 0 6px; }
 .bl-row.gone { opacity: .7; }
 .bl-est { color: var(--text); }
+.bl-actual { display: flex; flex-direction: column; align-items: stretch; min-width: 0; }
+.bl-costs { font-size: 11px; text-align: right; color: var(--cyan, #7fd0ea); padding: 0; }
+
+/* Costs: one row per expense */
+.bc-row { display: grid; grid-template-columns: 130px minmax(140px, 1.2fr) minmax(120px, 1.2fr) minmax(110px, 1fr) minmax(140px, 1.4fr) 100px 100px 100px 28px; gap: 6px; align-items: center; margin-top: 4px; }
+.bc-cols span { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); }
+.bc-cols span:nth-child(8) { text-align: right; }
+
+/* Cost report */
+.br-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; max-width: 900px; margin-top: 8px; }
+.br-stat { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 10px 14px; }
+.br-label { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); }
+.br-value { font-family: var(--display); font-size: 28px; letter-spacing: 1px; }
+.br-stat.over .br-value { color: #ff8a80; }
+.budget-report .section-title { margin-top: 24px; color: var(--yellow); }
+.br-over td { background: rgba(255, 138, 128, .06); }
+.br-bar { display: inline-block; width: 90px; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, .08); vertical-align: middle; overflow: hidden; }
+.br-fill { display: block; height: 100%; background: var(--green, #6fcf7a); }
+.br-fill.over { background: #ff8a80; }
 
 @media print {
-  .post-bar, .icon-btn.del, .bl-cat-head .link-btn { display: none !important; }
+  .post-bar, .icon-btn.del, .bl-cat-head .link-btn, .bl-costs { display: none !important; }
+  .br-stat { background: #fff; color: #000; }
   .bl-cat, .budget-table td { background: #fff; color: #000; }
   .field { color: #000 !important; border: 0 !important; background: none !important; }
   .bt-group td, .budget-detail .section-title { color: #000; }

@@ -1,0 +1,28 @@
+/* Equipment page: list by department, by day, check-out log. */
+.gr-row { display: grid; grid-template-columns: minmax(160px, 2fr) 58px 96px minmax(100px, 1.2fr) 80px 92px 132px 132px 118px minmax(90px, 1fr) 84px auto; gap: 6px; align-items: center; margin-top: 4px; }
+.gr-cols span { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); }
+.gr-row.late .gr-name, .gr-row.missing .gr-name { border-color: #ff8a80; }
+.gr-actions { display: flex; gap: 4px; align-items: center; justify-content: flex-end; }
+.gr-days { padding: 4px 8px; font-size: 12px; white-space: nowrap; }
+.gr-more { display: flex; gap: 8px; align-items: center; margin: 2px 0 6px 12px; flex-wrap: wrap; }
+.gr-more .field { max-width: 260px; }
+.gr-more .gr-notes { flex: 1; max-width: none; min-width: 200px; }
+.gr-late { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #ff8a80; border: 1px solid #ff8a80; border-radius: 999px; padding: 1px 8px; }
+.gr-banner { border: 1px solid #ff8a80; background: rgba(255, 138, 128, .08); border-radius: 10px; padding: 10px 14px; margin-top: 8px; }
+.gr-status { font-size: 11px; border-radius: 999px; padding: 0 7px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.gr-status.s-booked { color: var(--cyan, #7fd0ea); border-color: var(--cyan, #7fd0ea); }
+.gr-status.s-out { color: var(--yellow); border-color: var(--yellow); }
+.gr-status.s-returned { color: var(--green, #6fcf7a); border-color: var(--green, #6fcf7a); }
+.gr-status.s-missing { color: #ff8a80; border-color: #ff8a80; }
+.gd-day.today { border-color: var(--yellow); }
+.gd-day .bl-cat-head { flex-wrap: wrap; }
+.gd-group { margin-top: 8px; }
+.gd-label { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--yellow); }
+.gd-group ul { margin: 4px 0 0; padding-left: 18px; }
+.gd-group li { margin: 2px 0; }
+.gd-cats { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 16px; margin-top: 4px; }
+
+@media print {
+  .gr-actions, .gr-days, .gr-cols span:last-child { display: none !important; }
+  .gr-status { color: #000 !important; border-color: #999 !important; }
+}

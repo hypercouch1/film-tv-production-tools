@@ -55,6 +55,13 @@ npm run db:migrate:admin
 npm run deploy
 ```
 
+**Updating a server set up before 1.5.0** (crew pages, continuity photos, two-step admin sign-in, admin log, backups): apply this database change once, then deploy:
+
+```bash
+npm run db:migrate:crew
+npm run deploy
+```
+
 (A new server set up with `npm run db:init` already has these changes.) The admin page is at `/admin`, for the emails listed in `ADMIN_EMAILS` in `wrangler.toml` (comma-separated). Those people sign in with their normal app account. Deploying also attaches the availability page's address, `film.prismdashboard.cc` (see `routes` in `wrangler.toml`); the domain must be in the same Cloudflare account. Change `AVAILABILITY_HOST` and `routes` to use another address.
 
 ## Local development
@@ -68,7 +75,7 @@ npm run dev
 ```
 The server runs at `http://127.0.0.1:8787`. In the app, set **Account → Server** to that address.
 
-With the dev server running, these run the end-to-end checks (accounts, permissions, live sync, viewer limits, removing people, brute-force lockout):
+With the dev server running (started with `npx wrangler dev --var ADMIN_EMAILS:admin@example.test` for the admin checks), these run the end-to-end checks (accounts, permissions, live sync, viewer limits, removing people, crew pages, photos, the admin page, backups, brute-force lockout):
 ```bash
 npm test
 ```
@@ -85,5 +92,16 @@ npm test
 - Session tokens are random. Only their SHA-256 hash is stored, and they expire after 30 days.
 - Sign-in is locked for 15 minutes after 10 failed attempts on the same email.
 - Membership and roles are checked on the server for every request and live connection. View-only members' edits are refused, and removed members are disconnected immediately.
+- **The admin page** needs the admin's password and a code from an authenticator app (set up the first time it's opened; asked for again every 12 hours). Each code works once, and wrong codes lock for 15 minutes after 10 tries.
+  - **Lost the phone?** Clear the key, then open the admin page to set it up again:
+    ```bash
+    npx wrangler d1 execute production-hub --remote --command "UPDATE users SET totp_secret = NULL WHERE email = 'you@example.com'"
+    ```
+- **Crew pages and availability links** work without an account: the 10-character code in the link is the key. Crew pages never show anyone's contact details.
+- **Backups:**
+  - Shared documents are copied into the `backups` table before their first change each day, keeping the last 14 per document.
+  - A deleted document's copies are kept for 30 days.
+  - Restore them from the admin page.
+  - The database itself can also be put back to any minute in the last 30 days with Cloudflare's Time Travel (`npx wrangler d1 time-travel restore production-hub --timestamp=<when>`). That rewinds every account and setting too, so use the admin page's restore for single documents.
 - **Forgotten passwords:** there's no reset by email (that needs an email-sending service). An admin makes a one-time code on the admin page instead. Only a hash of the code is stored; it works once, for 24 hours, and attempts are rate-limited like sign-in. Switched-off accounts can't sign in, and their sessions are ended.
 - If sign-in requests fail with an "exceeded CPU" error on the free plan, lower `PBKDF2_ITERATIONS` in `wrangler.toml`. Existing passwords keep working because each hash records its own round count.

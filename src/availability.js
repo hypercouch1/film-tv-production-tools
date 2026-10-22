@@ -122,6 +122,7 @@
       }, 'Ask by link…'));
     }
     return el('span', { class: 'avail-actions' },
+      opts.crewPages ? el('button', { class: 'ghost-btn', type: 'button', title: 'Each person’s page with their shoot days, call sheets and calendar', onclick: opts.crewPages }, 'Crew pages…') : null,
       n ? el('button', { class: 'ghost-btn', type: 'button', onclick: () => linksDialog(p, opts) }, `Links (${n})`) : null,
       opts.readOnly() ? null : el('button', { class: 'primary-btn', type: 'button', onclick: () => requestDialog(p, opts) }, 'Ask by link…'));
   }
