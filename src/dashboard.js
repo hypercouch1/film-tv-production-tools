@@ -376,6 +376,27 @@
     if (await P.share(prod.id)) location.reload();
   }
 
+  // A production on this computer: what's in it, for the tiles.
+  async function loadLocal(pid) {
+    window.ShotFormats.upgradeProject(prod);
+    const sd = (await api.loadStore('scripts')) || {};
+    scripts = (sd.scripts || []).filter((s) => s.productionId === pid);
+    const cd = (await api.loadStore('callsheets')) || {};
+    sheets = (cd.sheets || []).filter((s) => s.productionId === pid);
+    const pd = (await api.loadStore('post')) || {};
+    const raw = (pd.docs || []).find((x) => x.productionId === pid);
+    post = raw ? window.PostFormats.normalizePost(raw) : null;
+    const bd = (await api.loadStore('budget')) || {};
+    const rawBudget = (bd.docs || []).find((x) => x.productionId === pid);
+    budget = rawBudget ? window.BudgetFormats.normalizeBudget(rawBudget) : null;
+    const od = (await api.loadStore('onset')) || {};
+    const rawOnset = (od.docs || []).find((x) => x.productionId === pid);
+    onset = rawOnset ? window.OnsetFormats.normalizeOnset(rawOnset) : null;
+    const gd = (await api.loadStore('gear')) || {};
+    const rawGear = (gd.docs || []).find((x) => x.productionId === pid);
+    gear = rawGear ? window.GearFormats.normalizeGear(rawGear) : null;
+  }
+
   async function init() {
     const pid = P.id();
     await P.migrate();
@@ -397,23 +418,18 @@
         sheets = await window.Cloud.projects('callsheet', pid);
       } catch { /* offline: counts fill in later */ }
     } else {
-      window.ShotFormats.upgradeProject(prod);
-      const sd = (await api.loadStore('scripts')) || {};
-      scripts = (sd.scripts || []).filter((s) => s.productionId === pid);
-      const cd = (await api.loadStore('callsheets')) || {};
-      sheets = (cd.sheets || []).filter((s) => s.productionId === pid);
-      const pd = (await api.loadStore('post')) || {};
-      const raw = (pd.docs || []).find((x) => x.productionId === pid);
-      post = raw ? window.PostFormats.normalizePost(raw) : null;
-      const bd = (await api.loadStore('budget')) || {};
-      const rawBudget = (bd.docs || []).find((x) => x.productionId === pid);
-      budget = rawBudget ? window.BudgetFormats.normalizeBudget(rawBudget) : null;
-      const od = (await api.loadStore('onset')) || {};
-      const rawOnset = (od.docs || []).find((x) => x.productionId === pid);
-      onset = rawOnset ? window.OnsetFormats.normalizeOnset(rawOnset) : null;
-      const gd = (await api.loadStore('gear')) || {};
-      const rawGear = (gd.docs || []).find((x) => x.productionId === pid);
-      gear = rawGear ? window.GearFormats.normalizeGear(rawGear) : null;
+      await loadLocal(pid);
+      // Split screen: keep the tiles current while the other side is edited.
+      for (const key of ['shotsheets', 'scripts', 'callsheets', 'post', 'budget', 'onset', 'gear']) {
+        window.Common.onStoreChanged(key, async () => {
+          if (key === 'shotsheets') {
+            shots = (await api.loadStore('shotsheets')) || { projects: [] };
+            prod = (shots.projects || []).find((p) => p.id === pid) || prod;
+          }
+          await loadLocal(pid);
+          render();
+        });
+      }
     }
     render();
     wireTitle();

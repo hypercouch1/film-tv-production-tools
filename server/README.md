@@ -55,7 +55,7 @@ npm run db:migrate:admin
 npm run deploy
 ```
 
-**Updating a server set up before 1.5.0** (crew pages, continuity photos, two-step admin sign-in, admin log, backups): apply this database change once, then deploy:
+**Updating a server set up before 1.4.1** (crew pages, continuity photos, two-step admin sign-in, admin log, backups): apply this database change once, then deploy:
 
 ```bash
 npm run db:migrate:crew

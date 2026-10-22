@@ -18,7 +18,8 @@
   let showResolved = false;
   let message = null;     // shown instead of the page (e.g. nothing to open yet)
 
-  const store = window.Common.createStore('post', () => ({ ...state, docs: collab.localOnly(state.docs) }));
+  const store = window.Common.createStore('post', () => ({ ...state, docs: collab.localOnly(state.docs) }),
+    { list: 'docs', target: () => state, onChange: () => render({ keepScroll: true, remote: true }) });
   const active = () => state.docs.find((d) => d.id === state.activeId);
   function save() {
     const d = active();
@@ -443,6 +444,8 @@
     document.querySelectorAll('[data-export]').forEach((b) => b.addEventListener('click', () => exportAs(b.dataset.export)));
     // Coming back to the app: the production may have changed (new shots, days, breakdown).
     window.addEventListener('focus', async () => { try { await loadProduction(); render({ keepScroll: true }); } catch { /* offline */ } });
+    // Split screen: the production changed beside this page.
+    window.Common.onStoreChanged('shotsheets', async () => { if (!cloudProd) { await loadProduction(); render({ keepScroll: true }); } });
     api.onMenu((channel, arg) => {
       ({
         home: () => P.goHome(store),

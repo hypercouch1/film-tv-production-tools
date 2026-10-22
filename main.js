@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, dialog, Menu, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { fileURLToPath } = require('url');
@@ -7,6 +7,29 @@ const { createUpdater } = require('./updates.js');
 const isMac = process.platform === 'darwin';
 let win = null;
 let pendingOpenFile = null;
+
+// ---- Split screen ----
+// The window's own page (frame.html) is only a backdrop with the divider. The app's pages
+// are shown in panes on top of it: one filling the window, or two side by side. Each pane is
+// a full page of its own (its own live connection to shared documents); pages on this
+// computer are kept in step between the panes through the store (see store:save).
+let panes = [];            // [left, right] WebContentsViews (one when not split)
+let focused = null;        // the pane last used; menu commands go to it
+let ratio = 0.5;           // the left pane's share of the width
+const DIVIDER = 6;
+const MIN_PANE = 360;
+const pagePrefs = () => ({
+  preload: path.join(__dirname, 'preload.js'),
+  contextIsolation: true,
+  nodeIntegration: false,
+  sandbox: true,
+  // Keep timers running at normal speed while minimised or hidden, so live projects'
+  // keep-alive pings carry on and the connection stays up.
+  backgroundThrottling: false,
+});
+const mainPage = () => (panes[0] ? panes[0].webContents : null);
+const activePage = () => ((focused && panes.includes(focused)) ? focused : panes[0] || { webContents: null }).webContents;
+const allPages = () => panes.map((v) => v.webContents).filter((wc) => !wc.isDestroyed());
 
 // The app used to be called "Call Sheet", and its data (projects, sign-in) lives in a
 // folder named after the app. On first run under the new name, copy the old folder over.
@@ -50,18 +73,63 @@ function readFileForRenderer(filePath) {
   };
 }
 
-const currentPage = () => (win ? path.basename(decodeURIComponent(new URL(win.webContents.getURL() || 'file:///x').pathname)) : '');
+const pageOf = (wc) => (wc ? path.basename(decodeURIComponent(new URL(wc.getURL() || 'file:///x').pathname)) : '');
 
 function sendOpenFile(filePath) {
   if (!filePath || !fs.existsSync(filePath)) return;
   const page = PAGE_FOR_EXT[path.extname(filePath).toLowerCase().slice(1)] || 'callsheet.html';
-  if (win && !win.webContents.isLoading() && currentPage() === page) {
-    win.webContents.send('file:opened', readFileForRenderer(filePath));
+  const wc = mainPage();
+  if (wc && !wc.isLoading() && pageOf(wc) === page) {
+    wc.send('file:opened', readFileForRenderer(filePath));
   } else {
     // The page asks for this file once it has finished starting up.
     pendingOpenFile = filePath;
-    if (win) win.loadFile(path.join(__dirname, 'src', page));
+    if (wc) wc.loadFile(path.join(__dirname, 'src', page));
   }
+}
+
+// The window only ever shows the app's own pages. Anything else (a dropped link, a
+// redirect) is quietly stopped. Without this, a web page loaded in the window would get
+// the app's private API (reading and overwriting saved projects). Links meant to open
+// in a new window go to the user's browser.
+function guardContents(wc) {
+  const guard = (e, url) => {
+    if (!isAppUrl(url)) e.preventDefault();
+  };
+  wc.on('will-navigate', guard);
+  wc.on('will-redirect', guard);
+  wc.on('will-attach-webview', (e) => e.preventDefault());
+  wc.setWindowOpenHandler(({ url }) => {
+    openInBrowser(url);
+    return { action: 'deny' };
+  });
+}
+
+function createPane(page, search) {
+  const view = new WebContentsView({ webPreferences: pagePrefs() });
+  view.setBackgroundColor('#0c0a08');
+  guardContents(view.webContents);
+  view.webContents.on('focus', () => { focused = view; });
+  win.contentView.addChildView(view);
+  view.webContents.loadFile(path.join(__dirname, 'src', page), search ? { search } : undefined);
+  return view;
+}
+
+// Places the panes (and tells the divider and the pages where things are).
+function layout() {
+  if (!win) return;
+  const [w, h] = win.getContentSize();
+  if (panes.length === 1) {
+    panes[0].setBounds({ x: 0, y: 0, width: w, height: h });
+  } else if (panes.length === 2) {
+    const min = Math.min(MIN_PANE, Math.floor((w - DIVIDER) / 2));
+    const left = Math.max(min, Math.min(w - DIVIDER - min, Math.round((w - DIVIDER) * ratio)));
+    panes[0].setBounds({ x: 0, y: 0, width: left, height: h });
+    panes[1].setBounds({ x: left + DIVIDER, y: 0, width: w - left - DIVIDER, height: h });
+    win.webContents.send('split:layout', { split: true, x: left, width: DIVIDER });
+  }
+  if (panes.length < 2) win.webContents.send('split:layout', { split: false });
+  panes.forEach((v, i) => { if (!v.webContents.isDestroyed()) v.webContents.send('split:state', { split: panes.length > 1, side: i ? 'right' : 'left' }); });
 }
 
 function createWindow() {
@@ -72,37 +140,30 @@ function createWindow() {
     minHeight: 500,
     backgroundColor: '#0c0a08',
     title: 'Production Tools',
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      // Keep timers running at normal speed while minimised or hidden, so live projects'
-      // keep-alive pings carry on and the connection stays up.
-      backgroundThrottling: false,
-    },
+    webPreferences: pagePrefs(),
   });
+  guardContents(win.webContents);
+  win.loadFile(path.join(__dirname, 'src', 'frame.html'));
   // A file opened before the window existed (macOS open-file) decides the first page.
   const startPage = pendingOpenFile
     ? PAGE_FOR_EXT[path.extname(pendingOpenFile).toLowerCase().slice(1)] || 'home.html'
     : 'home.html';
-  win.loadFile(path.join(__dirname, 'src', startPage));
-  // The window only ever shows the app's own pages. Anything else (a dropped link, a
-  // redirect) is quietly stopped. Without this, a web page loaded in the window would get
-  // the app's private API (reading and overwriting saved projects). Links meant to open
-  // in a new window go to the user's browser via the handler below.
-  const guard = (e, url) => {
-    if (!isAppUrl(url)) e.preventDefault();
-  };
-  win.webContents.on('will-navigate', guard);
-  win.webContents.on('will-redirect', guard);
-  win.webContents.on('will-attach-webview', (e) => e.preventDefault());
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    openInBrowser(url);
-    return { action: 'deny' };
-  });
-  win.on('closed', () => { win = null; });
+  panes = [createPane(startPage)];
+  focused = panes[0];
+  layout();
+  for (const ev of ['resize', 'maximize', 'unmaximize', 'enter-full-screen', 'leave-full-screen']) win.on(ev, layout);
+  // Coming back to the window: typing goes to the pane last used.
+  win.on('focus', () => { const wc = activePage(); if (wc && !wc.isDestroyed()) wc.focus(); });
+  win.on('closed', () => { win = null; panes = []; focused = null; });
 }
+
+// A page opened beside this one: 'writer.html?production=…' (an app page and its query).
+function splitTarget(target) {
+  const m = String(target || '').match(/^([a-z-]+\.html)(?:\?([^#]*))?$/);
+  if (!m || m[1] === 'frame.html' || !fs.existsSync(path.join(__dirname, 'src', m[1]))) throw new Error('Unknown page');
+  return { page: m[1], search: m[2] || '' };
+}
+const paneOf = (wc) => panes.find((v) => v.webContents === wc);
 
 // ---- What the window may show and open ----
 const APP_PAGES = path.join(__dirname, 'src') + path.sep;
@@ -134,7 +195,7 @@ function handle(channel, fn) {
 }
 
 function menuSend(channel, arg) {
-  return () => win && win.webContents.send('menu', channel, arg);
+  return () => { const wc = activePage(); if (wc && !wc.isDestroyed()) wc.send('menu', channel, arg); };
 }
 
 function buildMenu() {
@@ -212,7 +273,7 @@ const repoSlug = String((pkg.repository && pkg.repository.url) || pkg.repository
   .replace(/^.*github\.com[/:]/, '').replace(/\.git$/, '');
 const updater = createUpdater({
   repo: repoSlug,
-  onChange: (info) => { if (win) win.webContents.send('update:status', info); },
+  onChange: (info) => allPages().forEach((wc) => wc.send('update:status', info)),
 });
 
 async function checkForUpdatesInteractive() {
@@ -254,21 +315,50 @@ async function checkForUpdatesInteractive() {
 
 // ---- IPC ----
 
-handle('store:load', (_e, key) => {
+function readStore(key) {
   try {
     return JSON.parse(fs.readFileSync(storePath(key), 'utf8'));
   } catch {
     return null;
   }
-});
-
-handle('store:save', (_e, key, data) => {
+}
+function writeStore(key, data) {
   const target = storePath(key);
   const tmp = target + '.tmp';
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8');
   fs.renameSync(tmp, target);
-  return true;
+}
+
+// Split screen: two pages can save the same store. Each save is numbered, and a page says
+// which version its changes were made on. A save made on an older version is merged into
+// the current one (only what that page changed is applied, as with live editing), so
+// neither page overwrites the other; the other pane is sent the result.
+require('./src/sync-core.js');
+const { diff, applyAll, clone } = globalThis.SyncCore;
+const versions = new Map(); // key → { v, snaps: Map(version → data) }
+function versionsOf(key) {
+  if (!versions.has(key)) versions.set(key, { v: 0, snaps: new Map([[0, readStore(key)]]) });
+  return versions.get(key);
+}
+
+handle('store:load', (_e, key) => readStore(key));
+handle('store:loadVersioned', (_e, key) => { const s = versionsOf(key); return { version: s.v, data: s.snaps.get(s.v) }; });
+
+handle('store:save', (e, key, data, baseVersion) => {
+  storePath(key); // unknown stores are refused
+  const s = versionsOf(key);
+  let out = data;
+  if (Number.isInteger(baseVersion) && baseVersion !== s.v && s.snaps.has(baseVersion)) {
+    out = clone(s.snaps.get(s.v) || {});
+    applyAll(out, diff(s.snaps.get(baseVersion) || {}, data));
+  }
+  writeStore(key, out);
+  s.v++;
+  s.snaps.set(s.v, out);
+  for (const v of s.snaps.keys()) if (v < s.v - 30) s.snaps.delete(v);
+  for (const wc of allPages()) if (wc !== e.sender) wc.send('store:changed', key, out, s.v);
+  return { version: s.v, merged: out !== data ? out : null };
 });
 
 handle('file:import', async (_e, { label = 'Files', extensions = ['*'] } = {}) => {
@@ -295,14 +385,15 @@ handle('file:export', async (_e, { defaultName, ext, label, content }) => {
   return res.filePath;
 });
 
-handle('file:exportPdf', async (_e, { defaultName }) => {
+handle('file:exportPdf', async (e, { defaultName }) => {
   const res = await dialog.showSaveDialog(win, {
     title: 'Export PDF',
     defaultPath: defaultName,
     filters: [{ name: 'PDF', extensions: ['pdf'] }],
   });
   if (res.canceled || !res.filePath) return null;
-  const pdf = await win.webContents.printToPDF({
+  // The page that asked (in split screen, just that pane).
+  const pdf = await e.sender.printToPDF({
     printBackground: true,
     pageSize: 'Letter',
     // Pages lay out their own margins; Electron's default margin would show as a dark border.
@@ -430,6 +521,45 @@ handle('file:takePending', (e) => {
   const file = pendingOpenFile;
   pendingOpenFile = null;
   try { return readFileForRenderer(file); } catch { return null; }
+});
+
+// ---- Split screen ----
+handle('split:state', (e) => ({ split: panes.length > 1, side: panes.indexOf(paneOf(e.sender)) === 1 ? 'right' : 'left' }));
+// Opens a page beside the one asking (or, when split already, in the other pane).
+handle('split:open', (e, target) => {
+  const { page, search } = splitTarget(target);
+  const from = paneOf(e.sender);
+  if (!from) return false;
+  if (panes.length === 2) {
+    const other = panes.find((v) => v !== from);
+    other.webContents.loadFile(path.join(__dirname, 'src', page), search ? { search } : undefined);
+  } else {
+    panes.push(createPane(page, search));
+  }
+  layout();
+  return true;
+});
+// Closes the pane asking; the other one fills the window.
+handle('split:close', (e) => {
+  const view = paneOf(e.sender);
+  if (!view || panes.length < 2) return false;
+  panes = panes.filter((v) => v !== view);
+  focused = panes[0];
+  win.contentView.removeChildView(view);
+  // (The page saved its changes before asking.)
+  view.webContents.close();
+  layout();
+  panes[0].webContents.focus();
+  return true;
+});
+handle('split:swap', () => { if (panes.length === 2) { panes.reverse(); layout(); } return true; });
+// The divider (frame.html) being dragged: x is where it is now; null puts it back in the middle.
+handle('split:resize', (_e, x) => {
+  if (!win || panes.length < 2) return false;
+  const [w] = win.getContentSize();
+  ratio = x == null ? 0.5 : Math.max(0.15, Math.min(0.85, Number(x) / Math.max(1, w - DIVIDER)));
+  layout();
+  return true;
 });
 
 // ---- App lifecycle ----

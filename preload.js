@@ -4,7 +4,9 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 // navigation away from them and rejects IPC from anything else.
 if (location.protocol === 'file:') contextBridge.exposeInMainWorld('api', {
   loadStore: (key) => ipcRenderer.invoke('store:load', key),
-  saveStore: (key, data) => ipcRenderer.invoke('store:save', key, data),
+  // baseVersion (split screen): the version these changes were made on (see main.js).
+  saveStore: (key, data, baseVersion) => ipcRenderer.invoke('store:save', key, data, baseVersion),
+  loadStoreVersioned: (key) => ipcRenderer.invoke('store:loadVersioned', key),
   importFiles: (opts) => ipcRenderer.invoke('file:import', opts),
   exportFile: (opts) => ipcRenderer.invoke('file:export', opts),
   exportPdf: (opts) => ipcRenderer.invoke('file:exportPdf', opts),
@@ -24,6 +26,18 @@ if (location.protocol === 'file:') contextBridge.exposeInMainWorld('api', {
   savePhoto: (id, bytes) => ipcRenderer.invoke('photo:save', id, bytes),
   loadPhoto: (id) => ipcRenderer.invoke('photo:load', id),
   deletePhoto: (id) => ipcRenderer.invoke('photo:delete', id),
+  // Split screen: two pages side by side in the window.
+  split: {
+    state: () => ipcRenderer.invoke('split:state'),
+    open: (target) => ipcRenderer.invoke('split:open', target),
+    close: () => ipcRenderer.invoke('split:close'),
+    swap: () => ipcRenderer.invoke('split:swap'),
+    resize: (x) => ipcRenderer.invoke('split:resize', x),
+    onState: (cb) => ipcRenderer.on('split:state', (_e, s) => cb(s)),
+    onLayout: (cb) => ipcRenderer.on('split:layout', (_e, l) => cb(l)),
+  },
+  // Another pane saved a store this page may have open.
+  onStoreChanged: (cb) => ipcRenderer.on('store:changed', (_e, key, data, version) => cb(key, data, version)),
   onMenu: (cb) => ipcRenderer.on('menu', (_e, channel, arg) => cb(channel, arg)),
   onFileOpened: (cb) => ipcRenderer.on('file:opened', (_e, file) => cb(file)),
   platform: process.platform,

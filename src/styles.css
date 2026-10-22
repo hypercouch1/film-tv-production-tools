@@ -334,6 +334,44 @@ input { font: inherit; color: inherit; }
   .item.current { background: none; box-shadow: none; }
 }
 
+/* ---------- Split screen ---------- */
+.split-btn.active { border-color: var(--yellow); color: var(--yellow); }
+.split-menu { max-height: calc(100vh - 80px); overflow-y: auto; }
+.menu-label { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); padding: 6px 10px 4px; }
+
+/* ---------- Small windows (and split screen panes) ---------- */
+/* Toolbars wrap onto a second line rather than pushing buttons out of reach. */
+.toolbar { flex-wrap: wrap; row-gap: 6px; }
+.toolbar .seg { flex-wrap: wrap; }
+/* Wide tables and grids scroll sideways inside the page. */
+.sheet { overflow-x: auto; }
+.menu { max-width: calc(100vw - 16px); }
+@media (max-width: 900px) {
+  /* The sidebar is tucked away and slides over the page when opened (☰), instead of
+     squeezing it; clicking anywhere else puts it away again (common.js). */
+  .app { position: relative; }
+  .sidebar { position: absolute; top: 0; bottom: 0; left: 0; z-index: 40; box-shadow: 10px 0 30px rgba(0, 0, 0, .5); margin-left: -260px; }
+  .app.sidebar-peek .sidebar { margin-left: 0; }
+  .sheet-header { padding: 18px 18px 10px; }
+  .sections { padding: 4px 18px 40vh; }
+  .sheet-title, .sheet-title-input { font-size: 34px; }
+  .home { padding: 28px 18px 48px; }
+  .home-header .sheet-title, .dash-title-input { font-size: 40px !important; }
+  .title-row { flex-wrap: wrap; row-gap: 8px; }
+  .tiles { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; }
+  .tile { min-height: 0; padding: 20px 18px 16px; }
+  .tile-name { font-size: 32px; }
+}
+@media (max-width: 600px) {
+  .toolbar { padding: 8px 10px; gap: 6px; }
+  .system-label { display: none; }
+  .sheet-title, .sheet-title-input { font-size: 28px; }
+  .section-title { font-size: 26px; }
+  .tile-logo { width: 60px; height: 60px; }
+  .tile-logo svg { width: 40px; height: 40px; }
+  .update-banner { left: 8px; right: 8px; max-width: none; flex-wrap: wrap; }
+}
+
 ::-webkit-scrollbar { width: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>Production Tools</title>
+  <!-- The window's backdrop: the app's pages are shown in panes on top of it (main.js).
+       In split screen, the gap between the panes is the divider dragged here. -->
+  <style>
+    html, body { margin: 0; height: 100%; background: #0c0a08; overflow: hidden; }
+    #divider { position: fixed; top: 0; bottom: 0; cursor: col-resize; display: none; background: #2a251f; }
+    #divider::after { content: ''; position: absolute; left: 50%; top: 50%; width: 2px; height: 36px; margin: -18px 0 0 -1px; border-radius: 2px; background: #8f99a3; }
+    #divider:hover, #divider.dragging { background: #e6cf2e; }
+    body.dragging { cursor: col-resize; }
+  </style>
+</head>
+<body>
+  <div id="divider" title="Drag to resize · double-click to split evenly"></div>
+  <script src="frame.js"></script>
+</body>
+</html>

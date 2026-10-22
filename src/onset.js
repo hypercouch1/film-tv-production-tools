@@ -19,7 +19,8 @@
   let search = '';
   let message = null;
 
-  const store = window.Common.createStore('onset', () => ({ ...state, docs: collab.localOnly(state.docs) }));
+  const store = window.Common.createStore('onset', () => ({ ...state, docs: collab.localOnly(state.docs) }),
+    { list: 'docs', target: () => state, onChange: () => render({ keepScroll: true, remote: true }) });
   const active = () => state.docs.find((d) => d.id === state.activeId);
   function save() {
     const d = active();
@@ -378,6 +379,9 @@
     document.querySelectorAll('#viewToggle button').forEach((b) => b.addEventListener('click', () => { view = b.dataset.view; render(); $('sheet').scrollTop = 0; }));
     $('exportPdf').addEventListener('click', exportPdf);
     window.addEventListener('focus', async () => { try { await loadProduction(); await loadPost(); } catch { /* offline */ } });
+    // Split screen: the production or the take log changed beside this page.
+    window.Common.onStoreChanged('shotsheets', async () => { if (!cloudProd) { await loadProduction(); render({ keepScroll: true, remote: true }); } });
+    window.Common.onStoreChanged('post', async () => { await loadPost(); render({ keepScroll: true, remote: true }); });
     api.onMenu((channel) => {
       ({
         home: () => P.goHome(store),

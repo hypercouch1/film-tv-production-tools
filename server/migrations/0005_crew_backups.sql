@@ -1,4 +1,4 @@
--- 1.5.0: personal crew pages (call sheets, "Got it", calendar), continuity photos, the
+-- 1.4.1: personal crew pages (call sheets, "Got it", calendar), continuity photos, the
 -- admin's two-step sign-in, the admin log and document backups.
 -- Apply once with: npm run db:migrate:crew (remote) or npm run db:migrate:crew:local
 

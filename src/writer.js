@@ -24,7 +24,8 @@
   const openEntry = (x) => (x.doc && !x.doc._cloud ? selectScript(x.id) : collab.open(x.id));
 
   // Shared (cloud) scripts live on the server, so only local scripts are saved here.
-  const store = window.Common.createStore('scripts', () => ({ ...state, scripts: collab.localOnly(state.scripts) }));
+  const store = window.Common.createStore('scripts', () => ({ ...state, scripts: collab.localOnly(state.scripts) }),
+    { list: 'scripts', target: () => state, onChange: () => render({ keepScroll: true, remote: true }) });
   const active = () => state.scripts.find((d) => d.id === state.activeId);
   function save() {
     const d = active();

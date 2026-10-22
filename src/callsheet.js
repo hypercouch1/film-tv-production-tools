@@ -39,7 +39,8 @@
 
   // ---------- Persistence ----------
   // Shared (cloud) sheets live on the server, so only local sheets are saved here.
-  const store = window.Common.createStore('callsheets', () => ({ ...state, sheets: collab.localOnly(state.sheets) }));
+  const store = window.Common.createStore('callsheets', () => ({ ...state, sheets: collab.localOnly(state.sheets) }),
+    { list: 'sheets', target: () => state, onChange: () => render({ keepScroll: true, remote: true }) });
   function save() {
     const sheet = active();
     if (sheet) sheet.updatedAt = Date.now();

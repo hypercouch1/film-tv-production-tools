@@ -1,14 +1,31 @@
 # Production Tools
 
-A desktop app (Windows and macOS) with several production systems behind one home screen. Projects you don't share stay on your computer. Each system keeps its own save file in your user data folder (`%APPDATA%\Production Tools\` on Windows, `~/Library/Application Support/Production Tools/` on macOS).
+A desktop app for Windows and macOS that runs a film or TV production from script to post, in one place. Everything for a production is linked together: the script feeds the shot list, the shot list feeds the schedule, and the schedule feeds call sheets, the budget and the daily reports.
 
-The app was previously called **Call Sheet**. On first launch under the new name, it copies everything over from the old `Call Sheet` folder (projects and sign-in).
+- **Work alone or together.** Productions stay on your computer until you share them. Shared productions sync live with everyone you invite, through a small server you run on Cloudflare's free plan.
+- **Cast and crew don't need the app.** They get personal links on their phone for their availability, their call sheets (with a **Got it** button) and their shoot days in their calendar.
+- **Updates itself.** New versions download and install on their own.
 
-| System | What it does |
+| Page | What it does |
 |---|---|
-| **Script Writer** | Write screenplays with the formatting done for you |
-| **Call Sheet** | Cue checklists for running a live show |
-| **Shot Sheet** | Shot lists for film, with a shoot-day calendar |
+| **Productions** | Start screen: your films and TV shows (with episodes), on this computer and shared with you |
+| **Script** | Write screenplays formatted automatically; import PDF, Final Draft or Fountain; tag props, wardrobe and more for the breakdown |
+| **Shot Sheet** | Scenes and shots linked to the script; cast and crew; run the day as a checklist |
+| **Schedule** | Calendar, stripboard, day out of days and availability; call sheets for each shoot day, sent to phones |
+| **Cast & Crew** | Characters, actors, crew (several roles each) and contacts |
+| **Call Sheets** | Cue checklists for a shoot or live show |
+| **Breakdown** | Props, wardrobe, vehicles, extras and more for each scene |
+| **Locations** | Addresses, contacts, permits, parking and the nearest hospital; fills in call sheets |
+| **On Set** | Daily production reports and continuity notes with photos |
+| **Post** | Take log, media catalogue, post tracker, cuts and review notes |
+| **Budget** | Top sheet and detail built from the schedule, expenses and a cost report (owner and editors only) |
+| **Equipment** | Gear lists, rentals, check-out and return |
+
+**Split screen:** open any two pages side by side in the same window (for example the Script beside the Shot Sheet), with live editing on both sides. See [Split screen](#split-screen).
+
+**Admin page:** usage stats, accounts, one-time password codes and backups for whoever runs the server (see [Admin page](#admin-page)).
+
+Each page keeps its own save file in your user data folder (`%APPDATA%\Production Tools\` on Windows, `~/Library/Application Support/Production Tools/` on macOS). The app was previously called **Call Sheet**. On first launch under the new name, it copies everything over from the old `Call Sheet` folder (projects and sign-in).
 
 ## Run and build
 
@@ -59,6 +76,34 @@ The `online` branch adds accounts and live collaboration. It needs the small Clo
   - Edits made offline are sent when the connection returns.
 - **Owners** manage people under **People**. Deleting a shared production deletes everything in it for everyone; anyone else can **Leave**.
 - **Shared before productions:** scripts and call sheets shared on their own by an older version are listed on the start screen. Their owner can move each into a shared production.
+
+## Split screen
+
+**◫ Split** in the toolbar of any production page (or on the production home) opens another page of the production beside it:
+
+- **Divider:** drag it to resize the two sides; double-click it to split evenly.
+- **◫ Split ▾ in split screen:** show another page on the other side, **Swap sides**, or **Close this side** (the other side fills the window).
+- **Menus and shortcuts** (Undo, Export, Home…) act on the side you last clicked in.
+
+Both sides are live:
+
+- **Shared productions:** each side keeps its own live connection.
+- **Productions on this computer:** each save says which version of the save file it was made on. A save made on an older version is merged into the current one, applying only what that side changed, the same way live editing works. The other side gets the result straight away, so the two sides never overwrite each other, even when both are being edited at once.
+- **Pages showing data from another page** refresh when that data changes on the other side. For example, the Shot Sheet follows a script being written beside it, and the production home's tiles stay current.
+
+How it works:
+
+- **The window** (`main.js`) shows its own page, `frame.html`, as a backdrop. The app's pages are shown on top of it, one or two at a time, as separate views.
+- **The divider** is the gap between the two views, drawn by `frame.js`.
+- **The Split button** and the merging on each page are in `src/common.js` (`initSplit`, `createStore`).
+
+## Small windows
+
+The app works from its minimum window size (720 × 500) and in either side of split screen:
+
+- Toolbars wrap onto a second line instead of pushing buttons out of reach.
+- Below 900 px wide, the sidebar slides over the page instead of squeezing it, and padding and titles shrink.
+- Wide tables and grids (budget lines, equipment, expenses) scroll sideways inside the page.
 
 ## Productions
 

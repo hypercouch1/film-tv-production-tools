@@ -101,23 +101,96 @@
   const uncsv = (s) => (/^'[=+\-@\t\r]/.test(s) ? s.slice(1) : s);
 
   // ---- Debounced store saving that can be flushed before leaving the page ----
-  function createStore(key, getData) {
+  // ---- Saving, and split screen ----
+  // Another pane saved a store: listeners for that key hear about it.
+  const storeListeners = [];
+  function onStoreChanged(key, fn) { storeListeners.push({ key, fn }); }
+  if (api && api.onStoreChanged) api.onStoreChanged((key, data, version) => storeListeners.forEach((l) => { if (l.key === key) l.fn(data, version); }));
+  const openStores = [];
+
+  // sync: { list, target, onChange } keeps this page in step with the other pane in split
+  // screen. Saves say which version of the store they were made on, and the app merges them
+  // (main.js). What the other pane changed in target()[list] (the page's live state) is
+  // merged in here like a collaborator's edit, keeping this page's unsaved changes.
+  function createStore(key, getData, sync) {
     let timer = null;
+    let base = null; // { version, data }: the store as this page last knew it
+    if (sync) api.loadStoreVersioned(key).then((b) => { if (!base) base = { version: b.version, data: b.data || {} }; });
+    // Everything in `latest` that this page didn't know about goes into its live state.
+    const mergeIn = (latest, version) => {
+      if (!base || version <= base.version) return;
+      const { diff, applyAll } = window.SyncCore;
+      const ops = diff(base.data || {}, latest || {}).filter((op) => op.p[0] === sync.list);
+      base = { version, data: latest || {} };
+      const target = sync.target();
+      if (target && ops.length && applyAll(target, ops).length) sync.onChange();
+    };
+    const write = async (data) => {
+      if (!sync) return api.saveStore(key, data);
+      const res = await api.saveStore(key, data, base ? base.version : undefined);
+      if (!res || res.version == null) return;
+      if (res.merged) mergeIn(res.merged, res.version);
+      else if (!base || res.version > base.version) base = { version: res.version, data };
+    };
     // The save message is sent synchronously, so it still lands if the page is closing.
     const flushNow = () => {
-      if (timer) { clearTimeout(timer); timer = null; api.saveStore(key, getData()); }
+      if (timer) { clearTimeout(timer); timer = null; write(getData()); }
     };
     window.addEventListener('beforeunload', flushNow);
     window.addEventListener('pagehide', flushNow);
-    return {
+    const store = {
       save() {
         clearTimeout(timer);
-        timer = setTimeout(() => { timer = null; api.saveStore(key, getData()); }, 250);
+        timer = setTimeout(() => { timer = null; write(getData()); }, 250);
       },
       async flush() {
-        if (timer) { clearTimeout(timer); timer = null; await api.saveStore(key, getData()); }
+        if (timer) { clearTimeout(timer); timer = null; await write(getData()); }
       },
     };
+    if (sync) onStoreChanged(key, mergeIn);
+    openStores.push(store);
+    return store;
+  }
+
+  // Split screen: a "Split" button in the toolbar opens another page of the production
+  // beside this one; in split screen it also swaps the sides or closes this side.
+  const SPLIT_PAGES = [
+    ['dashboard.html', 'Production home'], ['writer.html', 'Script'], ['shotsheet.html', 'Shot Sheet'], ['schedule.html', 'Schedule'],
+    ['shotsheet.html', 'Cast & Crew', { view: 'people' }], ['callsheet.html', 'Call Sheets'], ['breakdown.html', 'Breakdown'],
+    ['locations.html', 'Locations'], ['onset.html', 'On Set'], ['post.html', 'Post'], ['budget.html', 'Budget'], ['gear.html', 'Equipment'],
+  ];
+  async function initSplit() {
+    if (!api || !api.split || /home\.html$/.test(location.pathname)) return;
+    const P = window.Production;
+    if (!P || !P.id()) return;
+    const host = document.querySelector('.toolbar') || document.querySelector('.home .title-row');
+    if (!host || host.querySelector('.split-wrap')) return;
+    const btn = el('button', { class: 'ghost-btn split-btn', type: 'button', title: 'Split screen: open another page beside this one' }, '◫ Split');
+    const menu = el('div', { class: 'menu split-menu', hidden: true });
+    const wrap = el('div', { class: 'menu-wrap split-wrap' }, btn, menu);
+    let state = { split: false, side: 'left' };
+    const flushAll = () => Promise.all(openStores.map((s) => s.flush()));
+    const fill = () => {
+      menu.replaceChildren(
+        el('div', { class: 'menu-label' }, state.split ? 'Show in the other side' : 'Open beside this page'),
+        ...SPLIT_PAGES.map(([page, label, params]) => el('button', { type: 'button', onclick: async () => {
+          menu.hidden = true;
+          await flushAll();
+          api.split.open(P.link(page, params));
+        } }, label)),
+        ...(state.split ? [
+          el('hr'),
+          el('button', { type: 'button', onclick: () => { menu.hidden = true; api.split.swap(); } }, '⇄ Swap sides'),
+          el('button', { type: 'button', onclick: async () => { menu.hidden = true; await flushAll(); api.split.close(); } }, '✕ Close this side'),
+        ] : []));
+    };
+    btn.addEventListener('click', (e) => { e.stopPropagation(); const open = menu.hidden; document.querySelectorAll('.menu').forEach((m) => { m.hidden = true; }); if (open) { fill(); menu.hidden = false; } });
+    document.addEventListener('click', (e) => { if (!wrap.contains(e.target)) menu.hidden = true; });
+    const show = (s) => { state = s; btn.classList.toggle('active', s.split); btn.textContent = s.split ? '◫ Split ▾' : '◫ Split'; };
+    api.split.onState(show);
+    show(await api.split.state());
+    const spacer = host.querySelector('.toolbar-spacer');
+    if (spacer) spacer.after(wrap); else host.append(wrap);
   }
 
   async function goHome(store) {
@@ -304,7 +377,28 @@
 
   // Every page calls this once: shows a banner when GitHub has a newer release, or when
   // the sync server says this version is too old.
+  // Narrow windows (and split screen): the sidebar is tucked away; ☰ slides it over the page
+  // and clicking anywhere else puts it away. The page's own sidebar setting isn't changed.
+  function initNarrowSidebar() {
+    const app = $('app');
+    const sidebar = $('sidebar');
+    if (!app || !sidebar || !$('sidebarToggle')) return;
+    const narrow = () => window.matchMedia('(max-width: 900px)').matches;
+    const peek = (on) => app.classList.toggle('sidebar-peek', on);
+    document.addEventListener('click', (e) => {
+      if (!narrow()) return;
+      if (e.target.closest('#sidebarToggle')) { e.stopImmediatePropagation(); e.preventDefault(); peek(!app.classList.contains('sidebar-peek')); return; }
+      if (!app.classList.contains('sidebar-peek')) return;
+      // Picking something in the sidebar opens it and puts the sidebar away.
+      if (!e.target.closest('#sidebar') || e.target.closest('li')) setTimeout(() => peek(false), 0);
+    }, true);
+    window.matchMedia('(max-width: 900px)').addEventListener('change', () => peek(false));
+    if (api && api.onMenu) api.onMenu((channel) => { if (channel === 'toggleSidebar' && narrow()) peek(!app.classList.contains('sidebar-peek')); });
+  }
+
   async function initUpdates() {
+    initSplit().catch(() => {});
+    initNarrowSidebar();
     let info = null;
     let required = null;
     try { info = await api.getUpdateInfo(); } catch { /* offline */ }
@@ -332,7 +426,7 @@
 
   window.Common = {
     api, uid, $, mod, esc, fmt, el, toast, relTime, safeFileName,
-    parseCSV, csvField, createStore, goHome, wireDropdowns, onFileDrop, modal,
+    parseCSV, csvField, createStore, onStoreChanged, goHome, wireDropdowns, onFileDrop, modal,
     setHandoff, takeHandoff, compareVersions, initUpdates, pickScript, emptyState, wireUndo,
   };
 })();

@@ -26,7 +26,8 @@
   let episodeFilter = null;    // TV: the episode whose shot list is shown (cast, crew and schedule cover all)
 
   // Shared (cloud) projects live on the server, so only local projects are saved here.
-  const store = window.Common.createStore('shotsheets', () => ({ ...state, projects: collab.localOnly(state.projects) }));
+  const store = window.Common.createStore('shotsheets', () => ({ ...state, projects: collab.localOnly(state.projects) }),
+    { list: 'projects', target: () => state, onChange: () => { state.projects.forEach((p) => { if (!p._cloud) F.upgradeProject(p); }); render({ keepScroll: true, remote: true }); } });
   const active = () => state.projects.find((p) => p.id === state.activeId);
   function save() {
     const p = active();
@@ -1777,10 +1778,13 @@
     $('importScriptBtn').addEventListener('click', importScript);
     $('commentsBtn').addEventListener('click', () => active() && comments.open());
     // Coming back to the app: re-check linked scripts for changes.
-    window.addEventListener('focus', async () => {
+    const recheckScripts = async () => {
       const p = active();
       if (p && linkOf(p)) { await loadScripts(); render({ keepScroll: true }); }
-    });
+    };
+    window.addEventListener('focus', recheckScripts);
+    // Split screen: the script being written beside this page.
+    window.Common.onStoreChanged('scripts', recheckScripts);
     $('resetBtn').addEventListener('click', resetChecks);
     $('editBtn').addEventListener('click', toggleEdit);
     $('sidebarToggle').addEventListener('click', toggleSidebar);

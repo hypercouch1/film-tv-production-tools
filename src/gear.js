@@ -17,7 +17,8 @@
   let message = null;
   const open = new Set();     // items showing serial and notes
 
-  const store = window.Common.createStore('gear', () => ({ ...state, docs: collab.localOnly(state.docs) }));
+  const store = window.Common.createStore('gear', () => ({ ...state, docs: collab.localOnly(state.docs) }),
+    { list: 'docs', target: () => state, onChange: () => render({ keepScroll: true, remote: true }) });
   const active = () => state.docs.find((d) => d.id === state.activeId);
   function save() {
     const d = active();
@@ -282,6 +283,8 @@
     window.Common.wireDropdowns();
     document.querySelectorAll('[data-export]').forEach((b) => b.addEventListener('click', () => exportAs(b.dataset.export)));
     window.addEventListener('focus', async () => { try { await loadProduction(); } catch { /* offline */ } });
+    // Split screen: the production changed beside this page.
+    window.Common.onStoreChanged('shotsheets', async () => { if (!cloudProd) { await loadProduction(); render({ keepScroll: true }); } });
     api.onMenu((channel, arg) => {
       ({
         home: () => P.goHome(store),

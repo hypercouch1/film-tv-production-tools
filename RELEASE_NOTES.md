@@ -1,4 +1,13 @@
-# Production Tools 1.5.0
+# Production Tools 1.4.1
+
+## Split screen
+- **Two pages side by side:** click **◫ Split** on any page of a production and choose another page to open beside it. For example, the Script next to the Shot Sheet, or the Schedule next to the Budget.
+- **Drag the divider** to resize the sides; double-click it to split evenly. From **◫ Split** you can also swap the sides, show another page on the other side, or close a side.
+- **Live on both sides:** changes on one side appear on the other straight away, for productions on this computer and shared ones. You can edit both sides at once without losing anything.
+
+## Works in small windows
+- Toolbars wrap onto a second line instead of hiding buttons, so every option can be reached in a small window or a narrow side of split screen.
+- The sidebar slides over the page instead of squeezing it, and wide tables scroll sideways.
 
 ## Call sheets on everyone's phone
 - **Send to cast & crew:** on a shoot day (Schedule → **Send…**, or on the call sheet), send the call sheet out. Each person gets a personal page on their phone with their call time, their scenes and the full call sheet. No app or account needed.
