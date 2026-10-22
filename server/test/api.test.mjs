@@ -324,12 +324,75 @@ watcher.close();
 await api('DELETE', `/api/projects/x${prodId}`, null, A);
 step('availability links: answer without an account, reaches the production live, replace and revoke');
 
+// A production's budget is for its owner and editors only.
+const budget = await api('POST', '/api/projects', { kind: 'budget', parent: prodId, doc: { title: 'Budget', lines: [] } }, A);
+assert.equal(budget.status, 200, budget.error);
+assert.equal((await api('POST', '/api/projects', { kind: 'budget', doc: { title: 'x' } }, A)).status, 400, 'budgets only live in a production');
+assert.equal((await api('GET', `/api/projects?parent=${prodId}&kind=budget`, null, D)).projects.length, 0, 'view-only members don’t see it listed');
+assert.equal((await api('GET', `/api/projects/${budget.project.id}/doc`, null, D)).status, 404, 'or readable');
+assert.notEqual((await live(budget.project.id, D).closed).code, 1000, 'or openable');
+const carolBudget = live(budget.project.id, C);
+assert.equal((await carolBudget.next((m) => m.type === 'snapshot')).role, 'editor', 'editors can');
+const carolId2 = (await api('GET', `/api/projects/${prodId}/members`, null, A)).members.find((x) => x.name === 'Carol').id;
+await api('PATCH', `/api/projects/${prodId}/members/${carolId2}`, { role: 'viewer' }, A);
+await carolBudget.next((m) => m.type === 'gone');
+assert.equal((await api('GET', `/api/projects/${budget.project.id}/doc`, null, C)).status, 404, 'made view-only: the budget goes away');
+await api('PATCH', `/api/projects/${prodId}/members/${carolId2}`, { role: 'editor' }, A);
+step('budgets: owner and editors only, even when someone is made view-only while it’s open');
+
 // Editors can delete a document inside; deleting the production deletes everything.
 assert.equal((await api('DELETE', `/api/projects/${sheet.project.id}`, null, C)).deleted, true);
 assert.equal((await api('DELETE', `/api/projects/${prodId}`, null, A)).deleted, true);
 await carolScript.next((m) => m.type === 'gone');
 assert.equal((await api('GET', `/api/projects/${childId}/doc`, null, A)).status, 404);
 step('deleting a production deletes everything in it');
+
+// ---- Admin (the test server runs with ADMIN_EMAILS=admin@example.test) ----
+let admin = await api('POST', '/api/login', { email: 'admin@example.test', password: 'correct horse admin' });
+if (admin.status !== 200) admin = await api('POST', '/api/signup', { email: 'admin@example.test', name: 'Admin', password: 'correct horse admin' });
+assert.equal(admin.status, 200, admin.error);
+const ADM = admin.token;
+assert.equal((await api('GET', '/api/admin/stats', null, C)).status, 403, 'only the admin');
+assert.equal((await api('GET', '/api/admin/users', null)).status, 401);
+await fetch(BASE + '/api/me', { headers: { Authorization: 'Bearer ' + C, 'X-App-Version': '1.4.0' } });
+const stats = await api('GET', '/api/admin/stats', null, ADM);
+assert.ok(stats.users.total >= 4 && stats.users.active1 >= 1, 'counts accounts and who was active');
+assert.ok(stats.versions.some((v) => v.version === '1.4.0'), 'app versions in use');
+assert.equal(stats.signupsByWeek.length, 12);
+const found = (await api('GET', `/api/admin/users?q=${encodeURIComponent('carol.' + run)}`, null, ADM)).users;
+assert.deepEqual(found.map((x) => [x.name, x.appVersion]), [['Carol', '1.4.0']]);
+step('admin: stats (accounts, activity, versions) and account search, for the admin only');
+
+// One-time code for a forgotten password.
+const carolUser = found[0];
+const codeRes = await api('POST', `/api/admin/users/${carolUser.id}/reset-code`, null, ADM);
+assert.match(codeRes.code, /^[A-HJ-NP-Z2-9]{10}$/);
+assert.equal((await api('POST', `/api/admin/users/${carolUser.id}/reset-code`, null, C)).status, 403);
+assert.equal((await api('POST', '/api/reset', { email: `carol.${run}@example.com`, code: 'WRONGCODE1', password: 'new password 1' })).status, 401);
+assert.equal((await api('POST', '/api/reset', { email: `bob.${run}@example.com`, code: codeRes.code, password: 'new password 1' })).status, 401, 'a code is for one account');
+const reset = await api('POST', '/api/reset', { email: `carol.${run}@example.com`, code: codeRes.code.slice(0, 5) + '-' + codeRes.code.slice(5).toLowerCase(), password: 'new password 1' });
+assert.equal(reset.status, 200, reset.error);
+assert.equal((await api('GET', '/api/me', null, C)).status, 401, 'old sessions end');
+assert.equal((await api('POST', '/api/login', { email: `carol.${run}@example.com`, password: 'new password 1' })).status, 200, 'new password works');
+assert.equal((await api('POST', '/api/reset', { email: `carol.${run}@example.com`, code: codeRes.code, password: 'another one 2' })).status, 401, 'a code works once');
+step('one-time codes reset a forgotten password once, for one account');
+
+// Switching an account off, editing, deleting.
+const C2 = reset.token;
+assert.equal((await api('POST', `/api/admin/users/${carolUser.id}/disable`, { disabled: true }, ADM)).status, 200);
+assert.equal((await api('GET', '/api/me', null, C2)).status, 401, 'switched off: signed out');
+assert.equal((await api('POST', '/api/login', { email: `carol.${run}@example.com`, password: 'new password 1' })).status, 403);
+await api('POST', `/api/admin/users/${carolUser.id}/disable`, { disabled: false }, ADM);
+assert.equal((await api('POST', '/api/login', { email: `carol.${run}@example.com`, password: 'new password 1' })).status, 200, 'switched on again');
+assert.equal((await api('PATCH', `/api/admin/users/${carolUser.id}`, { name: 'Carol B' }, ADM)).status, 200);
+assert.equal((await api('POST', `/api/admin/users/${admin.user.id}/disable`, { disabled: true }, ADM)).status, 400, 'not your own');
+const aliceId = (await api('GET', `/api/admin/users?q=${encodeURIComponent('alice.' + run)}`, null, ADM)).users[0].id;
+const keep = await api('POST', '/api/projects', { kind: 'callsheet', doc: { title: 'Mine' } }, A);
+assert.equal((await api('DELETE', `/api/admin/users/${aliceId}`, null, ADM)).status, 409, 'owners of shared projects can’t be deleted');
+await api('DELETE', `/api/projects/${keep.project.id}`, null, A);
+assert.equal((await api('DELETE', `/api/admin/users/${viewer.user.id}`, null, ADM)).status, 200);
+assert.equal((await api('POST', '/api/login', { email: `dan.${run}@example.com`, password: 'correct horse' })).status, 401, 'deleted');
+step('admin: switch accounts off and on, edit, delete (not owners of shared projects)');
 
 // Brute-force protection.
 for (let i = 0; i < 10; i++) await api('POST', '/api/login', { email: `bob.${run}@example.com`, password: 'nope nope' });

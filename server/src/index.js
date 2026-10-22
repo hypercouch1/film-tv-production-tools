@@ -5,12 +5,16 @@
 import { DurableObject } from 'cloudflare:workers';
 import '../../src/sync-core.js';
 import { AVAILABILITY_HTML } from './availability-page.js';
+import { ADMIN_HTML } from './admin-page.js';
 
 const { applyAll, clone } = globalThis.SyncCore;
 
-// shotsheet = a production; script, callsheet and post (take log, media, post tracker, cuts)
-// can live inside one. post only exists inside a production.
-const KINDS = ['callsheet', 'shotsheet', 'script', 'post'];
+// shotsheet = a production; script, callsheet, post (take log, media, post tracker, cuts) and
+// budget can live inside one. post and budget only exist inside a production.
+const KINDS = ['callsheet', 'shotsheet', 'script', 'post', 'budget'];
+const CHILD_ONLY = ['post', 'budget'];
+// Kinds view-only members don't get to see at all (a production's budget).
+const HIDDEN_FROM_VIEWERS = ['budget'];
 const ROLES = ['editor', 'viewer'];
 const SESSION_DAYS = 30;
 const MAX_DOC_BYTES = 1_500_000;
@@ -20,7 +24,7 @@ const FAILURE_WINDOW_MS = 15 * 60 * 1000;
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+  'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-App-Version',
   'Access-Control-Max-Age': '86400',
 };
 
@@ -100,16 +104,29 @@ async function authUser(req, env, url) {
   const tokenHash = await sha256Hex(token);
   const now = Date.now();
   const row = await env.DB.prepare(
-    'SELECT u.id, u.email, u.name, s.expires_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?'
+    'SELECT u.id, u.email, u.name, u.disabled, u.last_seen, u.app_version, s.expires_at FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?'
   ).bind(tokenHash, now).first();
   if (!row) throw new HttpError(401, 'Your session has expired. Please sign in again.');
+  if (row.disabled) throw new HttpError(401, 'This account has been switched off. Contact the app’s admin.');
   // Sessions last SESSION_DAYS from last use, not from sign-in: renewed at most once a day.
   if (row.expires_at - now < (SESSION_DAYS - 1) * 86400000) {
     await env.DB.prepare('UPDATE sessions SET expires_at = ? WHERE token_hash = ?')
       .bind(now + SESSION_DAYS * 86400000, tokenHash).run();
   }
-  const { expires_at: _expires, ...u } = row;
-  return { ...u, sessionHash: tokenHash };
+  // Usage stats: when they were last active (at most once an hour) and their app version.
+  const version = String(req.headers.get('X-App-Version') || '').slice(0, 20);
+  const versionChanged = /^\d+\.\d+\.\d+$/.test(version) && version !== row.app_version;
+  if (versionChanged || !row.last_seen || now - row.last_seen > 3600_000) {
+    await env.DB.prepare('UPDATE users SET last_seen = ?, app_version = ? WHERE id = ?')
+      .bind(now, versionChanged ? version : row.app_version, row.id).run();
+  }
+  return { id: row.id, email: row.email, name: row.name, sessionHash: tokenHash };
+}
+
+// The admin page and admin API: only for the accounts in ADMIN_EMAILS.
+function requireAdmin(env, user) {
+  const admins = String(env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
+  if (!admins.includes(user.email.toLowerCase())) throw new HttpError(403, 'Only the admin can do that.');
 }
 
 // Disconnects a user's live connections in every project they belong to (and everything
@@ -134,9 +151,12 @@ async function rootOf(env, projectId) {
 
 async function roleOf(env, projectId, userId) {
   const row = await env.DB.prepare(
-    'SELECT m.role FROM projects p JOIN members m ON m.project_id = COALESCE(p.parent_id, p.id) AND m.user_id = ? WHERE p.id = ?'
+    'SELECT m.role, p.kind FROM projects p JOIN members m ON m.project_id = COALESCE(p.parent_id, p.id) AND m.user_id = ? WHERE p.id = ?'
   ).bind(userId, projectId).first();
-  return row ? row.role : null;
+  if (!row) return null;
+  // A budget is for the production's owner and editors: to view-only members it doesn't exist.
+  if (row.role === 'viewer' && HIDDEN_FROM_VIEWERS.includes(row.kind)) return null;
+  return row.role;
 }
 
 async function requireRole(env, projectId, userId, allowed) {
@@ -156,6 +176,13 @@ async function roomsOf(env, rootId) {
 }
 const roomCallAll = async (env, rootId, path, body) =>
   Promise.all((await roomsOf(env, rootId)).map((id) => roomCall(env, id, path, body)));
+// Someone made view-only loses their open connection to the production's budget.
+async function kickFromHidden(env, rootId, userId) {
+  const { results } = await env.DB.prepare(
+    `SELECT id FROM projects WHERE parent_id = ? AND kind IN (${HIDDEN_FROM_VIEWERS.map(() => '?').join(',')})`
+  ).bind(rootId, ...HIDDEN_FROM_VIEWERS).all();
+  await Promise.all(results.map((r) => roomCall(env, r.id, '/kick', { userId })));
+}
 
 // Small facts about a document for lists: a production's type, a script's episode.
 function infoOf(doc) {
@@ -180,9 +207,11 @@ function availabilityCode() {
   return [...bytes].map((b) => CODE_CHARS[b % CODE_CHARS.length]).join('');
 }
 
-function availabilityPage() {
+const adminPage = () => htmlPage(ADMIN_HTML);
+const availabilityPage = () => htmlPage(AVAILABILITY_HTML);
+function htmlPage(html) {
   const nonce = randomToken(16);
-  return new Response(AVAILABILITY_HTML.replace(/__NONCE__/g, nonce), {
+  return new Response(html.replace(/__NONCE__/g, nonce), {
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
       'Content-Security-Policy': `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
@@ -253,8 +282,51 @@ async function route(req, env, url) {
       throw new HttpError(401, 'Wrong email or password.');
     }
     if (fail) await env.DB.prepare('DELETE FROM auth_failures WHERE email = ?').bind(email).run();
+    const status = await env.DB.prepare('SELECT disabled FROM users WHERE id = ?').bind(user.id).first();
+    if (status && status.disabled) throw new HttpError(403, 'This account has been switched off. Contact the app’s admin.');
     return json({ token: await createSession(env, user.id), user: publicUser(user) });
   }
+
+  // Forgotten password: a one-time code from the admin sets a new one. Wrong codes count
+  // towards the same lockout as wrong passwords.
+  if (pathname === '/api/reset' && method === 'POST') {
+    const body = await readJson(req);
+    const email = cleanEmail(body.email);
+    const code = String(body.code || '').replace(/[\s-]/g, '').toUpperCase();
+    const password = String(body.password || '');
+    const now = Date.now();
+    const key = 'reset:' + email;
+    const fail = await env.DB.prepare('SELECT count, window_start FROM auth_failures WHERE email = ?').bind(key).first();
+    if (fail && fail.count >= MAX_FAILURES && now - fail.window_start < FAILURE_WINDOW_MS) {
+      throw new HttpError(429, 'Too many wrong codes. Try again in 15 minutes.');
+    }
+    if (password.length < 8) throw new HttpError(400, 'Password must be at least 8 characters.');
+    if (password.length > 200) throw new HttpError(400, 'Password is too long.');
+    const user = await env.DB.prepare('SELECT id, email, name, disabled FROM users WHERE email = ?').bind(email).first();
+    const row = user && /^[A-Z0-9]{6,20}$/.test(code) && await env.DB.prepare(
+      'SELECT code_hash FROM reset_codes WHERE code_hash = ? AND user_id = ? AND used_at IS NULL AND expires_at > ?'
+    ).bind(await sha256Hex(code), user.id, now).first();
+    if (!row) {
+      if (!fail || now - fail.window_start >= FAILURE_WINDOW_MS) {
+        await env.DB.prepare('INSERT OR REPLACE INTO auth_failures (email, count, window_start) VALUES (?, 1, ?)').bind(key, now).run();
+      } else {
+        await env.DB.prepare('UPDATE auth_failures SET count = count + 1 WHERE email = ?').bind(key).run();
+      }
+      throw new HttpError(401, 'That code isn’t right, has been used or has expired. Ask the admin for a new one.');
+    }
+    if (user.disabled) throw new HttpError(403, 'This account has been switched off. Contact the app’s admin.');
+    await env.DB.batch([
+      env.DB.prepare('UPDATE users SET pw = ? WHERE id = ?').bind(await hashPassword(password, env), user.id),
+      env.DB.prepare('UPDATE reset_codes SET used_at = ? WHERE code_hash = ?').bind(now, row.code_hash),
+      env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(user.id),
+      env.DB.prepare('DELETE FROM auth_failures WHERE email = ? OR email = ?').bind(key, email),
+    ]);
+    await revokeLive(env, user.id);
+    return json({ token: await createSession(env, user.id), user: publicUser(user) });
+  }
+
+  // The admin page (it signs in and uses /api/admin with the admin's own account).
+  if (method === 'GET' && (pathname === '/admin' || pathname === '/admin/')) return adminPage();
 
   if (pathname === '/api/logout' && method === 'POST') {
     const header = req.headers.get('Authorization') || '';
@@ -303,6 +375,106 @@ async function route(req, env, url) {
 
   if (pathname === '/api/me' && method === 'GET') return json({ user: publicUser(user) });
 
+  // ---- Admin: usage stats and accounts (only accounts in ADMIN_EMAILS) ----
+  if (pathname.startsWith('/api/admin/')) {
+    requireAdmin(env, user);
+    const now = Date.now();
+    const DAY = 86400_000;
+    if (pathname === '/api/admin/stats' && method === 'GET') {
+      const u = await env.DB.prepare(
+        'SELECT COUNT(*) AS total, SUM(created_at > ?) AS new7, SUM(created_at > ?) AS new30, SUM(last_seen > ?) AS active1, ' +
+        'SUM(last_seen > ?) AS active7, SUM(last_seen > ?) AS active30, SUM(disabled) AS disabled FROM users'
+      ).bind(now - 7 * DAY, now - 30 * DAY, now - DAY, now - 7 * DAY, now - 30 * DAY).first();
+      const sessions = await env.DB.prepare('SELECT COUNT(*) AS n, COUNT(DISTINCT user_id) AS users FROM sessions WHERE expires_at > ?').bind(now).first();
+      const { results: kinds } = await env.DB.prepare(
+        'SELECT kind, parent_id IS NULL AS top, COUNT(*) AS n, SUM(updated_at > ?) AS edited7 FROM projects GROUP BY kind, top'
+      ).bind(now - 7 * DAY).all();
+      const members = await env.DB.prepare(
+        'SELECT COUNT(*) AS n, COUNT(DISTINCT project_id) AS projects, SUM(role != \'owner\') AS invited FROM members'
+      ).first();
+      const links = await env.DB.prepare('SELECT COUNT(*) AS n, SUM(responded_at IS NOT NULL) AS answered FROM availability_links').first();
+      const { results: versions } = await env.DB.prepare(
+        "SELECT COALESCE(app_version, 'unknown') AS version, COUNT(*) AS n FROM users WHERE last_seen > ? GROUP BY version ORDER BY n DESC"
+      ).bind(now - 30 * DAY).all();
+      const { results: joined } = await env.DB.prepare('SELECT created_at FROM users WHERE created_at > ?').bind(now - 84 * DAY).all();
+      const weeks = Array.from({ length: 12 }, (_, i) => ({ start: now - (12 - i) * 7 * DAY, n: 0 }));
+      for (const r of joined) { const w = weeks.findIndex((x) => r.created_at >= x.start && r.created_at < x.start + 7 * DAY); if (w >= 0) weeks[w].n++; }
+      const codes = await env.DB.prepare('SELECT COUNT(*) AS n, SUM(used_at IS NOT NULL) AS used FROM reset_codes WHERE created_at > ?').bind(now - 30 * DAY).first();
+      return json({ users: u, sessions, kinds, members, links, versions, signupsByWeek: weeks, resetCodes: codes });
+    }
+    if (pathname === '/api/admin/users' && method === 'GET') {
+      const q = String(url.searchParams.get('q') || '').trim().slice(0, 100);
+      const like = '%' + q.replace(/[%_\\]/g, (c) => '\\' + c) + '%';
+      const { results } = await env.DB.prepare(
+        'SELECT u.id, u.name, u.email, u.created_at AS createdAt, u.last_seen AS lastSeen, u.app_version AS appVersion, u.disabled, ' +
+        '(SELECT COUNT(*) FROM projects p WHERE p.owner_id = u.id AND p.parent_id IS NULL) AS owned, ' +
+        '(SELECT COUNT(*) FROM members m WHERE m.user_id = u.id AND m.role != \'owner\') AS sharedWith, ' +
+        '(SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id AND s.expires_at > ?) AS devices ' +
+        "FROM users u WHERE (? = '' OR u.email LIKE ? ESCAPE '\\' OR u.name LIKE ? ESCAPE '\\') ORDER BY COALESCE(u.last_seen, u.created_at) DESC LIMIT 500"
+      ).bind(now, q, like, like).all();
+      return json({ users: results.map((r) => ({ ...r, disabled: !!r.disabled, isAdmin: r.email === user.email })) });
+    }
+    if ((m = pathname.match(/^\/api\/admin\/users\/([\w-]+)(?:\/(reset-code|signout|disable))?$/))) {
+      const [, targetId, action] = m;
+      const target = await env.DB.prepare('SELECT id, email, name, disabled FROM users WHERE id = ?').bind(targetId).first();
+      if (!target) throw new HttpError(404, 'No such account.');
+      const self = target.id === user.id;
+      // A one-time code for a forgotten password: shown once, works once, for 24 hours.
+      if (action === 'reset-code' && method === 'POST') {
+        const code = availabilityCode();
+        const expiresAt = now + DAY;
+        await env.DB.batch([
+          env.DB.prepare('DELETE FROM reset_codes WHERE user_id = ? AND used_at IS NULL').bind(target.id),
+          env.DB.prepare('INSERT INTO reset_codes (code_hash, user_id, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?)')
+            .bind(await sha256Hex(code), target.id, user.id, now, expiresAt),
+        ]);
+        return json({ code, expiresAt, email: target.email });
+      }
+      if (action === 'signout' && method === 'POST') {
+        await env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(target.id).run();
+        await revokeLive(env, target.id);
+        return json({ ok: true });
+      }
+      if (action === 'disable' && method === 'POST') {
+        const body = await readJson(req);
+        if (self) throw new HttpError(400, 'You can’t switch off your own account.');
+        await env.DB.prepare('UPDATE users SET disabled = ? WHERE id = ?').bind(body.disabled ? 1 : 0, target.id).run();
+        if (body.disabled) {
+          await env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(target.id).run();
+          await revokeLive(env, target.id);
+        }
+        return json({ ok: true });
+      }
+      if (!action && method === 'PATCH') {
+        const body = await readJson(req);
+        const name = body.name === undefined ? target.name : cleanName(body.name);
+        const email = body.email === undefined ? target.email : cleanEmail(body.email);
+        if (!name) throw new HttpError(400, 'Enter a name.');
+        if (!validEmail(email)) throw new HttpError(400, 'Enter a valid email address.');
+        if (email !== target.email && await env.DB.prepare('SELECT 1 FROM users WHERE email = ?').bind(email).first()) {
+          throw new HttpError(409, 'Another account already uses that email.');
+        }
+        await env.DB.prepare('UPDATE users SET name = ?, email = ? WHERE id = ?').bind(name, email, target.id).run();
+        return json({ ok: true });
+      }
+      // Deleting an account: only once it owns nothing (its productions are deleted or handed on first).
+      if (!action && method === 'DELETE') {
+        if (self) throw new HttpError(400, 'You can’t delete your own account here.');
+        const owned = await env.DB.prepare('SELECT COUNT(*) AS n FROM projects WHERE owner_id = ? AND parent_id IS NULL').bind(target.id).first();
+        if (owned.n) throw new HttpError(409, `This account owns ${owned.n} shared production${owned.n === 1 ? '' : 's'} or document${owned.n === 1 ? '' : 's'}. They need deleting first (the owner can do that in the app).`);
+        await revokeLive(env, target.id);
+        await env.DB.batch([
+          env.DB.prepare('DELETE FROM members WHERE user_id = ?').bind(target.id),
+          env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(target.id),
+          env.DB.prepare('DELETE FROM reset_codes WHERE user_id = ?').bind(target.id),
+          env.DB.prepare('DELETE FROM users WHERE id = ?').bind(target.id),
+        ]);
+        return json({ ok: true });
+      }
+    }
+    throw new HttpError(404, 'Not found.');
+  }
+
   if (pathname === '/api/me' && method === 'PATCH') {
     const body = await readJson(req);
     if (body.name !== undefined) {
@@ -338,7 +510,8 @@ async function route(req, env, url) {
         `SELECT ${cols} (SELECT COUNT(*) FROM members x WHERE x.project_id = ?) AS memberCount ` +
         'FROM projects p JOIN users u ON u.id = p.owner_id WHERE p.parent_id = ? AND (? IS NULL OR p.kind = ?) ORDER BY p.updated_at DESC'
       ).bind(parent, parent, kind, kind).all();
-      return json({ projects: results.map((r) => ({ ...withInfo(r), role })) });
+      const visible = results.filter((r) => role !== 'viewer' || !HIDDEN_FROM_VIEWERS.includes(r.kind));
+      return json({ projects: visible.map((r) => ({ ...withInfo(r), role })) });
     }
     const { results } = await env.DB.prepare(
       `SELECT ${cols} m.role, (SELECT COUNT(*) FROM members x WHERE x.project_id = p.id) AS memberCount ` +
@@ -355,7 +528,7 @@ async function route(req, env, url) {
     if (!KINDS.includes(body.kind)) throw new HttpError(400, 'Unknown project type.');
     const doc = body.doc;
     if (!doc || typeof doc !== 'object' || Array.isArray(doc)) throw new HttpError(400, 'Missing document.');
-    if (body.kind === 'post' && body.parent == null) throw new HttpError(400, 'Post production belongs to a production.');
+    if (CHILD_ONLY.includes(body.kind) && body.parent == null) throw new HttpError(400, 'This belongs inside a production.');
     let parent = null;
     let role = 'owner';
     let ownerId = user.id;
@@ -529,6 +702,7 @@ async function route(req, env, url) {
       if (existing) {
         await env.DB.prepare('UPDATE members SET role = ? WHERE project_id = ? AND user_id = ?').bind(role, id, target.id).run();
         await roomCallAll(env, id, '/role', { userId: target.id, role });
+        if (role === 'viewer') await kickFromHidden(env, id, target.id);
       } else {
         await env.DB.prepare('INSERT INTO members (project_id, user_id, role, added_at) VALUES (?, ?, ?, ?)').bind(id, target.id, role, Date.now()).run();
       }
@@ -549,6 +723,7 @@ async function route(req, env, url) {
       if (!ROLES.includes(body.role)) throw new HttpError(400, 'Unknown role.');
       await env.DB.prepare('UPDATE members SET role = ? WHERE project_id = ? AND user_id = ?').bind(body.role, id, targetId).run();
       await roomCallAll(env, id, '/role', { userId: targetId, role: body.role });
+      if (body.role === 'viewer') await kickFromHidden(env, id, targetId);
       return json({ members: await listMembers(env, id) });
     }
     if (method === 'DELETE') {

@@ -48,7 +48,14 @@ npm run db:migrate:availability
 npm run deploy
 ```
 
-(A new server set up with `npm run db:init` already has them.) Deploying also attaches the availability page's address, `film.prismdashboard.cc` (see `routes` in `wrangler.toml`); the domain must be in the same Cloudflare account. Change `AVAILABILITY_HOST` and `routes` to use another address.
+**Updating a server set up before 1.4.0** (admin page and one-time password codes): apply this database change once, then deploy:
+
+```bash
+npm run db:migrate:admin
+npm run deploy
+```
+
+(A new server set up with `npm run db:init` already has these changes.) The admin page is at `/admin`, for the emails listed in `ADMIN_EMAILS` in `wrangler.toml` (comma-separated). Those people sign in with their normal app account. Deploying also attaches the availability page's address, `film.prismdashboard.cc` (see `routes` in `wrangler.toml`); the domain must be in the same Cloudflare account. Change `AVAILABILITY_HOST` and `routes` to use another address.
 
 ## Local development
 
@@ -78,5 +85,5 @@ npm test
 - Session tokens are random. Only their SHA-256 hash is stored, and they expire after 30 days.
 - Sign-in is locked for 15 minutes after 10 failed attempts on the same email.
 - Membership and roles are checked on the server for every request and live connection. View-only members' edits are refused, and removed members are disconnected immediately.
-- **Not included yet: password reset by email.** That needs an email-sending service. Until then, a forgotten password means making a new account, which the project owner then re-invites.
+- **Forgotten passwords:** there's no reset by email (that needs an email-sending service). An admin makes a one-time code on the admin page instead. Only a hash of the code is stored; it works once, for 24 hours, and attempts are rate-limited like sign-in. Switched-off accounts can't sign in, and their sessions are ended.
 - If sign-in requests fail with an "exceeded CPU" error on the free plan, lower `PBKDF2_ITERATIONS` in `wrangler.toml`. Existing passwords keep working because each hash records its own round count.

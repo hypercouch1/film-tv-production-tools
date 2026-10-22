@@ -1,3 +1,23 @@
+# Production Tools 1.4.0
+
+## Budget
+A new **Budget** page for each production:
+- **Build from production:** creates budget lines from the schedule, cast, crew, locations and breakdown (props, wardrobe, vehicles, extras and more), with quantities in shoot days. Building again updates the quantities and keeps your rates, actuals and notes.
+- **Top sheet** with above-the-line, production and post totals, fringes on labour and contingency. **Detail** lists every line by account, with estimate, actual and notes.
+- **Export** as CSV or PDF.
+- In a shared production, only the **owner and editors** see the budget. People with view-only access don't.
+
+## Forgot your password?
+- **Sign in → Forgot password?** Ask the app's administrator for a one-time code, then enter it with a new password.
+
+## Security
+- Files on network paths can no longer be opened from the media catalogue.
+- Spreadsheet exports can no longer run formulas when opened in Excel.
+
+This version needs the updated server.
+
+---
+
 # Production Tools 1.3.1
 
 ## Fixed

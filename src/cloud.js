@@ -27,6 +27,10 @@
     authListeners.forEach((f) => f(user));
   }
 
+  // The app version goes with requests, for the admin page's "versions in use".
+  let appVersion = null;
+  try { if (window.api && window.api.getUpdateInfo) window.api.getUpdateInfo().then((i) => { appVersion = i && i.current; }).catch(() => {}); } catch { /* not the app */ }
+
   async function request(method, path, body) {
     const base = serverUrl();
     if (!base) throw new Error('No server address set. Add it under Account → Server.');
@@ -34,7 +38,7 @@
     try {
       res = await fetch(base + path, {
         method,
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}), ...(appVersion ? { 'X-App-Version': appVersion } : {}) },
         body: body ? JSON.stringify(body) : undefined,
       });
     } catch {
@@ -308,6 +312,12 @@
     },
     async login(email, password) {
       const r = await request('POST', '/api/login', { email, password });
+      setSession(r.token, r.user);
+      return r.user;
+    },
+    // Forgotten password: a one-time code from the app's admin sets a new one (and signs in).
+    async resetPassword(email, code, password) {
+      const r = await request('POST', '/api/reset', { email, code, password });
       setSession(r.token, r.user);
       return r.user;
     },

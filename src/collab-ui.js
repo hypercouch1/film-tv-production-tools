@@ -122,7 +122,37 @@
     let mode = 'login';
     const m = modal(Cloud.signedIn ? 'Account' : 'Sign in', body);
 
+    // Forgot password: the app's admin gives a one-time code; it sets a new password.
+    function renderReset() {
+      const error = el('p', { class: 'form-error' });
+      const email = el('input', { class: 'field', type: 'email', autocomplete: 'email', placeholder: 'you@example.com' });
+      const code = el('input', { class: 'field reset-code', autocomplete: 'one-time-code', placeholder: 'XXXXX-XXXXX', spellcheck: 'false' });
+      const password = el('input', { class: 'field', type: 'password', autocomplete: 'new-password', placeholder: 'At least 8 characters' });
+      const submit = el('button', { class: 'primary-btn wide', type: 'submit' }, 'Set new password');
+      const form = el('form', { class: 'account-form' },
+        el('p', { class: 'muted small' }, 'Ask the app’s admin for a one-time code. It works once, for 24 hours.'),
+        field('Email', email),
+        field('One-time code', code),
+        field('New password', password),
+        error,
+        submit,
+        el('button', { class: 'link-btn', type: 'button', onclick: () => { mode = 'login'; render(); } }, '← Back to sign in'));
+      form.addEventListener('submit', busy(submit, async () => {
+        error.textContent = '';
+        try {
+          const u = await Cloud.resetPassword(email.value, code.value, password.value);
+          m.close();
+          toast(`Password changed. Signed in as ${u.name}`);
+          if (after) after();
+        } catch (err) {
+          error.textContent = err.message;
+        }
+      }));
+      body.append(form);
+    }
+
     function renderSignedOut() {
+      if (mode === 'reset') { renderReset(); return; }
       const error = el('p', { class: 'form-error' });
       const name = el('input', { class: 'field', autocomplete: 'name', placeholder: 'Your name' });
       const email = el('input', { class: 'field', type: 'email', autocomplete: 'email', placeholder: 'you@example.com' });
@@ -136,7 +166,8 @@
         field('Email', email),
         field('Password', password),
         error,
-        submit);
+        submit,
+        mode === 'login' ? el('button', { class: 'link-btn forgot-link', type: 'button', onclick: () => { mode = 'reset'; render(); } }, 'Forgot password?') : null);
       form.addEventListener('submit', busy(submit, async () => {
         error.textContent = '';
         try {

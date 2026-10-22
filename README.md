@@ -93,6 +93,23 @@ Code: `src/production.js` (current production, links, migration, sharing), `src/
 - **Cuts & notes:** cuts by stage (assembly, rough, fine, picture lock, online), with a review link or file path and timecoded notes to resolve.
 - In a shared production the post document is online inside it (made the first time someone who can edit opens Post).
 
+## Budget
+
+**Budget** on the production home (`budget.html`, `budget.js`; data in its own budget document, `budget-formats.js`):
+
+- **Build from production:** adds lines for cast (work and hold days from the Day Out of Days), crew (by role: Director, Camera, Grip & electric, Sound…), locations (their fee as the rate), breakdown elements (props, wardrobe, vehicles, extras and animals per day…) and catering per shoot day. Lines made this way follow the schedule (↻); building again updates their quantities and descriptions but keeps rates, actuals and notes. Typing a quantity stops a line following. Lines whose source has gone are marked.
+- **Top sheet:** accounts grouped above the line, production, post and other, with fringes (a percentage of labour lines), contingency (a percentage of subtotal and fringes), total, actual and remaining. **Detail:** every line by account with quantity, unit, rate, estimate, fringe, actual and notes; **+ Add a line to…** for anything else.
+- **Export** as CSV or PDF.
+- In a shared production the budget is online inside it, but only the owner and editors can see or open it; the server hides it from view-only members.
+
+## Forgot password
+
+**Sign in → Forgot password?** takes an email, a one-time code and a new password. The administrator makes the code on the admin page (below); it works once, for 24 hours, and signs the person out everywhere else.
+
+## Admin page
+
+`https://<server>/admin` (e.g. `https://production-hub.sosdorfm.workers.dev/admin`), for the emails in `ADMIN_EMAILS` (`server/wrangler.toml`). Sign in with your app account to see usage (accounts, people active in the last day/week/month, documents by kind, sharing, availability links, app versions in use, signups by week) and manage accounts: one-time password codes, sign out everywhere, edit name and email, switch off and on, delete (only accounts that don't own shared projects).
+
 ## Breakdown
 
 - **Tagging in the script:** in the Script Writer, select words and press 🏷 (**Ctrl/⌘+Shift+T**): Props, Wardrobe, Makeup & hair, Extras, Stunts, Vehicles, Animals, Special effects, Visual effects, Sound & music, Set dressing or Special equipment. Tags show as coloured pills in the left margin (click one to remove it).

@@ -67,6 +67,15 @@
         <rect x="16" y="53" width="26" height="5" rx="2" fill="currentColor" opacity=".55"/>
         <line x1="36" y1="39" x2="36" y2="60" stroke="#e2332b" stroke-width="2.5" stroke-linecap="round"/>
       </svg>`,
+    budget: `
+      <svg viewBox="0 0 64 64" aria-hidden="true">
+        <rect x="10" y="6" width="44" height="52" rx="5" fill="none" stroke="currentColor" stroke-width="3.5"/>
+        <rect x="17" y="13" width="30" height="10" rx="2" fill="#e6cf2e"/>
+        <circle cx="21" cy="32" r="2.6" fill="currentColor"/><circle cx="32" cy="32" r="2.6" fill="currentColor"/><circle cx="43" cy="32" r="2.6" fill="currentColor"/>
+        <circle cx="21" cy="41" r="2.6" fill="currentColor"/><circle cx="32" cy="41" r="2.6" fill="currentColor"/><circle cx="43" cy="41" r="2.6" fill="currentColor"/>
+        <circle cx="21" cy="50" r="2.6" fill="currentColor"/><circle cx="32" cy="50" r="2.6" fill="currentColor"/>
+        <rect x="40" y="47.5" width="6" height="5" rx="1.5" fill="#e2332b"/>
+      </svg>`,
     callsheet: `
       <svg viewBox="0 0 64 64" aria-hidden="true">
         <rect x="12" y="8" width="40" height="50" rx="5" fill="none" stroke="currentColor" stroke-width="3.5"/>
@@ -89,6 +98,7 @@
   let scripts = [];     // this production's scripts ({ id, title, episodeId })
   let sheets = [];      // this production's call sheets
   let post = null;      // this production's post document (on this computer)
+  let budget = null;    // this production's budget (on this computer)
   let session = null;   // a shared production: its live connection
   let role = 'owner';   // your role in a shared production
 
@@ -127,6 +137,10 @@
         stats: post ? [post.takes.length && plural(post.takes.length, 'take'), post.media.length && plural(post.media.length, 'file'),
           post.tasks.filter((t) => t.status !== 'done').length && plural(post.tasks.filter((t) => t.status !== 'done').length, 'open task')].filter(Boolean).join(' · ') || 'Nothing logged yet'
           : session ? 'Take log, media, tracker and cuts' : 'Nothing logged yet' },
+      // The budget is for the owner and editors of a shared production only.
+      ...(session && role === 'viewer' ? [] : [{ id: 'budget', name: 'Budget', tag: 'Top sheet and detail, built from the schedule', page: 'budget.html', accent: '#6fcf7a',
+        stats: budget ? (budget.lines.length ? `${budget.currency}${Math.round(window.BudgetFormats.totals(budget).total).toLocaleString()} · ${plural(budget.lines.length, 'line')}` : 'No lines yet')
+          : session ? 'Owner and editors only' : 'Not started yet' }]),
       { id: 'locations', name: 'Locations', tag: 'Addresses, contacts, permits and parking', page: 'locations.html', accent: '#f2994a',
         stats: (() => {
           const locs = prod.locations || [];
@@ -291,9 +305,11 @@
     const cd = (await api.loadStore('callsheets')) || {};
     cd.sheets = (cd.sheets || []).filter((s) => s.productionId !== prod.id);
     await api.saveStore('callsheets', cd);
-    const pd = (await api.loadStore('post')) || {};
-    pd.docs = (pd.docs || []).filter((s) => s.productionId !== prod.id);
-    await api.saveStore('post', pd);
+    for (const key of ['post', 'budget']) {
+      const data = (await api.loadStore(key)) || {};
+      data.docs = (data.docs || []).filter((s) => s.productionId !== prod.id);
+      await api.saveStore(key, data);
+    }
     P.goPicker();
   }
 
@@ -354,6 +370,9 @@
       const pd = (await api.loadStore('post')) || {};
       const raw = (pd.docs || []).find((x) => x.productionId === pid);
       post = raw ? window.PostFormats.normalizePost(raw) : null;
+      const bd = (await api.loadStore('budget')) || {};
+      const rawBudget = (bd.docs || []).find((x) => x.productionId === pid);
+      budget = rawBudget ? window.BudgetFormats.normalizeBudget(rawBudget) : null;
     }
     render();
     wireTitle();

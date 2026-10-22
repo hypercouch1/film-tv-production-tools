@@ -30,7 +30,7 @@ function migrateFromOldName() {
 migrateFromOldName();
 
 // Each system keeps its own store file in the user data folder.
-const STORES = ['callsheets', 'shotsheets', 'scripts', 'post'];
+const STORES = ['callsheets', 'shotsheets', 'scripts', 'post', 'budget'];
 const storePath = (key) => {
   if (!STORES.includes(key)) throw new Error('Unknown store: ' + key);
   return path.join(app.getPath('userData'), key + '.json');

@@ -6,8 +6,22 @@ CREATE TABLE IF NOT EXISTS users (
   email       TEXT NOT NULL UNIQUE,
   name        TEXT NOT NULL,
   pw          TEXT NOT NULL,          -- pbkdf2$<iterations>$<salt b64>$<hash b64>
-  created_at  INTEGER NOT NULL
+  created_at  INTEGER NOT NULL,
+  last_seen   INTEGER,                -- for usage stats (updated at most once an hour)
+  app_version TEXT,                   -- the app version they last used
+  disabled    INTEGER NOT NULL DEFAULT 0
 );
+
+-- One-time password codes (see migrations/0004_admin.sql).
+CREATE TABLE IF NOT EXISTS reset_codes (
+  code_hash   TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL,
+  created_by  TEXT NOT NULL,
+  created_at  INTEGER NOT NULL,
+  expires_at  INTEGER NOT NULL,
+  used_at     INTEGER
+);
+CREATE INDEX IF NOT EXISTS reset_codes_user ON reset_codes(user_id);
 
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash  TEXT PRIMARY KEY,       -- SHA-256 of the bearer token; the token itself is never stored

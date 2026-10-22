@@ -160,7 +160,7 @@
         } catch (err) { failed.push(`${d.title || kind}: ${err.message}`); }
       }
       store[key] = (store[key] || []).filter((d) => !done.has(d.id));
-      await api.saveStore({ script: 'scripts', callsheet: 'callsheets', post: 'post' }[kind], store);
+      await api.saveStore({ script: 'scripts', callsheet: 'callsheets', post: 'post', budget: 'budget' }[kind], store);
     };
     await upload('script', myScripts, scripts, 'scripts');
     await upload('callsheet', mySheets, sheets, 'sheets');
@@ -168,6 +168,10 @@
     const post = (await api.loadStore('post')) || {};
     const myPost = (post.docs || []).filter((d) => d.productionId === pid);
     if (myPost.length) await upload('post', myPost, post, 'docs');
+    // The budget (seen only by the production's owner and editors once it's online).
+    const budget = (await api.loadStore('budget')) || {};
+    const myBudget = (budget.docs || []).filter((d) => d.productionId === pid);
+    if (myBudget.length) await upload('budget', myBudget, budget, 'docs');
     if (failed.length) alert('These couldn’t be moved online and are still on this computer:\n\n' + failed.join('\n'));
     return true;
   }
