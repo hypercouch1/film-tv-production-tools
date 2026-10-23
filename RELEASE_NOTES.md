@@ -13,6 +13,12 @@
 - **Ctrl/⌘+K** on any page (or ⌕ in the toolbar, or the search box on the production home) searches everything in the production: the script, scenes and shots, cast and crew, shoot days, locations, breakdown, call sheets, reports and continuity notes, post, budget and equipment.
 - Results are grouped by page. Pick one (or use the arrow keys and Enter) to open it.
 
+## Email call sheets from your own Gmail
+- **Account → Connect Gmail:** sign in with Google once and allow one thing, sending email. The app can't read your mail, and the connection stays on your computer.
+- **Send call sheet and email:** each person on the day gets an email from your address with their call time, location, scenes and a button to open their call sheet and tap **Got it**. Replies come straight to you.
+- **Availability links** can be emailed the same way.
+- Email addresses come from each person's contact details in Cast & Crew. Anyone without one is flagged, so you can text them instead. Without Gmail connected, **Email…** opens a filled-in message in your own email app.
+
 ## Start from another production
 - **New production → Start from:** copy the cast, crew, locations, equipment list and budget accounts and rates from an existing production, without its script, scenes, schedule, reports or expenses.
 

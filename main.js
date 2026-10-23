@@ -1,8 +1,9 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, dialog, Menu, shell } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, dialog, Menu, shell, safeStorage, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { fileURLToPath } = require('url');
 const { createUpdater } = require('./updates.js');
+const { createMailer } = require('./mail.js');
 
 const isMac = process.platform === 'darwin';
 let win = null;
@@ -505,6 +506,37 @@ handle('photo:save', (_e, id, bytes) => {
 });
 handle('photo:load', (_e, id) => { try { return fs.readFileSync(photoPath(id)); } catch { return null; } });
 handle('photo:delete', (_e, id) => { try { fs.unlinkSync(photoPath(id)); } catch { /* already gone */ } return true; });
+
+// ---- Email from the person's own Gmail (mail.js) ----
+// The Google client id comes from mail-config.json (made by the release build; see README).
+// PT_GOOGLE_TEST_SERVER points it at a stand-in Google for the tests.
+function mailConfig() {
+  try { return JSON.parse(fs.readFileSync(path.join(__dirname, 'mail-config.json'), 'utf8')); } catch { return {}; }
+}
+let mailer = null;
+const mail = () => {
+  if (!mailer) {
+    const test = process.env.PT_GOOGLE_TEST_SERVER;
+    mailer = createMailer({
+      dir: app.getPath('userData'), safeStorage, fetch: (url, opts) => net.fetch(url, opts),
+      openExternal: (url) => shell.openExternal(url),
+      config: test ? { clientId: 'test-client', clientSecret: 'test-secret' } : mailConfig(),
+      endpoints: test ? { auth: `${test}/auth`, token: `${test}/token`, revoke: `${test}/revoke`, send: `${test}/send` } : {},
+    });
+  }
+  return mailer;
+};
+handle('mail:status', () => mail().status());
+handle('mail:connect', () => mail().connect());
+handle('mail:disconnect', () => mail().disconnect());
+handle('mail:send', (_e, messages) => mail().send(messages));
+// Without a connected account: the person's own email app, with the message filled in.
+handle('mail:compose', (_e, { to, subject, body }) => {
+  const q = new URLSearchParams({ subject: String(subject || '').slice(0, 300), body: String(body || '').slice(0, 6000) }).toString().replace(/\+/g, '%20');
+  const addr = /^[^\s@<>",;?&]+@[^\s@<>",;?&]+\.[^\s@<>",;?&]+$/.test(String(to || '')) ? to : '';
+  shell.openExternal(`mailto:${addr}?${q}`);
+  return true;
+});
 
 // Called by a page after startup: hands over a double-clicked file meant for it.
 handle('update:get', () => updater.get());

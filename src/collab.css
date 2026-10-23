@@ -109,6 +109,11 @@
 .cl-row > div, .cl-row .field { min-width: 0; }
 .cl-url { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
 .cl-ok { color: #6fcf7a; }
+.cl-noemail { color: #ffb3ad; }
+.cl-btns { display: inline-flex; gap: 6px; }
+.cl-mail { display: flex; align-items: center; gap: 8px; margin: 8px 0 0; font-size: 14px; }
+.mail-section { display: grid; gap: 6px; justify-items: start; padding-top: 12px; border-top: 1px solid var(--line); margin-top: 6px; }
+.mail-section p { margin: 0; }
 
 .forgot-link { display: block; margin: 10px auto 0; font-size: 13px; }
 .reset-code { font-family: ui-monospace, Menlo, Consolas, monospace; letter-spacing: 2px; text-transform: uppercase; }

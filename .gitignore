@@ -2,5 +2,7 @@ node_modules/
 dist/
 Call-Sheet-source.zip
 .wrangler/
+# The Google client for Gmail sending (made by the build from repository secrets; see README).
+mail-config.json
 # The local test admin's authenticator key (server/test/api.test.mjs).
 .admin-totp

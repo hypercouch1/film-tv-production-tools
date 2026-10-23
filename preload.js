@@ -26,6 +26,14 @@ if (location.protocol === 'file:') contextBridge.exposeInMainWorld('api', {
   savePhoto: (id, bytes) => ipcRenderer.invoke('photo:save', id, bytes),
   loadPhoto: (id) => ipcRenderer.invoke('photo:load', id),
   deletePhoto: (id) => ipcRenderer.invoke('photo:delete', id),
+  // Email from the person's own Gmail (mail.js), or their email app.
+  mail: {
+    status: () => ipcRenderer.invoke('mail:status'),
+    connect: () => ipcRenderer.invoke('mail:connect'),
+    disconnect: () => ipcRenderer.invoke('mail:disconnect'),
+    send: (messages) => ipcRenderer.invoke('mail:send', messages),
+    compose: (msg) => ipcRenderer.invoke('mail:compose', msg),
+  },
   // Split screen: two pages side by side in the window.
   split: {
     state: () => ipcRenderer.invoke('split:state'),

@@ -117,6 +117,46 @@
   }
 
   // ---------- Account dialog ----------
+  // ---- Email from your own Gmail (mail.js in the app) ----
+  // Connects the Google account; resolves to the new status. Errors are shown by the caller.
+  async function connectGmail() {
+    toast('Finish connecting in your browser…');
+    const s = await window.api.mail.connect();
+    toast(`Gmail connected: emails go out as ${s.email}`);
+    return s;
+  }
+  function emailSection() {
+    if (!window.api || !window.api.mail) return null;
+    const box = el('div', { class: 'mail-section' });
+    const error = el('p', { class: 'form-error' });
+    const draw = async () => {
+      const s = await window.api.mail.status();
+      const label = el('div', { class: 'field-label' }, 'Email');
+      if (!s.configured) {
+        box.replaceChildren(label, el('p', { class: 'muted small' }, 'Sending email from your Gmail isn’t set up in this copy of the app. You can still copy messages, or open them in your email app.'));
+        return;
+      }
+      if (s.connected) {
+        const off = el('button', { class: 'ghost-btn', type: 'button' }, 'Disconnect');
+        off.addEventListener('click', busy(off, async () => { await window.api.mail.disconnect(); toast('Gmail disconnected'); draw(); }));
+        box.replaceChildren(label, el('p', { class: 'small' }, 'Call sheets and availability requests are emailed from your Gmail: ', el('strong', {}, s.email)), off, error);
+        return;
+      }
+      const on = el('button', { class: 'ghost-btn', type: 'button' }, 'Connect Gmail');
+      on.addEventListener('click', busy(on, async () => {
+        error.textContent = '';
+        on.textContent = 'Waiting for Google in your browser…';
+        try { await connectGmail(); } catch (err) { error.textContent = err.message; }
+        draw();
+      }));
+      box.replaceChildren(label,
+        el('p', { class: 'muted small' }, 'Email call sheets and availability requests from your own address, so replies come straight to you. Google asks you to allow one thing: sending email. The app can’t read your mail, and the connection stays on this computer.'),
+        on, error);
+    };
+    draw();
+    return box;
+  }
+
   function openAccount(after) {
     const body = el('div', { class: 'account-body' });
     let mode = 'login';
@@ -211,6 +251,7 @@
         field('Display name', el('div', { class: 'inline-form' }, name, saveName)),
         el('details', { class: 'server-details' }, el('summary', {}, 'Change password'),
           el('div', { class: 'stack' }, cur, next, pwMsg, pwBtn)),
+        emailSection(),
         serverSection(false),
         signOut);
     }
@@ -521,5 +562,5 @@
     return m;
   }
 
-  window.Collab = { attach, openAccount, accountButton, membersDialog };
+  window.Collab = { attach, openAccount, accountButton, membersDialog, connectGmail };
 })();

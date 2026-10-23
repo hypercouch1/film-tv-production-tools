@@ -13,11 +13,17 @@
 
   // Everyone who can be asked: [{ id, name, role, kind }].
   function people(p) {
+    const emailIn = (contact) => (window.MailTemplates ? window.MailTemplates.emailIn(contact) : '');
     return [
-      ...p.characters.map((c) => ({ id: c.id, name: c.actor || c.name || 'Unnamed', role: c.actor ? c.name : 'Cast', kind: 'Cast' })),
-      ...p.crew.map((k) => ({ id: k.id, name: k.name || k.role || 'Crew', role: k.name ? k.role : 'Crew', kind: 'Crew' })),
+      ...p.characters.map((c) => ({ id: c.id, name: c.actor || c.name || 'Unnamed', role: c.actor ? c.name : 'Cast', kind: 'Cast', email: emailIn(c.contact) })),
+      ...p.crew.map((k) => ({ id: k.id, name: k.name || k.role || 'Crew', role: k.name ? k.role : 'Crew', kind: 'Crew', email: emailIn(k.contact) })),
     ];
   }
+  // The availability request email for one person (mail-templates.js).
+  const requestEmail = (p, x, l) => window.MailTemplates.availability({
+    production: p.title, person: x, from: fmt(l.start), to: fmt(l.end), link: Cloud.availabilityLink(l.code),
+    sender: Cloud.user ? Cloud.user.name : '',
+  });
 
   async function copy(text) {
     try { await navigator.clipboard.writeText(text); }
@@ -80,21 +86,56 @@
     const list = el('div', { class: 'av-links' }, el('p', { class: 'muted' }, 'Loading…'));
     const all = () => people(p).filter((x) => p.availabilityLinks[x.id]);
     const copyAll = el('button', { class: 'ghost-btn', type: 'button', onclick: () => copy(all().map((x) => `${x.name} (${x.role}): ${Cloud.availabilityLink(p.availabilityLinks[x.id].code)}`).join('\n')) }, 'Copy all');
+    // Email: from the person's Gmail when connected (everyone with an address at once), else
+    // one at a time in their email app.
+    const mailBar = el('div', { class: 'av-mail' });
+    const emailed = new Map();
+    let mail = { connected: false, wanted: () => false };
+    let lastStatus = new Map();
+    const setupMail = async () => {
+      if (!window.CrewLinks) return;
+      mail = await window.CrewLinks.mailChoice(setupMail);
+      if (mail.connected) {
+        const btn = el('button', { class: 'ghost-btn', type: 'button' }, `Email ${fresh.size ? 'the new links' : 'everyone their link'}`);
+        btn.addEventListener('click', async () => {
+          const rows = all().filter((x) => x.email && (!fresh.size || fresh.has(x.id)));
+          if (!rows.length) { toast('Nobody here has an email address in Cast & Crew'); return; }
+          btn.disabled = true; btn.textContent = `Emailing ${rows.length}…`;
+          try {
+            const results = await window.CrewLinks.sendEmails(rows.map((x) => ({ id: x.id, to: x.email, toName: x.name, mail: requestEmail(p, x, p.availabilityLinks[x.id]) })));
+            results.forEach((r, id) => emailed.set(id, r));
+            toast(window.CrewLinks.summary(results));
+          } catch (err) { alert(err.message); }
+          btn.disabled = false; btn.textContent = `Email ${fresh.size ? 'the new links' : 'everyone their link'}`;
+          draw(lastStatus);
+        });
+        mailBar.replaceChildren(el('span', { class: 'muted small' }, `Emails go out from ${mail.email}`), btn);
+      } else mailBar.replaceChildren(...(mail.el ? [mail.el] : []));
+      draw(lastStatus);
+    };
     const body = el('div', {},
-      el('p', { class: 'muted small' }, fresh.size ? 'Send each person their link (text or email). They can change their answer any time.' : 'The links sent out, and who has answered.'),
-      list,
+      el('p', { class: 'muted small' }, fresh.size ? 'Send each person their link (email or text). They can change their answer any time.' : 'The links sent out, and who has answered.'),
+      list, mailBar,
       el('div', { class: 'modal-foot spread' }, copyAll, ro ? el('span') : el('button', { class: 'ghost-btn', type: 'button', onclick: () => { m.close(); requestDialog(p, opts); } }, 'Ask more people…')));
     const m = modal('Availability links', body, { wide: true });
     const draw = (status) => {
+      lastStatus = status;
       const rows = all();
       list.replaceChildren(...(rows.length ? rows.map((x) => {
         const l = p.availabilityLinks[x.id];
         const url = Cloud.availabilityLink(l.code);
         const st = status.get(x.id);
+        const mailed = emailed.get(x.id);
         return el('div', { class: 'av-link-row' + (fresh.has(x.id) ? ' fresh' : '') },
-          el('div', {}, el('strong', {}, x.name), el('div', { class: 'muted small' }, `${x.role} · ${l.start && l.end ? `${fmt(l.start)} – ${fmt(l.end)}` : ''}`)),
+          el('div', {}, el('strong', {}, x.name), el('div', { class: 'muted small' }, `${x.role} · ${l.start && l.end ? `${fmt(l.start)} – ${fmt(l.end)}` : ''}`),
+            mailed ? el('div', { class: 'small ' + (mailed.ok ? 'av-answered' : 'cl-noemail') }, mailed.ok ? '✓ Emailed' : `Email not sent: ${mailed.error}`) : null),
           el('input', { class: 'field av-url', value: url, readonly: true, onclick: (e) => e.target.select() }),
-          el('button', { class: 'ghost-btn', type: 'button', onclick: () => copy(url) }, 'Copy'),
+          el('span', { class: 'cl-btns' },
+            el('button', { class: 'ghost-btn', type: 'button', onclick: () => copy(url) }, 'Copy'),
+            x.email && window.api && window.api.mail && !mail.connected ? el('button', { class: 'ghost-btn', type: 'button', title: `Open an email to ${x.email} in your email app`, onclick: () => {
+              const e = requestEmail(p, x, l);
+              window.api.mail.compose({ to: x.email, subject: e.subject, body: e.text });
+            } }, 'Email…') : null),
           el('span', { class: 'small ' + (st && st.respondedAt ? 'av-answered' : 'muted') },
             !st ? 'Not active' : st.respondedAt ? `Answered ${new Date(st.respondedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : 'Waiting'),
           ro ? null : el('button', { class: 'icon-btn del', type: 'button', title: 'Stop this link working', onclick: async () => {
@@ -109,6 +150,7 @@
     Cloud.availabilityLinks(p.id)
       .then((ls) => draw(new Map(ls.map((x) => [x.personId, x]))))
       .catch(() => draw(new Map()));
+    setupMail();
   }
 
   // Buttons on the Availability view.

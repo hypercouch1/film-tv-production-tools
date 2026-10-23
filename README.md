@@ -162,6 +162,45 @@ Code: `src/production.js` (current production, links, migration, sharing), `src/
 
   Cast, crew and locations keep their ids, so the copied budget lines still match them when you **Build from production**.
 
+## Email from your own Gmail
+
+Call sheets and availability requests can be emailed from the sender's own Gmail address (`mail.js` in the main process, `src/mail-templates.js` for the emails).
+
+- **Connecting:** **Account → Connect Gmail** opens Google's sign-in in the browser and asks for one permission, `gmail.send` (sending only; the app can't read mail).
+  - The sign-in comes back to the app on `http://127.0.0.1:<port>`, using Google's installed-app flow with PKCE.
+  - The refresh token is kept only on that computer (`mail.json` in the app's data folder), encrypted with the system's secure storage (Electron `safeStorage`). It is never sent to the Production Tools server.
+  - **Disconnect** removes it and revokes it at Google.
+- **Sending:**
+  - **Call sheets:** in the call sheet's Send dialog, **Also email it from …** (ticked) emails everyone on the day who has an email address, when you press **Send call sheet and email**.
+  - **Availability links:** in the links dialog, **Email the new links**.
+  - Each email goes straight from the app to Gmail, appears in the sender's Sent folder, and gets replies.
+  - **Addresses:** each person's is the first email address in their contact details (Cast & Crew). People without one are flagged, so you can text them.
+- **Without Gmail connected:** **Email…** opens a filled-in plain-text message in the person's own email app (`mailto:`).
+- **Limits:** Gmail sends about 500 emails a day from a personal account, about 2,000 from Google Workspace.
+
+### Setting up Gmail sending (once, in Google Cloud)
+
+The app needs its own Google "Desktop app" client. Without one, **Connect Gmail** says sending isn't set up, and everything else works.
+
+1. Go to [console.cloud.google.com](https://console.cloud.google.com) and create a project, e.g. **Production Tools**.
+2. **APIs & Services → Library**: find **Gmail API** and click **Enable**.
+3. **Google Auth Platform** (called **OAuth consent screen** in older menus) → **Get started**:
+   - **App name:** Production Tools.
+   - **Support email:** your email.
+   - **Audience:** **External**.
+   - **Contact email:** your email.
+   - Then **Create**.
+4. **Data access → Add or remove scopes**: add `https://www.googleapis.com/auth/gmail.send`, then **Update** and **Save**.
+5. **Audience**: choose who can connect.
+   - **For a quick test:** leave it in **Testing** and add the Gmail addresses of the people who'll send under **Test users** (up to 100). In Testing, Google ends the connection after 7 days, so people have to connect again each week.
+   - **For real use:** click **Publish app** (status **In production**). People then see a "Google hasn't verified this app" screen when connecting (**Advanced → Go to Production Tools** gets past it). Up to 100 people can connect until Google verifies the app.
+   - **To remove the warning:** under **Branding**, add the app's home page and privacy policy links, then submit for verification. That needs a short screen recording of connecting Gmail; Google's review takes a few days to a few weeks.
+6. **Clients → Create client**: **Application type: Desktop app**, name it, **Create**. Copy the **Client ID** and **Client secret**.
+7. **For the released app:** in the GitHub repository, go to **Settings → Secrets and variables → Actions → New repository secret**. Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. The release build writes them into `mail-config.json` inside the app.
+8. **Running from source:** create `mail-config.json` next to `main.js` with `{ "clientId": "…", "clientSecret": "…" }`. Git ignores it.
+
+For a Desktop app client, Google treats the secret as not confidential (it ships inside the app), but it's kept out of the repository anyway.
+
 ## Storyboards
 
 **Shot Sheet → Storyboard** shows every shot as a card with its picture. Drop or paste an image onto a card, or click an empty frame to choose one; **Replace** and **Remove** change it. Pictures are stored like continuity photos (`photos.js`): on this computer, or on the server in a shared production. They appear beside the shot in the shot list (Run day) and on the call sheet for the shot's day. Sharing a production uploads its pictures under the same ids, so shots keep pointing at them.

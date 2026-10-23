@@ -19,11 +19,62 @@
     toast('Copied');
   }
 
-  // Everyone in the production: [{ id, name, role }] (the actor's name for cast).
+  // Everyone in the production: [{ id, name, role, cast, email }] (the actor's name for cast;
+  // email: the first address in their contact details).
+  const emailIn = (contact) => (window.MailTemplates ? window.MailTemplates.emailIn(contact) : '');
   const everyoneIn = (p) => [
-    ...p.characters.map((c) => ({ id: c.id, name: c.actor || c.name || 'Unnamed', role: c.actor ? c.name : 'Cast' })),
-    ...p.crew.map((k) => ({ id: k.id, name: k.name || k.role || 'Crew', role: k.name ? k.role : 'Crew' })),
+    ...p.characters.map((c) => ({ id: c.id, name: c.actor || c.name || 'Unnamed', role: c.actor ? c.name : 'Cast', cast: true, email: emailIn(c.contact) })),
+    ...p.crew.map((k) => ({ id: k.id, name: k.name || k.role || 'Crew', role: k.name ? k.role : 'Crew', cast: false, allDays: !!k.allDays, email: emailIn(k.contact) })),
   ];
+
+  // ---- Email (from the person's Gmail, or their email app) ----
+  const mailApi = () => (window.api && window.api.mail) || null;
+  const sceneCodeOf = (p, s) => { const e = p.type === 'tv' && (p.episodes || []).find((x) => x.id === s.episodeId); return e ? `${e.number}-${s.number}` : s.number; };
+  // The call sheet email for one person (mail-templates.js).
+  function callSheetEmail(p, day, x, dayNum) {
+    const link = Cloud.crewLink(p.crewLinks[x.id].code);
+    const webcal = link.replace(/^https?:\/\//, 'webcal://') + '/calendar.ics';
+    const scenes = p.scenes.filter((s) => onDay(s, day.id) && (x.cast ? s.castIds.includes(x.id) : x.allDays || s.crewIds.includes(x.id)));
+    const place = String(day.location || '').split('\n')[0].trim();
+    return window.MailTemplates.callSheet({
+      production: p.title, dayNum, of: p.days.length,
+      dateLong: fmt(day.date, { weekday: 'long', month: 'long', day: 'numeric' }), dateShort: fmt(day.date),
+      person: x, call: time(x.call), location: day.location || '',
+      mapsUrl: place ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place)}` : '',
+      crewCall: time(day.crewCall), shootingCall: time(day.call), wrap: time(day.wrap),
+      weather: day.weather || '', parking: day.parking || '', hospital: day.hospital || '', notes: day.notes || '',
+      scenes: scenes.map((s) => ({ code: sceneCodeOf(p, s), heading: s.heading, synopsis: s.synopsis || '', pages: s.eighths && window.ScriptParse ? window.ScriptParse.formatEighths(s.eighths) + ' pages' : '' })),
+      link, appleCal: webcal, googleCal: `https://calendar.google.com/calendar/render?cid=${encodeURIComponent(webcal)}`,
+      sender: Cloud.user ? Cloud.user.name : '',
+    });
+  }
+  // The line above the buttons: email from Gmail (ticked), connect it, or nothing.
+  // Resolves to { el, wanted() }.
+  async function mailChoice(redraw) {
+    const api = mailApi();
+    const s = api ? await api.status().catch(() => null) : null;
+    if (!s || !s.configured) return { el: null, connected: false, wanted: () => false };
+    if (s.connected) {
+      const box = el('input', { type: 'checkbox', checked: true });
+      return { el: el('label', { class: 'cl-mail' }, box, el('span', {}, 'Also email it from ', el('strong', {}, s.email))), connected: true, email: s.email, wanted: () => box.checked };
+    }
+    const btn = el('button', { class: 'link-btn', type: 'button', onclick: async () => {
+      btn.disabled = true;
+      try { await window.Collab.connectGmail(); redraw(); } catch (err) { alert(err.message); btn.disabled = false; }
+    } }, 'Connect Gmail');
+    return { el: el('div', { class: 'cl-mail muted small' }, 'Email it from your own address: ', btn), connected: false, wanted: () => false };
+  }
+  // Sends; returns Map(personId → result).
+  async function sendEmails(list) {
+    const results = await mailApi().send(list.map((x) => ({ to: x.to, toName: x.toName, subject: x.mail.subject, html: x.mail.html, text: x.mail.text })));
+    return new Map(list.map((x, i) => [x.id, results[i] || { ok: false, error: 'Not sent' }]));
+  }
+  const summary = (results) => {
+    const all = [...results.values()];
+    const ok = all.filter((r) => r.ok).length;
+    const bad = all.filter((r) => !r.ok);
+    return `Emailed ${ok} ${ok === 1 ? 'person' : 'people'}${bad.length ? ` · ${bad.length} not sent (${bad[0].error})` : ''}`;
+  };
   // Who works a shoot day (the call sheet's cast and crew), with their call time.
   const onDay = (s, dayId) => (s.shots.length ? s.shots.some((x) => x.dayId === dayId) : s.dayId === dayId);
   function peopleOn(p, day) {
@@ -64,25 +115,39 @@
       if (!withPages.length) { toast('Nobody has a page yet'); return; }
       copy(withPages.map((x) => `${x.name}: ${message(x)}`).join('\n\n'));
     } }, 'Copy messages for everyone');
+    const mailBar = el('div');
     const body = el('div', {},
-      el('p', { class: 'muted small' }, 'Everyone on this day gets a personal page on their phone with their call time and this call sheet, a "Got it" button, and their shoot days in their calendar. No app or account needed. Text or email each person their link once; after that, sending again updates their page.'),
-      status, list, error,
+      el('p', { class: 'muted small' }, 'Everyone on this day gets a personal page on their phone with their call time and this call sheet, a "Got it" button, and their shoot days in their calendar. No app or account needed. Email them their link (from your Gmail, set up under Account), or text it; after that, sending again updates their page.'),
+      status, list, error, mailBar,
       el('div', { class: 'modal-foot spread' }, copyAll, ro ? el('span') : sendBtn));
     const m = modal(`Day ${opts.dayNum} call sheet · ${fmt(day.date)}`, body, { wide: true });
 
     let state = { sentAt: null, confirms: new Map(), opened: new Map() };
+    let mail = { connected: false, wanted: () => false };
+    const emailed = new Map(); // personId → result of the last email
+    const setupMail = async () => { mail = await mailChoice(setupMail); mailBar.replaceChildren(...(mail.el ? [mail.el] : [])); draw(); };
+    // Without Gmail: their email app, with the message filled in.
+    const compose = (x) => {
+      const e = callSheetEmail(p, day, x, opts.dayNum);
+      mailApi().compose({ to: x.email, subject: e.subject, body: e.text });
+    };
     const draw = () => {
       status.textContent = state.sentAt ? `Sent ${when(state.sentAt)}. ${state.confirms.size} of ${people.length} ${people.length === 1 ? 'has' : 'have'} said "Got it". Changed something? Send it again and everyone confirms the new version.` : 'Not sent yet.';
-      sendBtn.textContent = state.sentAt ? 'Send again' : 'Send call sheet';
+      sendBtn.textContent = (state.sentAt ? 'Send again' : 'Send call sheet') + (mail.connected ? ' and email' : '');
       list.replaceChildren(...(people.length ? people.map((x) => {
         const l = p.crewLinks[x.id];
         const got = state.confirms.get(x.id);
         const opened = state.opened.get(x.id);
+        const mailed = emailed.get(x.id);
         return el('div', { class: 'cl-row' },
-          el('div', {}, el('strong', {}, x.name), el('div', { class: 'muted small' }, `${x.role} · call ${time(x.call) || 'TBC'}`)),
+          el('div', {}, el('strong', {}, x.name), el('div', { class: 'muted small' }, `${x.role} · call ${time(x.call) || 'TBC'}`),
+            el('div', { class: 'small ' + (x.email ? 'muted' : 'cl-noemail') }, x.email || 'No email address in Cast & Crew')),
           l ? el('input', { class: 'field cl-url', value: Cloud.crewLink(l.code), readonly: true, onclick: (e) => e.target.select() }) : el('span', { class: 'muted small' }, 'No page yet: made when you send'),
-          l ? el('button', { class: 'ghost-btn', type: 'button', title: 'Copy a message with their call time and link', onclick: () => copy(message(x)) }, 'Copy') : el('span'),
-          el('span', { class: 'small ' + (got ? 'cl-ok' : 'muted') }, got ? `✓ Got it ${when(got)}` : !l ? '' : opened ? 'Opened, not confirmed' : 'Not opened yet'));
+          l ? el('span', { class: 'cl-btns' },
+            el('button', { class: 'ghost-btn', type: 'button', title: 'Copy a message with their call time and link', onclick: () => copy(message(x)) }, 'Copy'),
+            x.email && mailApi() && !mail.connected ? el('button', { class: 'ghost-btn', type: 'button', title: 'Open this email in your email app', onclick: () => compose(x) }, 'Email…') : null) : el('span'),
+          el('span', { class: 'small ' + (got ? 'cl-ok' : mailed && !mailed.ok ? 'cl-noemail' : 'muted') },
+            got ? `✓ Got it ${when(got)}` : mailed && !mailed.ok ? `Email not sent: ${mailed.error}` : !l ? '' : opened ? 'Opened, not confirmed' : mailed ? 'Emailed, not opened yet' : 'Not opened yet'));
       }) : [el('p', { class: 'muted' }, 'Nobody is on this day yet. Pick cast for the day’s scenes, and mark core crew "Every day" in Cast & Crew.')]));
     };
     const refresh = () => Promise.all([
@@ -107,13 +172,24 @@
         if (missing.length) await makePages(p, opts, missing);
         await Cloud.sendCallSheet(opts.cloudId, day.id);
         opts.render({ keepScroll: true });
-        toast(missing.length ? `Sent. ${missing.length} new page${missing.length === 1 ? '' : 's'}: copy the messages and send them` : 'Sent: everyone’s page shows the new call sheet');
+        if (mail.wanted()) {
+          const to = people.filter((x) => x.email && p.crewLinks[x.id]);
+          sendBtn.textContent = `Emailing ${to.length}…`;
+          const results = await sendEmails(to.map((x) => ({ id: x.id, to: x.email, toName: x.name, mail: callSheetEmail(p, day, x, opts.dayNum) })));
+          results.forEach((r, id) => emailed.set(id, r));
+          const noEmail = people.length - to.length;
+          toast(`Sent. ${summary(results)}${noEmail ? ` · ${noEmail} without an email address: copy their message` : ''}`);
+        } else {
+          toast(missing.length ? `Sent. ${missing.length} new page${missing.length === 1 ? '' : 's'}: email or copy the messages` : 'Sent: everyone’s page shows the new call sheet');
+        }
         await refresh();
       } catch (err) { error.textContent = err.message; }
       sendBtn.disabled = false;
+      draw();
     });
     draw();
     refresh();
+    setupMail();
     return m;
   }
 
@@ -169,5 +245,5 @@
     draw();
   }
 
-  window.CrewLinks = { sendDialog, pagesDialog, peopleOn };
+  window.CrewLinks = { sendDialog, pagesDialog, peopleOn, mailChoice, sendEmails, summary };
 })();
