@@ -433,7 +433,16 @@
     if (!doc) return;
     const pageOf = layout.pageOf.length === doc.elements.length ? layout.pageOf : S.paginate(doc.elements).pageOf;
     const scenes = S.scenes(doc);
-    nav.append(el('div', { class: 'nav-head' }, `Scenes (${scenes.length})`));
+    // The list can be folded away to a thin strip (remembered on this computer).
+    const fold = (hidden) => { state.scenesHidden = hidden; store.save(); renderNav(); };
+    nav.classList.toggle('collapsed', !!state.scenesHidden);
+    if (state.scenesHidden) {
+      nav.append(el('button', { class: 'nav-expand', type: 'button', title: 'Show the scenes', onclick: () => fold(false) },
+        el('span', {}, '›'), el('span', { class: 'nav-expand-label' }, `Scenes (${scenes.length})`)));
+      return;
+    }
+    nav.append(el('div', { class: 'nav-head' }, el('span', {}, `Scenes (${scenes.length})`),
+      el('button', { class: 'icon-btn small-btn', type: 'button', title: 'Hide the scenes', onclick: () => fold(true) }, '‹')));
     if (!scenes.length) nav.append(el('div', { class: 'list-note' }, 'Scene headings appear here. Type INT. or EXT. to start one.'));
     for (const s of scenes) {
       const item = doc.elements[s.index];
