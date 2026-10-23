@@ -1,4 +1,4 @@
-# Production Tools 1.4.3
+# Production Tools 1.4.4
 
 ## Storyboards
 - **Shot Sheet → Storyboard:** give each shot a picture (a sketch, a frame grab or a reference). Drop or paste a picture onto a shot, or click it to choose one.

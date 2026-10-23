@@ -62,7 +62,7 @@ npm run db:migrate:crew
 npm run deploy
 ```
 
-**Updating a server set up before 1.4.3** (recent activity): apply this database change once, then deploy:
+**Updating a server set up before 1.4.4** (recent activity): apply this database change once, then deploy:
 
 ```bash
 npm run db:migrate:activity
