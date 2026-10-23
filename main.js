@@ -252,6 +252,9 @@ function buildMenu() {
         { role: 'zoomOut' },
         { type: 'separator' },
         { role: 'togglefullscreen' },
+        { type: 'separator' },
+        // Split screen: closes the side last used (the other fills the window).
+        { label: 'Close This Side of Split Screen', accelerator: 'CmdOrCtrl+Shift+W', click: menuSend('closeSplit') },
       ],
     },
     { role: 'windowMenu' },

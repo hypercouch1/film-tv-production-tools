@@ -296,7 +296,7 @@ input { font: inherit; color: inherit; }
 .empty-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
 .empty-actions button { padding: 9px 16px; font-size: 14px; }
 /* With nothing open, hide the controls that act on a project. */
-.app.is-empty .toolbar > *:not(#homeBtn):not(#sidebarToggle):not(.system-label):not(.toolbar-spacer):not(.account-btn) { display: none !important; }
+.app.is-empty .toolbar > *:not(#homeBtn):not(#sidebarToggle):not(.system-label):not(.toolbar-spacer):not(.account-btn):not(.split-wrap) { display: none !important; }
 .app.is-empty .sheet-header, .app.is-empty .hint, .app.is-empty .scene-nav,
 .app.is-empty .statusbar, .app.is-empty #paper { display: none !important; }
 
@@ -336,6 +336,10 @@ input { font: inherit; color: inherit; }
 
 /* ---------- Split screen ---------- */
 .split-btn.active { border-color: var(--yellow); color: var(--yellow); }
+.split-wrap { display: inline-flex; align-items: center; gap: 6px; }
+.split-close { font-size: 14px; }
+.split-close:hover { color: #ff6b63; border-color: #ff6b63; }
+.split-float { position: fixed; top: 10px; right: 12px; z-index: 90; }
 .split-menu { max-height: calc(100vh - 80px); overflow-y: auto; }
 .menu-label { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); padding: 6px 10px 4px; }
 

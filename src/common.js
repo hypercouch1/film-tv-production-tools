@@ -160,16 +160,29 @@
     ['locations.html', 'Locations'], ['onset.html', 'On Set'], ['post.html', 'Post'], ['budget.html', 'Budget'], ['gear.html', 'Equipment'],
   ];
   async function initSplit() {
-    if (!api || !api.split || /home\.html$/.test(location.pathname)) return;
+    if (!api || !api.split) return;
     const P = window.Production;
-    if (!P || !P.id()) return;
+    // Opening a page beside this one needs a production; closing a side works on any page.
+    const canOpen = !/home\.html$/.test(location.pathname) && P && P.id();
     const host = document.querySelector('.toolbar') || document.querySelector('.home .title-row');
-    if (!host || host.querySelector('.split-wrap')) return;
+    if (host && host.querySelector('.split-wrap')) return;
+    const flushAll = () => Promise.all(openStores.map((s) => s.flush()));
+    const closeSide = async () => { await flushAll(); api.split.close(); };
+    const closeBtn = el('button', { class: 'icon-btn split-close', type: 'button', title: 'Close this side of the split screen (Ctrl/Cmd+Shift+W)', hidden: true, onclick: closeSide }, '✕');
+    api.onMenu((channel) => { if (channel === 'closeSplit') closeSide(); });
+    if (!canOpen || !host) {
+      // No Split button here: the close button still shows while split (floating if there's no toolbar).
+      if (host) host.append(el('div', { class: 'split-wrap' }, closeBtn));
+      else document.body.append(el('div', { class: 'split-wrap split-float' }, closeBtn));
+      const showClose = (s) => { closeBtn.hidden = !s.split; };
+      api.split.onState(showClose);
+      showClose(await api.split.state());
+      return;
+    }
     const btn = el('button', { class: 'ghost-btn split-btn', type: 'button', title: 'Split screen: open another page beside this one' }, '◫ Split');
     const menu = el('div', { class: 'menu split-menu', hidden: true });
-    const wrap = el('div', { class: 'menu-wrap split-wrap' }, btn, menu);
+    const wrap = el('div', { class: 'menu-wrap split-wrap' }, btn, closeBtn, menu);
     let state = { split: false, side: 'left' };
-    const flushAll = () => Promise.all(openStores.map((s) => s.flush()));
     const fill = () => {
       menu.replaceChildren(
         el('div', { class: 'menu-label' }, state.split ? 'Show in the other side' : 'Open beside this page'),
@@ -181,12 +194,12 @@
         ...(state.split ? [
           el('hr'),
           el('button', { type: 'button', onclick: () => { menu.hidden = true; api.split.swap(); } }, '⇄ Swap sides'),
-          el('button', { type: 'button', onclick: async () => { menu.hidden = true; await flushAll(); api.split.close(); } }, '✕ Close this side'),
+          el('button', { type: 'button', onclick: () => { menu.hidden = true; closeSide(); } }, '✕ Close this side'),
         ] : []));
     };
     btn.addEventListener('click', (e) => { e.stopPropagation(); const open = menu.hidden; document.querySelectorAll('.menu').forEach((m) => { m.hidden = true; }); if (open) { fill(); menu.hidden = false; } });
     document.addEventListener('click', (e) => { if (!wrap.contains(e.target)) menu.hidden = true; });
-    const show = (s) => { state = s; btn.classList.toggle('active', s.split); btn.textContent = s.split ? '◫ Split ▾' : '◫ Split'; };
+    const show = (s) => { state = s; btn.classList.toggle('active', s.split); btn.textContent = s.split ? '◫ Split ▾' : '◫ Split'; closeBtn.hidden = !s.split; };
     api.split.onState(show);
     show(await api.split.state());
     const spacer = host.querySelector('.toolbar-spacer');

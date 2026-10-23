@@ -82,7 +82,8 @@ The `online` branch adds accounts and live collaboration. It needs the small Clo
 **◫ Split** in the toolbar of any production page (or on the production home) opens another page of the production beside it:
 
 - **Divider:** drag it to resize the two sides; double-click it to split evenly.
-- **◫ Split ▾ in split screen:** show another page on the other side, **Swap sides**, or **Close this side** (the other side fills the window).
+- **Closing a side:** **✕** next to **◫ Split** (shown on every page while split, the start screen included), **View → Close This Side of Split Screen** (Ctrl/⌘+Shift+W), or **Close this side** in the **◫ Split ▾** menu. The other side fills the window.
+- **◫ Split ▾ in split screen:** show another page on the other side, or **Swap sides**.
 - **Menus and shortcuts** (Undo, Export, Home…) act on the side you last clicked in.
 
 Both sides are live:

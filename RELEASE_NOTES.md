@@ -1,5 +1,8 @@
 # Production Tools 1.4.2
 
+## Split screen
+- **Closing a side is easier:** a **✕** button next to **◫ Split** closes that side, and the other side fills the window. It's on every page while the window is split, including the start screen. Or use **View → Close This Side of Split Screen** (Ctrl/⌘+Shift+W).
+
 ## Script
 - **Fold away the Scenes list:** click **‹** at the top of the Scenes list beside the script to give the page more room, and **›** to bring it back. The app remembers your choice.
 
