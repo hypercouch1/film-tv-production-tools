@@ -1,3 +1,10 @@
+# Production Tools 1.4.2
+
+## Script
+- **Fold away the Scenes list:** click **‹** at the top of the Scenes list beside the script to give the page more room, and **›** to bring it back. The app remembers your choice.
+
+---
+
 # Production Tools 1.4.1
 
 ## Split screen
@@ -8,7 +15,6 @@
 ## Works in small windows
 - Toolbars wrap onto a second line instead of hiding buttons, so every option can be reached in a small window or a narrow side of split screen.
 - The sidebar slides over the page instead of squeezing it, and wide tables scroll sideways.
-- **Script:** the Scenes list beside the script folds away (‹) to give the page more room; › brings it back.
 
 ## Call sheets on everyone's phone
 - **Send to cast & crew:** on a shoot day (Schedule → **Send…**, or on the call sheet), send the call sheet out. Each person gets a personal page on their phone with their call time, their scenes and the full call sheet. No app or account needed.

@@ -1,7 +1,7 @@
 {
   "name": "production-tools",
   "productName": "Production Tools",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "Scripts, call sheets, shot lists and shoot scheduling for film and TV production",
   "main": "main.js",
   "author": "Matthew Sosdorf",
