@@ -27,29 +27,80 @@
   el('div', { class: 'prod-meta' }, shared ? `Shared · edited ${relTime(p.updatedAt || Date.now())}` : summary(p)),
   shared ? null : el('div', { class: 'prod-when' }, 'Edited ' + relTime(p.updatedAt || Date.now())));
 
-  function newProduction() {
+  // A new production: blank, or starting from another one (template.js) with its cast, crew,
+  // locations, equipment list and budget accounts.
+  async function newProduction() {
     const title = el('input', { class: 'field', placeholder: 'e.g. Night Diner', required: true });
     const kind = (value, label, sub, checked) => el('label', { class: 'kind-opt' },
       el('input', { type: 'radio', name: 'kind', value, checked }),
       el('span', {}, el('strong', {}, label), el('span', { class: 'muted small' }, sub)));
     const film = kind('film', 'Film', 'One script and one shot list', true);
     const tv = kind('tv', 'TV show', 'Episodes, each with its own script and shot list; cast, crew, locations and the schedule are shared', false);
+    const local = await P.list();
+    const shared = window.Cloud.signedIn ? await window.Cloud.projects('shotsheet').catch(() => []) : [];
+    const from = el('select', { class: 'field' }, el('option', { value: '' }, 'Nothing: a blank production'),
+      ...local.map((p) => el('option', { value: 'local:' + p.id }, p.title || 'Untitled')),
+      ...shared.map((p) => el('option', { value: 'cloud:' + p.id }, `${p.title || 'Untitled'} (shared)`)));
+    const boxes = window.Template.PARTS.map(([key, label]) => ({ key, box: el('input', { type: 'checkbox', checked: true }), label }));
+    const parts = el('div', { class: 'tpl-parts', hidden: true }, el('p', { class: 'muted small' }, 'Copy from it (the script, scenes, schedule, reports and expenses aren’t copied):'),
+      ...boxes.map((b) => el('label', { class: 'tpl-part' }, b.box, el('span', {}, b.label))));
+    from.addEventListener('change', () => {
+      parts.hidden = !from.value;
+      const src = [...local, ...shared].find((p) => from.value.endsWith(':' + p.id));
+      if (src) form.querySelector(`input[name=kind][value=${src.type === 'tv' ? 'tv' : 'film'}]`).checked = true;
+    });
+    const error = el('p', { class: 'form-error' });
     const create = el('button', { class: 'primary-btn', type: 'submit' }, 'Create production');
     const form = el('form', { class: 'new-prod' },
       el('label', { class: 'form-field' }, el('span', {}, 'Title'), title),
       el('div', { class: 'kind-opts' }, film, tv),
+      (local.length || shared.length) ? el('label', { class: 'form-field' }, el('span', {}, 'Start from'), from) : null,
+      parts, error,
       el('div', { class: 'modal-foot' }, create));
     const m = modal('New production', form);
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const type = form.querySelector('input[name=kind]:checked').value;
-      const p = P.upgrade(window.ShotFormats.upgradeProject(P.blank(title.value.trim() || 'Untitled Production', type)));
-      const data = (await api.loadStore('shotsheets')) || {};
-      data.projects = Array.isArray(data.projects) ? data.projects : [];
-      data.projects.push(p);
-      await api.saveStore('shotsheets', data);
-      m.close();
-      open(p.id);
+      create.disabled = true;
+      error.textContent = '';
+      try {
+        const type = form.querySelector('input[name=kind]:checked').value;
+        let p = P.upgrade(window.ShotFormats.upgradeProject(P.blank(title.value.trim() || 'Untitled Production', type)));
+        let gear = null, budget = null;
+        if (from.value) {
+          const [where, id] = from.value.split(/:(.+)/);
+          const chosen = Object.fromEntries(boxes.map((b) => [b.key, b.box.checked]));
+          const docOf = async (store, kindName) => {
+            if (where === 'local') return ((await api.loadStore(store)) || {}).docs?.find((d) => d.productionId === id) || null;
+            const kids = await window.Cloud.projects(kindName, id).catch(() => []);
+            return kids.length ? window.Cloud.doc(kids[0].id).catch(() => null) : null;
+          };
+          const src = where === 'local' ? local.find((x) => x.id === id) : await window.Cloud.doc(id);
+          const out = window.Template.copy({
+            src, fresh: p, parts: chosen,
+            srcGear: chosen.gear ? await docOf('gear', 'gear') : null,
+            srcBudget: chosen.budget ? await docOf('budget', 'budget') : null,
+            newGear: window.GearFormats.newGear, newBudget: window.BudgetFormats.newBudget,
+          });
+          p = P.upgrade(window.ShotFormats.upgradeProject(out.prod));
+          gear = out.gear; budget = out.budget;
+        }
+        const data = (await api.loadStore('shotsheets')) || {};
+        data.projects = Array.isArray(data.projects) ? data.projects : [];
+        data.projects.push(p);
+        await api.saveStore('shotsheets', data);
+        for (const [store, doc] of [['gear', gear], ['budget', budget]]) {
+          if (!doc) continue;
+          const d = (await api.loadStore(store)) || {};
+          d.docs = Array.isArray(d.docs) ? d.docs : [];
+          d.docs.push(doc);
+          await api.saveStore(store, d);
+        }
+        m.close();
+        open(p.id);
+      } catch (err) {
+        error.textContent = err.message;
+        create.disabled = false;
+      }
     });
   }
 

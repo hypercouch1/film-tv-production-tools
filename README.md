@@ -10,7 +10,7 @@ A desktop app for Windows and macOS that runs a film or TV production from scrip
 |---|---|
 | **Productions** | Start screen: your films and TV shows (with episodes), on this computer and shared with you |
 | **Script** | Write screenplays formatted automatically; import PDF, Final Draft or Fountain; tag props, wardrobe and more for the breakdown |
-| **Shot Sheet** | Scenes and shots linked to the script; cast and crew; run the day as a checklist |
+| **Shot Sheet** | Scenes and shots linked to the script, with a storyboard picture per shot; cast and crew; run the day as a checklist |
 | **Schedule** | Calendar, stripboard, day out of days and availability; call sheets for each shoot day, sent to phones |
 | **Cast & Crew** | Characters, actors, crew (several roles each) and contacts |
 | **Call Sheets** | Cue checklists for a shoot or live show |
@@ -22,6 +22,8 @@ A desktop app for Windows and macOS that runs a film or TV production from scrip
 | **Equipment** | Gear lists, rentals, check-out and return |
 
 **Split screen:** open any two pages side by side in the same window (for example the Script beside the Shot Sheet), with live editing on both sides. See [Split screen](#split-screen).
+
+**Search:** Ctrl/⌘+K searches everything in a production. **Recent activity** on a shared production's home shows who changed what. **New production → Start from** copies another production's people, places, gear and budget. See [Search, activity and templates](#search-activity-and-templates).
 
 **Admin page:** usage stats, accounts, one-time password codes and backups for whoever runs the server (see [Admin page](#admin-page)).
 
@@ -138,6 +140,31 @@ Code: `src/production.js` (current production, links, migration, sharing), `src/
 - **Post tracker:** tasks for visual effects, sound, music, colour, edit and other, with status, who, due date (late ones in red) and notes. **Add from breakdown** makes tasks from the breakdown's visual effects and sound items (once each).
 - **Cuts & notes:** cuts by stage (assembly, rough, fine, picture lock, online), with a review link or file path and timecoded notes to resolve.
 - In a shared production the post document is online inside it (made the first time someone who can edit opens Post).
+
+## Search, activity and templates
+
+- **Search** (`search.js`): **Ctrl/⌘+K** (Edit → Search Production…), ⌕ in the toolbar, or the box on the production home.
+  - **What it reads:** the production as it is now (from this computer, or the server for a shared production), across every page: script lines (with their scene), scenes and shots, cast and crew, shoot days, locations, breakdown items, call sheets, production reports and continuity notes, the take log, media, post tasks and cuts, budget lines and expenses (owner and editors), and equipment.
+  - **Matching:** every word typed must appear, in any order.
+  - **Results** are grouped by page. Arrow keys and Enter, or a click, open the page.
+- **Recent activity** (shared productions; `server/src/activity.js`):
+  - **What's recorded:** each document's live room turns edits into a few words ("Scene 4", "Crew: Sam", "Take log", "Script: Pilot"). Answers sent through availability links are recorded too.
+  - **Combining:** one person's edits to a document within 15 minutes are one entry.
+  - **Storage:** entries are written to the `activity` table at most every 30 seconds and kept for 60 days.
+  - **On the production home:** the newest entries. Others' changes since your last visit are marked **new**.
+  - **Budget:** budget edits aren't shown to view-only members.
+- **Templates** (`template.js`): **New production → Start from** another production (on this computer or shared) copies any of:
+  - cast
+  - crew
+  - locations (permit status cleared)
+  - the equipment list (statuses, dates and check-outs cleared)
+  - budget accounts, rates, fringes and contingency (no actuals or expenses; quantities that followed the old schedule start again from zero)
+
+  Cast, crew and locations keep their ids, so the copied budget lines still match them when you **Build from production**.
+
+## Storyboards
+
+**Shot Sheet → Storyboard** shows every shot as a card with its picture. Drop or paste an image onto a card, or click an empty frame to choose one; **Replace** and **Remove** change it. Pictures are stored like continuity photos (`photos.js`): on this computer, or on the server in a shared production. They appear beside the shot in the shot list (Run day) and on the call sheet for the shot's day. Sharing a production uploads its pictures under the same ids, so shots keep pointing at them.
 
 ## Call sheets on phones
 

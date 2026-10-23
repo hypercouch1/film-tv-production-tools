@@ -9,6 +9,7 @@ import { ADMIN_HTML } from './admin-page.js';
 import { CREW_HTML } from './crew-page.js';
 import { findPerson, crewDays, crewCalendar } from './crew.js';
 import { newSecret, checkCode, otpauthUri } from './totp.js';
+import { describeAll, mergeItems } from './activity.js';
 
 const { applyAll, clone } = globalThis.SyncCore;
 
@@ -35,6 +36,30 @@ const MAX_PHOTOS = 3000;
 const BACKUP_EVERY_MS = 20 * 3600_000;
 const BACKUPS_KEPT = 14;
 const DELETED_KEPT_MS = 30 * DAY_MS;
+// Recent activity: one person's edits to a document within 15 minutes of each other are one
+// entry; entries are kept for 60 days.
+const ACTIVITY_GAP_MS = 15 * 60_000;
+const ACTIVITY_KEPT_MS = 60 * DAY_MS;
+const ACTIVITY_FLUSH_MS = 30_000;
+
+// e: { rootId, projectId, kind, userId, userName, items, count, at }
+async function recordActivity(env, e) {
+  if (!e.items.length) return;
+  const last = await env.DB.prepare('SELECT id, items, count FROM activity WHERE project_id = ? AND user_id IS ? AND user_name = ? AND at > ? ORDER BY at DESC LIMIT 1')
+    .bind(e.projectId, e.userId, e.userName, e.at - ACTIVITY_GAP_MS).first();
+  if (last) {
+    let items = [];
+    try { items = JSON.parse(last.items); } catch { /* old row */ }
+    await env.DB.prepare('UPDATE activity SET at = ?, count = ?, items = ? WHERE id = ?')
+      .bind(e.at, last.count + e.count, JSON.stringify(mergeItems(items, e.items)), last.id).run();
+    return;
+  }
+  await env.DB.batch([
+    env.DB.prepare('INSERT INTO activity (root_id, project_id, kind, user_id, user_name, started_at, at, count, items) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(e.rootId, e.projectId, e.kind, e.userId, String(e.userName).slice(0, 100), e.startedAt || e.at, e.at, e.count, JSON.stringify(e.items)),
+    env.DB.prepare('DELETE FROM activity WHERE at < ?').bind(e.at - ACTIVITY_KEPT_MS),
+  ]);
+}
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -459,6 +484,7 @@ async function route(req, env, url) {
       const put = await roomCall(env, link.project_id, '/availability', { personId: link.person_id, entry });
       if (!put.ok) throw new HttpError(404, "This production isn't available any more.");
       await env.DB.prepare('UPDATE availability_links SET responded_at = ? WHERE code_hash = ?').bind(entry.at, link.code_hash).run();
+      await recordActivity(env, { rootId: link.project_id, projectId: link.project_id, kind: 'shotsheet', userId: null, userName: `${link.name} (availability link)`, items: ['Availability'], count: 1, at: entry.at });
       return json({ ok: true, off, note: entry.note });
     }
   }
@@ -869,6 +895,20 @@ async function route(req, env, url) {
     }
   }
 
+  // Recent activity in a production (everyone in it; view-only people don't see budget edits).
+  if ((m = pathname.match(/^\/api\/projects\/([\w-]+)\/activity$/)) && method === 'GET') {
+    const id = m[1];
+    await requireProduction(env, id);
+    const role = await requireRole(env, id, user.id);
+    const limit = Math.min(200, Math.max(1, parseInt(url.searchParams.get('limit'), 10) || 60));
+    const { results } = await env.DB.prepare(
+      'SELECT a.project_id AS projectId, a.kind, a.user_id AS userId, a.user_name AS userName, a.started_at AS startedAt, a.at, a.count, a.items, p.title ' +
+      'FROM activity a LEFT JOIN projects p ON p.id = a.project_id WHERE a.root_id = ? ORDER BY a.at DESC LIMIT ?'
+    ).bind(id, limit).all();
+    const visible = results.filter((r) => role !== 'viewer' || !HIDDEN_FROM_VIEWERS.includes(r.kind));
+    return json({ activity: visible.map((r) => { let items = []; try { items = JSON.parse(r.items); } catch { /* old row */ } return { ...r, items }; }) });
+  }
+
   // Personal crew pages for a shared production's cast and crew (call sheets, "Got it",
   // calendar). Owners and editors create them (one per person; a new one replaces the old)
   // and revoke them; members see who has opened theirs.
@@ -940,7 +980,12 @@ async function route(req, env, url) {
       if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8 || buf[2] !== 0xff) throw new HttpError(400, 'Photos must be JPEG images.');
       const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM photos WHERE root_id = ?').bind(rootId).first();
       if (count.n >= MAX_PHOTOS) throw new HttpError(409, 'This production has too many photos. Delete some first.');
-      const pid = newId();
+      // ?id= keeps the id a photo had on the computer it came from (sharing a production).
+      const wanted = url.searchParams.get('id');
+      if (wanted != null && (!/^[\w-]{8,40}$/.test(wanted) || await env.DB.prepare('SELECT 1 FROM photos WHERE id = ?').bind(wanted).first())) {
+        throw new HttpError(409, 'That photo id is taken.');
+      }
+      const pid = wanted || newId();
       await env.DB.prepare('INSERT INTO photos (id, project_id, root_id, created_by, created_at, size, data) VALUES (?, ?, ?, ?, ?, ?, ?)')
         .bind(pid, id, rootId, user.id, Date.now(), buf.length, buf.buffer).run();
       return json({ id: pid });
@@ -1015,6 +1060,7 @@ async function route(req, env, url) {
         env.DB.prepare('DELETE FROM crew_links WHERE project_id = ?').bind(id),
         env.DB.prepare('DELETE FROM sheet_sends WHERE project_id = ?').bind(id),
         env.DB.prepare('DELETE FROM sheet_confirms WHERE project_id = ?').bind(id),
+        env.DB.prepare('DELETE FROM activity WHERE root_id = ?').bind(id),
       ]);
       await Promise.all(ids.map((x) => roomCall(env, x, '/destroy')));
       return json({ ok: true, deleted: true });
@@ -1079,7 +1125,10 @@ async function route(req, env, url) {
     if (req.headers.get('Upgrade') !== 'websocket') throw new HttpError(426, 'Expected a WebSocket.');
     const id = m[1];
     const role = await requireRole(env, id, user.id);
+    const row = await env.DB.prepare('SELECT kind, parent_id FROM projects WHERE id = ?').bind(id).first();
     const headers = new Headers(req.headers);
+    headers.set('X-Kind', row.kind);
+    headers.set('X-Root', row.parent_id || id);
     headers.set('X-User-Id', user.id);
     headers.set('X-User-Name', encodeURIComponent(user.name));
     headers.set('X-Role', role);
@@ -1120,6 +1169,9 @@ export class ProjectRoom extends DurableObject {
       this.info = this.doc ? infoOf(this.doc) : null;
       this.touchedAt = 0;
       this.backedUpAt = (await ctx.storage.get('backedUpAt')) ?? 0;
+      // Recent activity not yet written to the database: { userId: { name, items, count, startedAt, at } }.
+      this.meta = (await ctx.storage.get('meta')) ?? null; // { kind, root }
+      this.pending = (await ctx.storage.get('activity')) ?? {};
     });
   }
 
@@ -1184,8 +1236,11 @@ export class ProjectRoom extends DurableObject {
         this.safeSend(ws, { type: 'gone', message: 'This project was deleted by its owner.' });
         try { ws.close(4004, 'Project deleted'); } catch { /* already closed */ }
       }
+      await this.ctx.storage.deleteAlarm();
       await this.ctx.storage.deleteAll();
       this.doc = null;
+      this.pending = {};
+      this.meta = null;
       return new Response('ok');
     }
     if (url.pathname === '/kick') {
@@ -1251,6 +1306,34 @@ export class ProjectRoom extends DurableObject {
     return new Response('ok');
   }
 
+  // Recent activity: what someone changed, collected here and written to the database at
+  // most every 30 seconds (an alarm), so typing doesn't mean a database write per keystroke.
+  noteActivity(att, ops, before, after) {
+    if (!this.meta || !att.userId) return;
+    const items = describeAll(this.meta.kind, ops, before, after, String(after.title || ''));
+    if (!items.length) return;
+    const now = Date.now();
+    const p = this.pending[att.userId] || { name: att.name, items: [], count: 0, startedAt: now, at: now };
+    p.items = mergeItems(p.items, items);
+    p.count += ops.length;
+    p.at = now;
+    this.pending[att.userId] = p;
+    this.ctx.storage.put('activity', this.pending);
+    const wait = Number(this.env.ACTIVITY_FLUSH_MS) || ACTIVITY_FLUSH_MS; // shorter in tests
+    this.ctx.storage.getAlarm().then((t) => { if (t == null) this.ctx.storage.setAlarm(now + wait); });
+  }
+  async alarm() {
+    const pending = this.pending;
+    this.pending = {};
+    await this.ctx.storage.put('activity', this.pending);
+    if (!this.meta || !this.projectId) return;
+    for (const [userId, p] of Object.entries(pending)) {
+      try {
+        await recordActivity(this.env, { rootId: this.meta.root, projectId: this.projectId, kind: this.meta.kind, userId, userName: p.name, items: p.items, count: p.count, startedAt: p.startedAt, at: p.at });
+      } catch (err) { console.error('activity failed', err); }
+    }
+  }
+
   // A copy of the document as it was before the day's first change (at most one a day).
   // The copy is taken now; saving it doesn't hold up the edit (awaiting here would let a
   // later message overtake this one).
@@ -1276,6 +1359,11 @@ export class ProjectRoom extends DurableObject {
     if (!this.projectId) {
       this.projectId = req.headers.get('X-Project-Id');
       this.ctx.storage.put('pid', this.projectId);
+    }
+    const kind = req.headers.get('X-Kind');
+    if (kind && (!this.meta || this.meta.kind !== kind || this.meta.root !== req.headers.get('X-Root'))) {
+      this.meta = { kind, root: req.headers.get('X-Root') };
+      this.ctx.storage.put('meta', this.meta);
     }
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server);
@@ -1313,9 +1401,11 @@ export class ProjectRoom extends DurableObject {
     const applied = applyAll(next, msg.ops);
     if (JSON.stringify(next).length > MAX_DOC_BYTES) return resync('This project is too large to save more changes.');
     if (applied.length) {
+      const before = this.doc;
       this.doc = next;
       this.version++;
       await this.ctx.storage.put({ doc: this.doc, version: this.version });
+      this.noteActivity(att, applied, before, next);
     }
     // Everyone gets the batch, including the sender (as its acknowledgement).
     this.broadcast({ type: 'ops', ops: applied, v: this.version, from: att.clientId, batch: msg.batch });

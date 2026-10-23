@@ -359,6 +359,14 @@ await api('DELETE', `/api/projects/${prodId}/crew/links/c2`, null, A);
 assert.equal((await api('GET', `/api/crew/${danCrew}`)).status, 404, 'revoked');
 step('crew pages: days and calls, call sheet once sent, "Got it" per version, calendar feed, revoke');
 
+// Recent activity: who changed what (the test server writes it after ACTIVITY_FLUSH_MS).
+await new Promise((r) => setTimeout(r, 2500));
+const activity = (await api('GET', `/api/projects/${prodId}/activity`, null, D)).activity;
+assert.ok(activity.some((a) => a.userName === 'Alice' && a.items.includes('Cast') && a.items.includes('Scenes') && a.items.includes('Shoot days')), JSON.stringify(activity));
+assert.ok(activity.some((a) => /availability link/.test(a.userName) && a.items.includes('Availability')), 'answers through links count');
+assert.equal((await api('GET', `/api/projects/${prodId}/activity`, null, B)).status, 404, 'non-members see nothing');
+step('recent activity: edits described and combined per person, answers through links');
+
 // Continuity photos: editors add and delete, anyone in the production sees them.
 const onset = await api('POST', '/api/projects', { kind: 'onset', parent: prodId, doc: { title: 'On set' } }, A);
 assert.equal(onset.status, 200, onset.error);
@@ -369,6 +377,11 @@ assert.equal((await upload(jpeg, D)).status, 403, 'view-only people can’t add 
 assert.equal((await upload(new Uint8Array([1, 2, 3, 4]), A)).status, 400, 'JPEG only');
 const photo = await (await upload(jpeg, C)).json();
 assert.ok(photo.id);
+const keepId = 'board' + run;
+const kept = await (await fetch(`${BASE}/api/projects/${prodId}/photos?id=${keepId}`, { method: 'POST', headers: { 'Content-Type': 'image/jpeg', Authorization: 'Bearer ' + A }, body: jpeg })).json();
+assert.equal(kept.id, keepId, 'a shared production keeps its pictures’ ids');
+assert.equal((await fetch(`${BASE}/api/projects/${prodId}/photos?id=${keepId}`, { method: 'POST', headers: { 'Content-Type': 'image/jpeg', Authorization: 'Bearer ' + A }, body: jpeg })).status, 409, 'ids are unique');
+assert.equal((await fetch(`${BASE}/api/projects/${onset.project.id}/photos/${keepId}`, { headers: { Authorization: 'Bearer ' + D } })).status, 200, 'any document in the production reaches them');
 const got = await fetch(`${BASE}/api/projects/${onset.project.id}/photos/${photo.id}`, { headers: { Authorization: 'Bearer ' + D } });
 assert.equal(got.headers.get('content-type'), 'image/jpeg');
 assert.deepEqual([...new Uint8Array(await got.arrayBuffer())], [...jpeg], 'view-only people see them');

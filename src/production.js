@@ -151,6 +151,13 @@
     // Then everything inside it. Anything that fails stays on this computer (still in the
     // production) and can be shared again from its page.
     const failed = [];
+    // Storyboard pictures go up under the ids the shots already point at.
+    for (const id of new Set((prod.scenes || []).flatMap((s) => (s.shots || []).map((x) => x.board)).filter(Boolean))) {
+      try {
+        const bytes = await api.loadPhoto(id);
+        if (bytes) await Cloud.uploadPhoto(pid, new Blob([bytes], { type: 'image/jpeg' }), id);
+      } catch (err) { failed.push(`A storyboard picture: ${err.message}`); }
+    }
     const upload = async (kind, docs, store, key) => {
       const done = new Set();
       for (const d of docs) {

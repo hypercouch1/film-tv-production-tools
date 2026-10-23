@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self' https: wss: http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:*">
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; connect-src 'self' https: wss: http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:*">
   <title>Shot Sheet</title>
   <link rel="stylesheet" href="../node_modules/@fontsource/bebas-neue/index.css">
   <link rel="stylesheet" href="styles.css">
@@ -38,6 +38,7 @@
         </span>
         <div class="seg" id="viewToggle">
           <button data-view="shots">Shot List</button>
+          <button data-view="boards">Storyboard</button>
           <button data-view="schedule">Schedule</button>
           <button data-view="people">Cast &amp; Crew</button>
         </div>
@@ -95,6 +96,8 @@
   <script src="production.js"></script>
   <script src="schedule-views.js"></script>
   <script src="crewlinks.js"></script>
+  <script src="photos.js"></script>
+  <script src="search.js"></script>
   <script src="shotsheet.js"></script>
 </body>
 </html>

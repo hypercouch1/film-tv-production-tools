@@ -231,6 +231,7 @@ function buildMenu() {
         { role: 'selectAll' },
         { type: 'separator' },
         { label: 'Comments', accelerator: 'CmdOrCtrl+Alt+M', click: menuSend('comments') },
+        { label: 'Search Production…', accelerator: 'CmdOrCtrl+K', click: menuSend('search') },
       ],
     },
     {

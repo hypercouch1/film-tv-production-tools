@@ -189,41 +189,15 @@
   }
 
   // ---------- Continuity ----------
-  // Photos: object URLs by photo id, loaded once.
-  const photoUrls = new Map();
+  // Photos (photos.js): on this computer, or with the shared document.
   const cloudDocId = () => { const d = active(); return d && d._cloud ? d._cloud.id : null; };
-  function photoUrl(id) {
-    if (!photoUrls.has(id)) {
-      photoUrls.set(id, (async () => {
-        const blob = cloudDocId()
-          ? await window.Cloud.photo(cloudDocId(), id)
-          : await api.loadPhoto(id).then((bytes) => (bytes ? new Blob([bytes], { type: 'image/jpeg' }) : null));
-        return blob ? URL.createObjectURL(blob) : null;
-      })().catch(() => null));
-    }
-    return photoUrls.get(id);
-  }
-  // Pictures are made at most 1600 px on the long side and saved as JPEG.
-  async function shrink(file) {
-    const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(bitmap.width * scale); canvas.height = Math.round(bitmap.height * scale);
-    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Couldn’t read that picture.'))), 'image/jpeg', 0.82));
-  }
   async function addPhotos(note, files) {
     const images = [...files].filter((f) => f.type.startsWith('image/'));
     if (!images.length) return;
     toast(`Adding ${images.length} photo${images.length === 1 ? '' : 's'}…`);
     for (const file of images) {
       try {
-        const blob = await shrink(file);
-        let id;
-        if (cloudDocId()) id = await window.Cloud.uploadPhoto(cloudDocId(), blob);
-        else { id = OF.uid(); await api.savePhoto(id, new Uint8Array(await blob.arrayBuffer())); }
-        photoUrls.set(id, Promise.resolve(URL.createObjectURL(blob)));
-        note.photos.push(id);
+        note.photos.push(await window.Photos.add(cloudDocId(), file));
         save();
       } catch (err) { alert(err.message); break; }
     }
@@ -233,13 +207,7 @@
     if (!confirm('Delete this photo?')) return;
     note.photos = note.photos.filter((x) => x !== id);
     save(); render({ keepScroll: true });
-    try { if (cloudDocId()) await window.Cloud.deletePhoto(cloudDocId(), id); else await api.deletePhoto(id); } catch { /* already gone */ }
-  }
-  function lightbox(id) {
-    const img = el('img', { class: 'lb-img', alt: '' });
-    photoUrl(id).then((u) => { if (u) img.src = u; });
-    const o = el('div', { class: 'lightbox', onclick: () => o.remove() }, img);
-    document.body.append(o);
+    await window.Photos.remove(cloudDocId(), id);
   }
 
   function renderContinuity(d) {
@@ -291,8 +259,7 @@
     cat.value = n.cat;
     const file = el('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true, onchange: (e) => addPhotos(n, e.target.files) });
     const thumbs = el('div', { class: 'cn-photos' }, ...n.photos.map((id) => {
-      const img = el('img', { class: 'cn-thumb', alt: 'Continuity photo', title: 'Click to enlarge', onclick: () => lightbox(id) });
-      photoUrl(id).then((u) => { if (u) img.src = u; else img.classList.add('missing'); });
+      const img = window.Photos.img(cloudDocId(), id, { class: 'cn-thumb', alt: 'Continuity photo', title: 'Click to enlarge', onclick: () => window.Photos.lightbox(cloudDocId(), id) });
       return el('span', { class: 'cn-photo' }, img, ro() ? null : el('button', { class: 'cn-del', type: 'button', title: 'Delete photo', onclick: () => removePhoto(n, id) }, '✕'));
     }), ro() ? null : el('button', { class: 'cn-add', type: 'button', title: 'Add photos', onclick: () => file.click() }, '📷'), file);
     return el('article', { class: 'cn-card', 'data-note': n.id, style: `border-left-color:${c.color}` },
@@ -306,7 +273,7 @@
         ro() ? null : el('button', { class: 'icon-btn del', type: 'button', title: 'Delete note', onclick: async () => {
           if (!confirm('Delete this note' + (n.photos.length ? ' and its photos' : '') + '?')) return;
           d.notes = d.notes.filter((x) => x !== n); save(); render({ keepScroll: true });
-          for (const id of n.photos) { try { if (cloudDocId()) await window.Cloud.deletePhoto(cloudDocId(), id); else await api.deletePhoto(id); } catch { /* already gone */ } }
+          for (const id of n.photos) await window.Photos.remove(cloudDocId(), id);
         } }, '✕')));
   }
 

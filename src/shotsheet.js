@@ -9,7 +9,7 @@
   // (shot list, cast & crew), the Schedule (calendar, stripboard, day out of days, availability,
   // call sheets) and the Breakdown. body[data-mode] says which page this is.
   const PAGES = {
-    shots: { page: 'shotsheet.html', label: 'Shot Sheet', views: ['shots', 'people'] },
+    shots: { page: 'shotsheet.html', label: 'Shot Sheet', views: ['shots', 'boards', 'people'] },
     schedule: { page: 'schedule.html', label: 'Schedule', views: ['schedule', 'strips', 'dood', 'availability', 'summary'] },
     breakdown: { page: 'breakdown.html', label: 'Breakdown', views: ['sheets', 'elements'] },
     locations: { page: 'locations.html', label: 'Locations', views: ['locations'] },
@@ -615,7 +615,8 @@
         el('div', { class: 'shot-body' },
           el('div', { class: 'item-text' }, el('span', { html: shot.desc ? fmt(shot.desc) : '<span class="muted">No description</span>' }), commentControl(shot.id)),
           el('div', { class: 'shot-meta' }, shotMeta(p, shot)),
-          shot.notes ? el('div', { class: 'shot-notes' }, shot.notes) : null)));
+          shot.notes ? el('div', { class: 'shot-notes' }, shot.notes) : null),
+        boardThumb(p, s, shot, i)));
       });
       if (!ul.children.length) continue;
       wrap.append(el('section', { class: 'section', id: 'sec-' + s.id },
@@ -629,6 +630,66 @@
         dayFilter === 'all' ? 'No shots yet. Click Edit to add scenes and shots, or use "Import script" in the sidebar to build them from a screenplay.'
           : 'No shots on this day yet. Assign shots from the Schedule view or in Edit mode.'));
     }
+  }
+
+  // ---------- Storyboard ----------
+  // Each shot can have a picture (a sketch, frame grab or reference), kept like continuity
+  // photos (photos.js): on this computer, or with the shared production.
+  const photoHome = (p) => (collab.isCloud(p) ? p._cloud.id : null);
+  const shotCaption = (s, shot, i) => `${sceneCode(active(), s)}${shotLetter(i)} ${shot.type}${shot.desc ? ' — ' + shot.desc.replace(/\*/g, '') : ''}`;
+  function boardThumb(p, s, shot, i) {
+    if (!shot.board || !window.Photos) return null;
+    return window.Photos.img(photoHome(p), shot.board, {
+      class: 'run-board', title: 'Storyboard (click to enlarge)',
+      onclick: (e) => { e.stopPropagation(); window.Photos.lightbox(photoHome(p), shot.board, shotCaption(s, shot, i)); },
+    });
+  }
+  // A new picture for a shot. The old one is kept (so undo can bring it back).
+  async function setBoard(p, shot, files) {
+    const file = (files || []).find((f) => f.type.startsWith('image/'));
+    if (!file || blockedReadOnly()) return;
+    try {
+      shot.board = await window.Photos.add(photoHome(p), file);
+      save();
+      render({ keepScroll: true });
+    } catch (err) { alert(err.message); }
+  }
+  function renderBoards(p) {
+    const wrap = $('sections');
+    wrap.innerHTML = '';
+    const ro = collab.readOnly();
+    let any = false;
+    for (const s of epScenes(p)) {
+      if (!s.shots.length) continue;
+      any = true;
+      wrap.append(el('section', { class: 'section', id: 'sec-' + s.id },
+        el('h2', { class: 'section-title' }, `SCENE ${s.number}`, el('span', { class: 'scene-heading' }, s.heading)),
+        el('div', { class: 'sb-grid' }, ...s.shots.map((shot, i) => boardCard(p, s, shot, i, ro)))));
+    }
+    if (!any) wrap.append(el('div', { class: 'empty' }, 'No shots yet. Add shots in the Shot List (Edit), then give each one a picture here.'));
+  }
+  function boardCard(p, s, shot, i, ro) {
+    const home = photoHome(p);
+    const pick = async () => setBoard(p, shot, await window.Photos.pick());
+    const card = el('article', {
+      class: 'sb-card', 'data-shot': shot.id, tabindex: ro ? null : 0,
+      title: ro ? '' : 'Drop or paste a picture here',
+      ondragover: (e) => { if (!ro && e.dataTransfer.types.includes('Files')) { e.preventDefault(); card.classList.add('drop'); } },
+      ondragleave: () => card.classList.remove('drop'),
+      ondrop: (e) => { if (ro) return; e.preventDefault(); e.stopPropagation(); card.classList.remove('drop'); setBoard(p, shot, window.Photos.imageFiles(e.dataTransfer)); },
+      onpaste: (e) => { const files = window.Photos.imageFiles(e.clipboardData); if (files.length && !ro) { e.preventDefault(); setBoard(p, shot, files); } },
+    },
+    el('div', { class: 'sb-frame' + (shot.board ? '' : ' blank'), onclick: shot.board ? null : ro ? null : pick },
+      shot.board
+        ? window.Photos.img(home, shot.board, { class: 'sb-img', title: 'Click to enlarge', onclick: () => window.Photos.lightbox(home, shot.board, shotCaption(s, shot, i)) })
+        : el('span', {}, ro ? 'No picture' : '+ Add a picture')),
+    el('div', { class: 'sb-meta' }, el('strong', {}, sceneCode(p, s) + shotLetter(i)), el('span', { class: 'type-chip', title: typeName(shot.type) }, shot.type),
+      el('span', { class: 'muted small' }, [shot.angle, shot.move, shot.lens].filter(Boolean).join(' · '))),
+    el('div', { class: 'sb-desc', html: shot.desc ? fmt(shot.desc) : '<span class="muted">No description</span>' }),
+    !ro && shot.board ? el('div', { class: 'sb-actions' },
+      el('button', { class: 'link-btn', type: 'button', onclick: pick }, 'Replace'),
+      el('button', { class: 'link-btn danger', type: 'button', onclick: () => { shot.board = ''; save(); render({ keepScroll: true }); } }, 'Remove')) : null);
+    return card;
   }
 
   function toggleShot(shot) {
@@ -1421,6 +1482,11 @@
 
         d.shotNotes.length ? el('h3', {}, 'Shot notes') : null,
         d.shotNotes.length ? el('ul', { class: 'sum-list' }, ...d.shotNotes.map((x) => el('li', {}, el('strong', {}, x.code + ' '), x.shot.notes))) : null,
+        ...(() => {
+          const boards = window.Photos ? d.shots.filter((x) => x.shot.board) : [];
+          return boards.length ? [el('h3', {}, 'Storyboard'), el('div', { class: 'sum-boards' }, ...boards.map((x) => el('figure', {},
+            window.Photos.img(photoHome(p), x.shot.board, { class: 'sum-board' }), el('figcaption', {}, `${x.code} ${x.shot.type}${x.shot.desc ? ' — ' + x.shot.desc.replace(/\*/g, '') : ''}`))))] : [];
+        })(),
         el('footer', { class: 'sum-foot' }, `${p.title} · Call sheet · Day ${n} · generated ${new Date().toLocaleDateString()}`)));
   }
 
@@ -1476,6 +1542,7 @@
     else if (view === 'sheets' || view === 'elements') $('sections').replaceChildren(window.BreakdownViews[view](scheduleCtx(p)));
     else if (view === 'locations') $('sections').replaceChildren(window.LocationsViews.list(scheduleCtx(p)));
     else if (view === 'people') renderPeople(p);
+    else if (view === 'boards') renderBoards(p);
     else if (view === 'summary') renderSummary(p);
     else if (editing) renderEdit(p);
     else renderRun(p);

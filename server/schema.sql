@@ -129,6 +129,22 @@ CREATE TABLE IF NOT EXISTS backups (
 );
 CREATE INDEX IF NOT EXISTS backups_project ON backups(project_id, taken_at);
 
+-- What changed in shared productions (see migrations/0006_activity.sql).
+CREATE TABLE IF NOT EXISTS activity (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  root_id     TEXT NOT NULL,
+  project_id  TEXT NOT NULL,
+  kind        TEXT NOT NULL,
+  user_id     TEXT,
+  user_name   TEXT NOT NULL,
+  started_at  INTEGER NOT NULL,
+  at          INTEGER NOT NULL,
+  count       INTEGER NOT NULL,
+  items       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS activity_root ON activity(root_id, at);
+CREATE INDEX IF NOT EXISTS activity_project_user ON activity(project_id, user_id, at);
+
 -- Failed sign-in attempts per email, for basic brute-force protection.
 CREATE TABLE IF NOT EXISTS auth_failures (
   email        TEXT PRIMARY KEY,

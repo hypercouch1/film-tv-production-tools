@@ -349,6 +349,8 @@
         texts(sh, ['type', 'angle', 'move', 'lens', 'cam', 'fps', 'audio', 'desc', 'notes']);
         if (typeof sh.dayId !== 'string') sh.dayId = null;
         sh.done = !!sh.done;
+        // Storyboard frame: a photo id (photos.js), or ''.
+        sh.board = typeof sh.board === 'string' && /^[\w-]{8,40}$/.test(sh.board) ? sh.board : '';
       });
       s.castIds = idList(s.castIds);
       s.crewIds = idList(s.crewIds);

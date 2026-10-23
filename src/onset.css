@@ -35,8 +35,6 @@
 .cn-add { width: 96px; height: 72px; border: 1px dashed var(--line); border-radius: 6px; background: none; font-size: 22px; cursor: pointer; color: var(--muted); }
 .cn-add:hover { border-color: var(--muted); }
 .cn-foot { display: flex; justify-content: space-between; align-items: center; }
-.lightbox { position: fixed; inset: 0; background: rgba(0, 0, 0, .88); display: grid; place-items: center; z-index: 1000; cursor: zoom-out; padding: 20px; }
-.lb-img { max-width: 100%; max-height: 100%; border-radius: 6px; }
 
 @media print {
   .pr-box, .pr-progress, .cn-card { background: #fff; color: #000; border-color: #ccc; }

@@ -59,6 +59,31 @@
 }
 .type-chip.small { font-size: 15px; min-width: 40px; padding: 3px 5px 1px; margin-top: 0; }
 .shot-body { min-width: 0; flex: 1; }
+/* Storyboard frame beside a shot in the shot list */
+.run-board { width: 120px; height: 68px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); flex-shrink: 0; cursor: zoom-in; background: var(--panel-2); }
+.run-board.missing { display: none; }
+.item.shot.checked .run-board { opacity: .45; }
+
+/* Storyboard view */
+.sb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; margin-top: 8px; }
+.sb-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px; display: grid; gap: 6px; outline: none; }
+.sb-card:focus { border-color: var(--muted); }
+.sb-card.drop { border-color: var(--yellow); box-shadow: 0 0 0 2px rgba(230, 207, 46, .25); }
+.sb-frame { aspect-ratio: 16 / 9; border-radius: 6px; overflow: hidden; background: #0c0a08; display: grid; place-items: center; }
+.sb-frame.blank { border: 1px dashed var(--line); color: var(--muted); font-size: 13px; cursor: pointer; }
+.read-only .sb-frame.blank { cursor: default; }
+.sb-frame.blank:hover { border-color: var(--muted); color: var(--text); }
+.sb-img { width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; }
+.sb-img.missing { display: none; }
+.sb-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sb-desc { font-size: 14px; line-height: 1.35; }
+.sb-actions { display: flex; gap: 12px; }
+/* Storyboard on the call sheet */
+.sum-boards { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-top: 6px; }
+.sum-boards figure { margin: 0; break-inside: avoid; }
+.sum-board { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border: 1px solid #ccc; border-radius: 4px; display: block; }
+.sum-board.missing { display: none; }
+.sum-boards figcaption { font-size: 11px; margin-top: 3px; }
 .item.shot .item-text { font-size: 22px; }
 .shot-meta { color: var(--tab); font-size: 14px; margin-top: 4px; letter-spacing: .2px; }
 .shot-notes { color: var(--muted); font-size: 14px; font-style: italic; margin-top: 3px; }

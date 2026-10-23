@@ -24,9 +24,20 @@
         <div id="account"></div>
       </div>
       <p class="home-sub" id="homeSub"></p>
+      <input class="field dash-search" id="dashSearch" type="search" placeholder="⌕  Search this production: script, scenes, people, locations, notes… (Ctrl/⌘+K)" autocomplete="off">
+
     </header>
 
     <section class="tiles" id="tiles"></section>
+
+    <section class="activity" id="activity" hidden>
+      <div class="episodes-head">
+        <h2 class="section-title">Recent activity</h2>
+        <span class="act-new" id="activityNew"></span>
+      </div>
+      <ul class="act-list" id="activityList"></ul>
+      <button class="link-btn" id="activityMore" type="button" hidden></button>
+    </section>
 
     <section class="episodes" id="episodes" hidden>
       <div class="episodes-head">
@@ -59,6 +70,7 @@
   <script src="budget-formats.js"></script>
   <script src="onset-formats.js"></script>
   <script src="gear-formats.js"></script>
+  <script src="search.js"></script>
   <script src="dashboard.js"></script>
 </body>
 </html>

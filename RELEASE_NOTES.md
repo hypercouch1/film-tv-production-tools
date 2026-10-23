@@ -1,3 +1,25 @@
+# Production Tools 1.4.3
+
+## Storyboards
+- **Shot Sheet → Storyboard:** give each shot a picture (a sketch, a frame grab or a reference). Drop or paste a picture onto a shot, or click it to choose one.
+- The pictures also show beside each shot in the shot list and on the call sheet for the day the shot is scheduled.
+- In a shared production everyone sees them, and sharing a production takes its pictures with it.
+
+## Recent activity
+- **What changed in a shared production:** the production home lists who changed what and when, for example "Bob · Location: Rosie's · 3 changes". A person's edits close together are combined into one line.
+- Changes made by others since your last visit are marked **new**.
+
+## Search the whole production
+- **Ctrl/⌘+K** on any page (or ⌕ in the toolbar, or the search box on the production home) searches everything in the production: the script, scenes and shots, cast and crew, shoot days, locations, breakdown, call sheets, reports and continuity notes, post, budget and equipment.
+- Results are grouped by page. Pick one (or use the arrow keys and Enter) to open it.
+
+## Start from another production
+- **New production → Start from:** copy the cast, crew, locations, equipment list and budget accounts and rates from an existing production, without its script, scenes, schedule, reports or expenses.
+
+This version needs the updated server.
+
+---
+
 # Production Tools 1.4.2
 
 ## Split screen

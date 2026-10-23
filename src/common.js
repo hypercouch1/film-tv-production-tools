@@ -181,7 +181,8 @@
     }
     const btn = el('button', { class: 'ghost-btn split-btn', type: 'button', title: 'Split screen: open another page beside this one' }, '◫ Split');
     const menu = el('div', { class: 'menu split-menu', hidden: true });
-    const wrap = el('div', { class: 'menu-wrap split-wrap' }, btn, closeBtn, menu);
+    const searchBtn = window.Search ? el('button', { class: 'icon-btn search-btn', type: 'button', title: 'Search the whole production (Ctrl/Cmd+K)', onclick: () => window.Search.open() }, '⌕') : null;
+    const wrap = el('div', { class: 'menu-wrap split-wrap' }, searchBtn, btn, closeBtn, menu);
     let state = { split: false, side: 'left' };
     const fill = () => {
       menu.replaceChildren(
@@ -439,7 +440,7 @@
 
   window.Common = {
     api, uid, $, mod, esc, fmt, el, toast, relTime, safeFileName,
-    parseCSV, csvField, createStore, onStoreChanged, goHome, wireDropdowns, onFileDrop, modal,
+    parseCSV, csvField, createStore, onStoreChanged, flushStores: () => Promise.all(openStores.map((s) => s.flush())), goHome, wireDropdowns, onFileDrop, modal,
     setHandoff, takeHandoff, compareVersions, initUpdates, pickScript, emptyState, wireUndo,
   };
 })();

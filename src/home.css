@@ -92,6 +92,10 @@ a.tile:hover, a.tile:focus-visible {
 .kind-opt:has(input:checked) { border-color: var(--yellow); background: rgba(230, 207, 46, .06); }
 .kind-opt > span { display: grid; gap: 2px; }
 
+.tpl-parts { display: grid; gap: 6px; margin: 4px 0 8px; }
+.tpl-parts p { margin: 0 0 2px; }
+.tpl-part { display: flex; gap: 8px; align-items: center; font-size: 14px; cursor: pointer; }
+
 .loose-list { display: grid; gap: 8px; margin-top: 12px; }
 .loose-row { display: grid; grid-template-columns: 90px minmax(160px, 1fr) auto; gap: 12px; align-items: center; padding: 10px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
 .loose-kind { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); }
@@ -128,6 +132,23 @@ a.tile:hover, a.tile:focus-visible {
 .ep-num { text-align: center; }
 .ep-stats { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dash-danger { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line); }
+
+.dash-search { display: block; width: min(560px, 100%); margin: 18px 0 0 28px; padding: 10px 14px; font-size: 15px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; color: var(--text); }
+.dash-search:focus { outline: none; border-color: var(--yellow); }
+@media (max-width: 900px) { .dash-search { margin-left: 0; } }
+
+/* Recent activity (shared productions) */
+.activity { margin-top: 48px; }
+.act-new { color: var(--yellow); font-weight: 700; font-size: 13px; }
+.act-list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
+.act-row { display: grid; grid-template-columns: minmax(90px, 160px) 1fr auto; gap: 12px; align-items: baseline; padding: 9px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.act-row.new { border-color: var(--yellow); box-shadow: inset 3px 0 0 var(--yellow); }
+.act-who { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.act-what a { color: var(--text); text-decoration: none; }
+.act-what a:hover { text-decoration: underline; }
+.act-when { font-size: 13px; white-space: nowrap; }
+#activityMore { margin-top: 8px; }
+@media (max-width: 600px) { .act-row { grid-template-columns: 1fr; gap: 2px; } }
 
 .upcoming { margin-top: 52px; }
 .upcoming-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }

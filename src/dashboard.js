@@ -297,7 +297,48 @@
     renderTiles();
     renderEpisodes();
     renderUpcoming();
+    renderActivity();
   }
+
+  // ---- Recent activity (shared productions) ----
+  // What people changed, newest first. Changes by others since your last visit are marked new.
+  let activity = null;      // from the server
+  let seenBefore = 0;       // your previous visit to this production's home
+  const seenKey = () => 'activity.seen.' + prod.id;
+  const WHERE = { shotsheet: 'shotsheet.html', script: 'writer.html', callsheet: 'callsheet.html', post: 'post.html', budget: 'budget.html', onset: 'onset.html', gear: 'gear.html' };
+  async function loadActivity() {
+    if (!session) return;
+    try { activity = (await window.Cloud.activity(prod.id)) || []; } catch { activity = activity || []; }
+    renderActivity();
+  }
+  function renderActivity() {
+    const box = $('activity');
+    box.hidden = !session || !activity;
+    if (box.hidden) return;
+    const me = window.Cloud.user && window.Cloud.user.id;
+    const fresh = activity.filter((a) => a.userId !== me && a.at > seenBefore);
+    $('activityNew').textContent = fresh.length ? `${fresh.length} new since your last visit` : '';
+    const rel = (t) => {
+      const mins = Math.round((Date.now() - t) / 60000);
+      if (mins < 1) return 'just now';
+      if (mins < 60) return `${mins} min ago`;
+      if (mins < 60 * 24) return `${Math.round(mins / 60)} h ago`;
+      return new Date(t).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+    };
+    const list = $('activityList');
+    list.replaceChildren(...(activity.length ? activity.slice(0, showAllActivity ? 60 : 8).map((a) => {
+      const page = WHERE[a.kind];
+      const items = a.items.length ? a.items.join(', ') : 'made changes';
+      return el('li', { class: 'act-row' + (fresh.includes(a) ? ' new' : '') },
+        el('span', { class: 'act-who' }, a.userId === me ? 'You' : a.userName),
+        el('span', { class: 'act-what' }, page ? el('a', { href: P.link(page) }, items) : items,
+          el('span', { class: 'muted' }, ` · ${a.count} change${a.count === 1 ? '' : 's'}`)),
+        el('span', { class: 'act-when muted' }, rel(a.at)));
+    }) : [el('li', { class: 'muted' }, 'No changes yet. Edits by everyone in the production show up here.')]));
+    $('activityMore').hidden = activity.length <= 8;
+    $('activityMore').textContent = showAllActivity ? 'Show fewer' : `Show all (${activity.length})`;
+  }
+  let showAllActivity = false;
 
   function wireTitle() {
     const h = $('prodTitle');
@@ -433,6 +474,16 @@
     }
     render();
     wireTitle();
+    // Typing in the search box opens the production search with what was typed.
+    $('dashSearch').addEventListener('input', (e) => { const q = e.target.value; e.target.value = ''; window.Search.open(q); });
+    if (session) {
+      // Remember this visit for next time; changes since the last one are marked new.
+      try { seenBefore = Number(localStorage.getItem(seenKey())) || 0; localStorage.setItem(seenKey(), String(Date.now())); } catch { /* storage unavailable */ }
+      $('activityMore').addEventListener('click', () => { showAllActivity = !showAllActivity; renderActivity(); });
+      loadActivity();
+      window.addEventListener('focus', loadActivity);
+      setInterval(loadActivity, 60000);
+    }
     $('shareBtn').addEventListener('click', share);
     $('addEpisode').addEventListener('click', addEpisode);
     $('deleteProduction').addEventListener('click', deleteProduction);

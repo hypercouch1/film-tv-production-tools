@@ -62,6 +62,13 @@ npm run db:migrate:crew
 npm run deploy
 ```
 
+**Updating a server set up before 1.4.3** (recent activity): apply this database change once, then deploy:
+
+```bash
+npm run db:migrate:activity
+npm run deploy
+```
+
 (A new server set up with `npm run db:init` already has these changes.) The admin page is at `/admin`, for the emails listed in `ADMIN_EMAILS` in `wrangler.toml` (comma-separated). Those people sign in with their normal app account. Deploying also attaches the availability page's address, `film.prismdashboard.cc` (see `routes` in `wrangler.toml`); the domain must be in the same Cloudflare account. Change `AVAILABILITY_HOST` and `routes` to use another address.
 
 ## Local development

@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { findPerson, crewDays, crewCalendar } from '../src/crew.js';
 import { base32, unbase32, codeAt, checkCode, stepAt } from '../src/totp.js';
+import { describeAll, mergeItems } from '../src/activity.js';
 
 const step = (name) => console.log('  ✓ ' + name);
 
@@ -69,5 +70,21 @@ assert.equal(await checkCode(secret, '081804', 1111111109_000 + 30_000), stepAt(
 assert.equal(await checkCode(secret, '081804', 1111111109_000 + 120_000), null, 'old codes stop working');
 assert.equal(await checkCode(secret, 'abc'), null);
 step('authenticator codes (RFC 6238 test values)');
+
+// Recent activity labels.
+const before = { title: 'Night Diner', scenes: [{ id: 's1', number: '4' }], days: [{ id: 'd1', date: '2026-11-03' }], crew: [{ id: 'k1', name: '', role: 'Gaffer' }] };
+const after = { ...before, scenes: [{ id: 's1', number: '4', heading: 'X' }], crew: [] };
+assert.deepEqual(describeAll('shotsheet', [
+  { t: 'set', p: ['scenes', '#s1', 'heading'], v: 'X' },
+  { t: 'set', p: ['scenes', '#s1', 'synopsis'], v: 'Y' },
+  { t: 'del', p: ['crew'], id: 'k1' },
+  { t: 'set', p: ['days', '#d1', 'call'], v: '07:00' },
+  { t: 'set', p: ['claims', 'c1'], v: 'u1' },
+  { t: 'ins', p: ['characters'], after: null, v: { id: 'c9', name: 'Lou' } },
+], before, after), ['Scene 4', 'Crew: Gaffer', 'Shoot day 2026-11-03', 'Cast: Lou'], 'named from either side of the change, bookkeeping left out');
+assert.deepEqual(describeAll('post', [{ t: 'ins', p: ['takes'], after: null, v: { id: 't1' } }], {}, {}), ['Take log']);
+assert.deepEqual(describeAll('script', [{ t: 'set', p: ['elements', '#e1', 'text'], v: 'x' }], {}, {}, 'Pilot'), ['Script: Pilot']);
+assert.deepEqual(mergeItems(['a', 'b'], ['b', 'c']), ['a', 'b', 'c']);
+step('recent activity: what changed, in a few words');
 
 console.log('crew: all checks passed');

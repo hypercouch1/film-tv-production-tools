@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self' https: wss: http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:*">
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; connect-src 'self' https: wss: http://localhost:* ws://localhost:* http://127.0.0.1:* ws://127.0.0.1:*">
   <title>Schedule</title>
   <link rel="stylesheet" href="../node_modules/@fontsource/bebas-neue/index.css">
   <link rel="stylesheet" href="styles.css">
@@ -97,6 +97,8 @@
   <script src="locations-views.js"></script>
   <script src="availability.js"></script>
   <script src="crewlinks.js"></script>
+  <script src="photos.js"></script>
+  <script src="search.js"></script>
   <script src="shotsheet.js"></script>
 </body>
 </html>

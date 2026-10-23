@@ -386,6 +386,8 @@
     setMyAvailability: (id, personId, entry) => request('POST', `/api/projects/${encodeURIComponent(id)}/me/availability`, { personId, ...entry }),
     // The address cast and crew open: /a/<code> on the availability site (or this server).
     availabilityLink: (code) => siteLink('a', code),
+    // Recent activity in a shared production: [{ userId, userName, kind, projectId, items, count, at }].
+    activity: (id) => request('GET', `/api/projects/${encodeURIComponent(id)}/activity`).then((r) => r.activity),
     // Personal crew pages (each person's shoot days, call sheets once sent, calendar).
     crewLinks: (id) => request('GET', `/api/projects/${encodeURIComponent(id)}/crew/links`).then((r) => r.links),
     createCrewLinks: (id, people) => request('POST', `/api/projects/${encodeURIComponent(id)}/crew/links`, { people }).then((r) => r.links),
@@ -395,7 +397,8 @@
     callSheetStatus: (id, dayId) => request('GET', `/api/projects/${encodeURIComponent(id)}/callsheets/${encodeURIComponent(dayId)}`),
     sendCallSheet: (id, dayId) => request('POST', `/api/projects/${encodeURIComponent(id)}/callsheets/${encodeURIComponent(dayId)}/send`).then((r) => r.sentAt),
     // Continuity photos (JPEG) in a shared production.
-    uploadPhoto: (id, blob) => rawRequest('POST', `/api/projects/${encodeURIComponent(id)}/photos`, blob, 'image/jpeg').then((r) => r.json()).then((r) => r.id),
+    // keepId: upload under the id it already has (a production being shared).
+    uploadPhoto: (id, blob, keepId) => rawRequest('POST', `/api/projects/${encodeURIComponent(id)}/photos${keepId ? '?id=' + encodeURIComponent(keepId) : ''}`, blob, 'image/jpeg').then((r) => r.json()).then((r) => r.id),
     photo: (id, photoId) => rawRequest('GET', `/api/projects/${encodeURIComponent(id)}/photos/${encodeURIComponent(photoId)}`).then((r) => r.blob()),
     deletePhoto: (id, photoId) => request('DELETE', `/api/projects/${encodeURIComponent(id)}/photos/${encodeURIComponent(photoId)}`),
     deleteProject: (id) => request('DELETE', `/api/projects/${encodeURIComponent(id)}`),
