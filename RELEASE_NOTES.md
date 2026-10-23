@@ -19,6 +19,11 @@
 - **Availability links** can be emailed the same way.
 - Email addresses come from each person's contact details in Cast & Crew. Anyone without one is flagged, so you can text them instead. Without Gmail connected, **Email…** opens a filled-in message in your own email app.
 
+## Script: dialogue in colour
+- **⋯ → Colour dialogue by character:** each character's lines get their own colour: a bar beside every speech and their name in colour. A **Characters** list under the scenes shows who has how many lines.
+- **Click a character** in the list to highlight only their lines. Handy for actors and read-throughs. Click again to see everyone.
+- On screen only: exported PDFs stay black and white.
+
 ## Start from another production
 - **New production → Start from:** copy the cast, crew, locations, equipment list and budget accounts and rates from an existing production, without its script, scenes, schedule, reports or expenses.
 

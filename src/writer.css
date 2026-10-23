@@ -42,6 +42,24 @@
 .nav-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; }
 .nav-page { color: var(--muted); font-size: 11px; }
 
+/* Dialogue coloured by character (screen only) */
+/* A bar in the margin beside the whole speech (one line up for every speech, whatever its
+   indent), and the character's name in their colour. */
+.el-bar { display: none; position: absolute; top: -1px; bottom: -1px; width: 5px; background: var(--speaker); pointer-events: none; }
+.paper.speaker-colors .el.spoken .el-bar { display: block; }
+.el-character .el-bar { left: -1.45in; }
+.el-parenthetical .el-bar { left: -0.85in; }
+.el-dialogue .el-bar { left: -0.25in; }
+.paper.speaker-colors .el-dialogue.spoken .el-text, .paper.speaker-colors .el-parenthetical.spoken .el-text { background: color-mix(in srgb, var(--speaker) 10%, transparent); }
+.paper.speaker-colors .el-character.spoken .el-text { color: color-mix(in srgb, var(--speaker) 70%, #111); font-weight: bold; }
+.nav-cast-head { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+.nav-cast { display: grid; grid-template-columns: 14px 1fr auto; gap: 8px; align-items: center; width: 100%; text-align: left; background: none; border: 0; border-radius: 6px; padding: 5px 8px; font-size: 12px; color: var(--text); }
+.nav-cast:hover { background: var(--panel-2); }
+.nav-cast.active { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--speaker); }
+.nav-cast.dim { opacity: .5; }
+.nav-swatch { width: 12px; height: 12px; border-radius: 3px; background: var(--speaker); }
+@media print { .el-bar { display: none !important; } .paper .el.spoken .el-text { background: none !important; color: inherit !important; font-weight: inherit !important; } }
+
 .desk { flex: 1; overflow: auto; background: #2a2622; padding: 28px 24px 120px; }
 .paper {
   width: 8.5in; min-height: 11in; margin: 0 auto;

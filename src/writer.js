@@ -192,7 +192,7 @@
     if (node) return node;
     const ta = el('textarea', { class: 'el-text', rows: 1, spellcheck: 'true' });
     node = el('div', { class: 'el', 'data-item': item.id },
-      el('span', { class: 'el-num left' }), ta, el('span', { class: 'el-num right' }));
+      el('span', { class: 'el-num left' }), ta, el('span', { class: 'el-num right' }), el('span', { class: 'el-bar' }));
     ta.addEventListener('input', () => onInput(node.dataset.item, ta));
     ta.addEventListener('keydown', (e) => onKeyDown(e, node.dataset.item, ta));
     ta.addEventListener('focus', () => {
@@ -272,6 +272,56 @@
     }
   }
 
+  // ---------- Dialogue colours (screen only; never in exports) ----------
+  // Each character's cue, parentheticals and lines get their own colour, in order of first
+  // appearance in the script. Picking a character in the list highlights just them.
+  // The setting is kept on this computer (state.speakerColors), not in the script.
+  const SPEAKER_COLORS = ['#e8a33d', '#3aa7c9', '#d9534f', '#6fbf73', '#a98be8', '#f08bb4', '#4fc1b8', '#c49a6c', '#7a8cf0', '#b5c83f', '#ef7d4f', '#9fb0c4'];
+  let speakerFocus = null; // a character name, or null for everyone
+  // "MAYA (V.O.)" and "MAYA (CONT'D)" are both Maya.
+  const speakerName = (text) => String(text || '').replace(/\([^)]*\)/g, '').replace(/\^\s*$/, '').trim().toUpperCase();
+  // Who speaks each line: Map(elementId → name), and the characters in order with line counts.
+  function speakers(doc) {
+    const byLine = new Map();
+    const cast = new Map();
+    let who = null;
+    for (const item of doc.elements) {
+      if (item.type === 'character') {
+        who = speakerName(item.text) || null;
+        if (who && !cast.has(who)) cast.set(who, { name: who, color: SPEAKER_COLORS[cast.size % SPEAKER_COLORS.length], lines: 0 });
+      } else if (item.type !== 'dialogue' && item.type !== 'parenthetical') who = null;
+      if (who) {
+        byLine.set(item.id, who);
+        if (item.type === 'dialogue') cast.get(who).lines++;
+      }
+    }
+    return { byLine, cast };
+  }
+  function applySpeakerColors(doc) {
+    const on = !!state.speakerColors;
+    const { byLine, cast } = on ? speakers(doc) : { byLine: new Map(), cast: new Map() };
+    if (speakerFocus && !cast.has(speakerFocus)) speakerFocus = null;
+    $('paper').classList.toggle('speaker-colors', on);
+    for (const item of doc.elements) {
+      const node = nodes.get(item.id);
+      if (!node) continue;
+      const who = byLine.get(item.id);
+      const shown = who && (!speakerFocus || speakerFocus === who);
+      node.classList.toggle('spoken', !!shown);
+      if (shown) node.style.setProperty('--speaker', cast.get(who).color);
+      else node.style.removeProperty('--speaker');
+    }
+    return cast;
+  }
+  function toggleSpeakerColors() {
+    state.speakerColors = !state.speakerColors;
+    speakerFocus = null;
+    store.save();
+    const doc = active();
+    if (doc) { applySpeakerColors(doc); renderNav(); }
+    $('speakerToggle').textContent = state.speakerColors ? 'Stop colouring dialogue' : 'Colour dialogue by character';
+  }
+
   function renderPaper(doc, { fresh = false } = {}) {
     const paper = $('paper');
     if (fresh) { paper.innerHTML = ''; nodes.clear(); }
@@ -305,6 +355,7 @@
     }
     paper.querySelectorAll('textarea').forEach(grow);
     updateBadges();
+    applySpeakerColors(doc);
     updatePageBreaks();
   }
 
@@ -422,7 +473,7 @@
   let laterTimer = null;
   function refreshLater() {
     clearTimeout(laterTimer);
-    laterTimer = setTimeout(() => { updatePageBreaks(); renderNav(); updateStatus(); renderSidebar(); }, 350);
+    laterTimer = setTimeout(() => { const doc = active(); if (doc) applySpeakerColors(doc); updatePageBreaks(); renderNav(); updateStatus(); renderSidebar(); }, 350);
   }
 
   // ---------- Scene navigator & status ----------
@@ -453,6 +504,21 @@
       el('span', { class: 'nav-num' }, s.number),
       el('span', { class: 'nav-title' }, s.heading.trim() || 'Untitled scene'),
       el('span', { class: 'nav-page' }, 'p' + pageOf[s.index])));
+    }
+    // Dialogue colours: who's who, and click a character to highlight just their lines.
+    if (state.speakerColors) {
+      const { cast } = speakers(doc);
+      nav.append(el('div', { class: 'nav-head nav-cast-head' }, el('span', {}, `Characters (${cast.size})`),
+        speakerFocus ? el('button', { class: 'link-btn small', type: 'button', onclick: () => { speakerFocus = null; applySpeakerColors(doc); renderNav(); } }, 'Show all') : null));
+      if (!cast.size) nav.append(el('div', { class: 'list-note' }, 'Characters appear here once they have lines.'));
+      for (const c of cast.values()) {
+        nav.append(el('button', {
+          class: 'nav-cast' + (speakerFocus === c.name ? ' active' : '') + (speakerFocus && speakerFocus !== c.name ? ' dim' : ''),
+          type: 'button', style: `--speaker:${c.color}`,
+          title: speakerFocus === c.name ? 'Show everyone’s lines in colour' : `Highlight only ${c.name}’s lines`,
+          onclick: () => { speakerFocus = speakerFocus === c.name ? null : c.name; applySpeakerColors(doc); renderNav(); },
+        }, el('span', { class: 'nav-swatch' }), el('span', { class: 'nav-title' }, c.name), el('span', { class: 'nav-page' }, `${c.lines} line${c.lines === 1 ? '' : 's'}`)));
+      }
     }
     highlightScene();
   }
@@ -1043,6 +1109,8 @@
     document.querySelectorAll('[data-export]').forEach((b) => b.addEventListener('click', () => exportAs(b.dataset.export)));
     document.querySelectorAll('[data-send]').forEach((b) => b.addEventListener('click', () => sendTo(b.dataset.send)));
     document.querySelector('[data-more="numbers"]').addEventListener('click', toggleNumbers);
+    document.querySelector('[data-more="speakers"]').addEventListener('click', toggleSpeakerColors);
+    $('speakerToggle').textContent = state.speakerColors ? 'Stop colouring dialogue' : 'Colour dialogue by character';
     document.querySelector('[data-more="duplicate"]').addEventListener('click', duplicateScript);
     document.querySelector('[data-more="delete"]').addEventListener('click', deleteScript);
     $('desk').addEventListener('scroll', hideSuggestions, { passive: true });
