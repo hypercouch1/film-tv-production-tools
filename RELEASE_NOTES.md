@@ -1,3 +1,15 @@
+# Production Tools 1.6.0
+
+## Read the script aloud
+- **🔊 in the Script Writer** (or **Ctrl/⌘+Alt+R**) reads the script out loud, starting from the line with the cursor (or the top of the screen). Each character speaks in their own voice, and the line being read is highlighted as it goes.
+- **Natural voices that run on your computer:** about 28 American and British voices, men and women. Your script never leaves your computer. The first time, the voices need a one-time download of about 90 MB; after that they work offline.
+- **Voices…** lets you pick a voice for each character and the narrator, and hear each one. Characters get a voice that suits their name to start with, and everyone sounds different.
+- **Narrate action:** a narrator reads scene headings ("Interior. Diner. Night."), action and transitions. Turn it off to hear only the dialogue.
+- **Rehearse as a character:** the app goes quiet on that character's lines and gives you time to say them, then carries on. Press Space to go on sooner.
+- Pause and carry on (Space), skip forward or back a line, stop (Esc), read **this scene only**, and choose the speed (0.8× to 1.5×).
+
+---
+
 # Production Tools 1.4.5
 
 ## Events on the schedule

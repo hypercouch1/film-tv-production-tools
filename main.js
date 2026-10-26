@@ -1,9 +1,10 @@
-const { app, BrowserWindow, WebContentsView, ipcMain, dialog, Menu, shell, safeStorage, net } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, dialog, Menu, shell, safeStorage, net, utilityProcess } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { fileURLToPath } = require('url');
 const { createUpdater } = require('./updates.js');
 const { createMailer } = require('./mail.js');
+const { createVoices } = require('./tts.js');
 
 const isMac = process.platform === 'darwin';
 let win = null;
@@ -233,6 +234,7 @@ function buildMenu() {
         { type: 'separator' },
         { label: 'Comments', accelerator: 'CmdOrCtrl+Alt+M', click: menuSend('comments') },
         { label: 'Search Production…', accelerator: 'CmdOrCtrl+K', click: menuSend('search') },
+        { label: 'Read Script Aloud', accelerator: 'CmdOrCtrl+Alt+R', click: menuSend('readAloud') },
       ],
     },
     {
@@ -537,6 +539,24 @@ handle('mail:compose', (_e, { to, subject, body }) => {
   shell.openExternal(`mailto:${addr}?${q}`);
   return true;
 });
+
+// ---- Reading scripts aloud with natural voices (tts.js) ----
+let voiceEngine = null;
+const voices = () => {
+  if (!voiceEngine) {
+    voiceEngine = createVoices({
+      dir: app.getPath('userData'), workerPath: path.join(__dirname, 'tts-worker.js'),
+      fork: (file) => utilityProcess.fork(file, [], { serviceName: 'Production Tools voices' }),
+    });
+  }
+  return voiceEngine;
+};
+handle('tts:status', () => voices().status());
+handle('tts:prepare', (e) => voices().prepare(e.sender.id, (p) => { if (!e.sender.isDestroyed()) e.sender.send('tts:progress', p); }));
+handle('tts:speak', (e, req) => voices().speak(e.sender.id, req || {}));
+handle('tts:cancel', (e) => { voices().cancel(e.sender.id); return true; });
+handle('tts:remove', () => voices().remove());
+app.on('will-quit', () => { if (voiceEngine) voiceEngine.stop(); });
 
 // Called by a page after startup: hands over a double-clicked file meant for it.
 handle('update:get', () => updater.get());

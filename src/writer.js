@@ -114,6 +114,7 @@
   }
 
   function selectScript(id) {
+    readAloud.stop();
     collab.leave();
     state.activeId = id;
     // Keep the address in step, so reopening the page shows the same episode.
@@ -321,6 +322,20 @@
     if (doc) { applySpeakerColors(doc); renderNav(); }
     $('speakerToggle').textContent = state.speakerColors ? 'Stop colouring dialogue' : 'Colour dialogue by character';
   }
+
+  // ---------- Read aloud (readaloud.js): each character in their own voice ----------
+  const readAloud = window.ReadAloud.attach({
+    getDoc: () => active(),
+    nodeOf: (id) => nodes.get(id),
+    speakers: (doc) => speakers(doc).cast,
+    // Voices, speed and so on, per production.
+    settings: () => {
+      const key = prod ? prod.id : '';
+      state.readAloud = state.readAloud || {};
+      return (state.readAloud[key] = state.readAloud[key] || {});
+    },
+    save: () => store.save(),
+  });
 
   function renderPaper(doc, { fresh = false } = {}) {
     const paper = $('paper');
@@ -1100,6 +1115,8 @@
     $('revisionsBtn').addEventListener('click', openRevisions);
     $('commentBtn').addEventListener('mousedown', (e) => e.preventDefault()); // keep the current line
     $('commentBtn').addEventListener('click', () => comments.open(currentId || undefined));
+    $('readBtn').addEventListener('mousedown', (e) => e.preventDefault()); // read from the current line
+    $('readBtn').addEventListener('click', () => readAloud.toggle());
     $('tagBtn').addEventListener('mousedown', (e) => e.preventDefault()); // keep the selection
     $('tagBtn').addEventListener('click', tagSelection);
     document.addEventListener('keydown', (e) => {
@@ -1138,6 +1155,7 @@
         undo: () => active() && undoUi.run(false, true),
         redo: () => active() && undoUi.run(true, true),
         comments: () => active() && comments.open(currentId || undefined),
+        readAloud: () => active() && readAloud.toggle(),
       }[channel] || (() => {}))();
     });
     api.onFileOpened((file) => openImported({ script: fileToScript(file) }));

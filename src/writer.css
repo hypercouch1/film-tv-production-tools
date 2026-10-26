@@ -235,3 +235,31 @@ textarea.el-text::placeholder { color: #aaa; text-transform: none; }
   .tp-draft { margin-top: 36pt !important; }
   .tp-contact { position: absolute; left: 1.5in; bottom: 1in; text-align: left; white-space: pre-wrap; }
 }
+
+/* Read aloud (readaloud.js) */
+.ra-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px;
+  padding: 6px 12px; border-top: 1px solid var(--line); background: var(--panel-2); font-size: 13px;
+}
+.ra-title { font-family: var(--display); font-size: 18px; letter-spacing: 1px; margin-right: 4px; }
+.ra-bar .icon-btn { width: 30px; height: 30px; font-size: 15px; }
+.ra-bar .ra-main { background: var(--yellow); color: var(--yellow-ink); border-color: var(--yellow); }
+.ra-status { color: var(--muted); min-width: 120px; }
+.ra-spacer { flex: 1; }
+.ra-check { display: flex; align-items: center; gap: 5px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.ra-select {
+  background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px;
+  padding: 5px 6px; font: inherit; font-size: 13px; max-width: 200px;
+}
+.paper .el.reading .el-text { background: rgba(230, 207, 46, .28); box-shadow: -6px 0 0 rgba(230, 207, 46, .28), 6px 0 0 rgba(230, 207, 46, .28); }
+.paper .el.your-line .el-text { background: rgba(120, 200, 140, .3); box-shadow: -6px 0 0 rgba(120, 200, 140, .3), 6px 0 0 rgba(120, 200, 140, .3); }
+@media print { .paper .el.reading .el-text { background: none !important; box-shadow: none !important; } }
+.ra-voice-row { display: grid; grid-template-columns: 1fr 190px 32px; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+.ra-voice-name { font-weight: 600; }
+.ra-progress { height: 8px; border-radius: 4px; background: var(--bg); overflow: hidden; margin: 14px 0 6px; }
+.ra-progress-fill { height: 100%; width: 0; background: var(--yellow); transition: width .2s; }
+@media (max-width: 700px) {
+  .ra-spacer { display: none; }
+  .ra-voice-row { grid-template-columns: 1fr 32px; }
+  .ra-voice-row select { grid-column: 1 / -1; grid-row: 2; }
+}

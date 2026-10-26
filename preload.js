@@ -34,6 +34,15 @@ if (location.protocol === 'file:') contextBridge.exposeInMainWorld('api', {
     send: (messages) => ipcRenderer.invoke('mail:send', messages),
     compose: (msg) => ipcRenderer.invoke('mail:compose', msg),
   },
+  // Natural voices for reading scripts aloud (tts.js).
+  tts: {
+    status: () => ipcRenderer.invoke('tts:status'),
+    prepare: () => ipcRenderer.invoke('tts:prepare'),
+    speak: (req) => ipcRenderer.invoke('tts:speak', req),
+    cancel: () => ipcRenderer.invoke('tts:cancel'),
+    remove: () => ipcRenderer.invoke('tts:remove'),
+    onProgress: (cb) => ipcRenderer.on('tts:progress', (_e, p) => cb(p)),
+  },
   // Split screen: two pages side by side in the window.
   split: {
     state: () => ipcRenderer.invoke('split:state'),

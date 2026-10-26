@@ -1,7 +1,7 @@
 {
   "name": "production-tools",
   "productName": "Production Tools",
-  "version": "1.4.5",
+  "version": "1.6.0",
   "description": "Scripts, call sheets, shot lists and shoot scheduling for film and TV production",
   "main": "main.js",
   "author": "Matthew Sosdorf",
@@ -15,7 +15,7 @@
     "dist:win": "electron-builder --win",
     "dist:mac": "electron-builder --mac",
     "dist": "electron-builder --win --mac",
-    "test": "node tests/sync-core.test.js && node tests/script-parse.test.js && node tests/shotsheet-formats.test.js && node tests/screenplay.test.js && node tests/updates.test.js && node tests/history.test.js && node tests/weather.test.js && node tests/schedule.test.js && node tests/breakdown.test.js && node tests/post.test.js && node tests/release-notes.test.js && node tests/csv.test.js && node tests/budget.test.js && node tests/gear.test.js && node tests/onset.test.js && node tests/template.test.js && node tests/mail.test.js && node --no-warnings tests/cloud.test.js"
+    "test": "node tests/sync-core.test.js && node tests/script-parse.test.js && node tests/shotsheet-formats.test.js && node tests/screenplay.test.js && node tests/updates.test.js && node tests/history.test.js && node tests/weather.test.js && node tests/schedule.test.js && node tests/breakdown.test.js && node tests/post.test.js && node tests/release-notes.test.js && node tests/csv.test.js && node tests/budget.test.js && node tests/gear.test.js && node tests/onset.test.js && node tests/template.test.js && node tests/mail.test.js && node tests/readaloud.test.js && node --no-warnings tests/cloud.test.js"
   },
   "build": {
     "appId": "com.callsheet.app",
@@ -34,6 +34,8 @@
       "updates.js",
       "mail.js",
       "mail-config.json",
+      "tts.js",
+      "tts-worker.js",
       "src/**/*",
       "node_modules/@fontsource/bebas-neue/**/*",
       "node_modules/@fontsource/courier-prime/**/*",
@@ -45,7 +47,18 @@
       "!node_modules/pdfjs-dist/{build,web,image_decoders,types}/**",
       "!node_modules/pdfjs-dist/legacy/{web,image_decoders}/**",
       "!node_modules/pdfjs-dist/**/*.map",
-      "!node_modules/pdfjs-dist/legacy/build/pdf.{sandbox,min,worker.min}*"
+      "!node_modules/pdfjs-dist/legacy/build/pdf.{sandbox,min,worker.min}*",
+      "!node_modules/onnxruntime-web/**",
+      "!node_modules/sharp/**",
+      "!node_modules/@img/**",
+      "!node_modules/onnxruntime-node/bin/napi-v3/linux/**",
+      "!node_modules/onnxruntime-node/bin/napi-v3/win32/arm64/**",
+      "!node_modules/@huggingface/transformers/{src,types}/**",
+      "!node_modules/@huggingface/transformers/dist/{transformers.js,transformers.min.js,transformers.web.js,transformers.web.min.js,transformers.node.mjs,transformers.node.min.*,ort-wasm-*}",
+      "!node_modules/@huggingface/transformers/dist/*.map",
+      "!node_modules/kokoro-js/dist/kokoro.{js,web.js}",
+      "!node_modules/kokoro-js/types/**",
+      "!node_modules/phonemizer/dist/phonemizer.js"
     ],
     "fileAssociations": [
       {
@@ -63,6 +76,10 @@
       "target": [
         "nsis",
         "portable"
+      ],
+      "files": [
+        "tts-worker.js",
+        "!node_modules/onnxruntime-node/bin/napi-v3/darwin/**"
       ]
     },
     "nsis": {
@@ -92,13 +109,22 @@
           ]
         }
       ],
-      "category": "public.app-category.productivity"
-    }
+      "category": "public.app-category.productivity",
+      "files": [
+        "tts-worker.js",
+        "!node_modules/onnxruntime-node/bin/napi-v3/win32/**"
+      ],
+      "x64ArchFiles": "**/onnxruntime-node/bin/napi-v3/darwin/**"
+    },
+    "asarUnpack": [
+      "node_modules/onnxruntime-node/**"
+    ]
   },
   "dependencies": {
     "@fontsource/bebas-neue": "^5.3.0",
     "@fontsource/courier-prime": "^5.3.0",
     "electron-updater": "6.8.9",
+    "kokoro-js": "1.2.1",
     "pdfjs-dist": "^4.10.38"
   },
   "devDependencies": {
