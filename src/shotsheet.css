@@ -440,3 +440,24 @@ textarea.cs-input { min-height: 2.6em; }
 @media print {
   .daybar { display: none !important; }
 }
+
+/* Events: table reads, meetings, rehearsals… (Schedule) */
+.cal-ev { max-width: 100%; font-size: 11px; line-height: 1.3; padding: 1px 6px; border-radius: 4px; background: color-mix(in srgb, var(--ev) 22%, transparent); border-left: 3px solid var(--ev); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ev-list-title { margin-top: 22px !important; }
+.ev-row { grid-template-columns: 14px 120px 1fr auto; }
+.ev-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ev); }
+.ev-section { margin: 14px 0 4px; }
+.ev-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ev-head .panel-title { margin: 0; }
+.ev-section > .muted { margin-top: 4px; }
+.ev-card { display: grid; gap: 2px; width: 100%; text-align: left; margin-top: 8px; padding: 9px 12px; background: var(--panel-2); border: 1px solid var(--line); border-left: 4px solid var(--ev); border-radius: 8px; }
+.ev-card:hover { border-color: var(--tab); border-left-color: var(--ev); }
+.ev-when { font-size: 12px; font-weight: 700; color: var(--ev); }
+.ev-name { font-size: 15px; font-weight: 600; }
+.ev-notes { color: var(--text); opacity: .85; white-space: pre-line; }
+.ev-editor { display: grid; gap: 10px; margin-top: 8px; padding: 12px; background: var(--panel-2); border: 1px solid var(--line); border-left: 4px solid var(--ev); border-radius: 8px; }
+.ev-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.ev-people { display: grid; gap: 2px; max-height: 180px; overflow-y: auto; border: 1px solid var(--line); border-radius: 6px; padding: 6px; margin-top: 4px; }
+.ev-person { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.ev-everyone { margin-top: 4px; }
+.ev-actions { display: flex; justify-content: space-between; gap: 8px; }

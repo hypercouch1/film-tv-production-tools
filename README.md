@@ -125,6 +125,13 @@ Code: `src/production.js` (current production, links, migration, sharing), `src/
 **Schedule** on the production home (or the Shot Sheet's Schedule tab):
 
 - **Calendar:** shoot days, each day's details, **Call sheet** and **Run day**.
+- **Events** (anything that isn't a shoot day: table reads, production meetings, rehearsals, fittings, location and tech scouts, prep days):
+  - **Adding one:** **+ Event** in any date's panel.
+  - **Details:** a title, type, start and end times, where, notes, and who's invited (picked cast and crew, or everyone).
+  - **Where they show:** on the calendar in their type's colour, under **Upcoming events** below the shoot days, and in the production home's **Coming up**.
+  - **Shoot days:** events aren't shoot days, so they don't count towards the Day Out of Days or the budget.
+  - **Invited people:** in shared productions, they see their events on their phone page and in their calendar feed. Events are also in the calendar export and production files.
+  - **Data:** stored as `p.events` in the production.
 - **Stripboard:** every scene as a strip coloured by INT/EXT and day/night (white INT day, yellow EXT day, blue INT night, green EXT night) with set, pages, cast numbers and shots. Drag strips between shoot days and the unscheduled bin, or use **Move…**. A scene split over days shows a strip on each. Days show page counts and availability clashes.
 - **Day Out of Days:** cast and crew against shoot days: SW (start), W (work), H (hold), WF (finish), SWF (one day), with totals.
 - **Availability:** a grid of people and dates. Click a date to mark a day someone can't work. Shoot days are highlighted, and a marked day they're scheduled on shows as a clash (here, on the stripboard and in the Day Out of Days).

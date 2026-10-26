@@ -1,3 +1,14 @@
+# Production Tools 1.4.5
+
+## Events on the schedule
+- **Table reads, meetings and more:** add events that aren't shoot days from any date on the Schedule (**+ Event**). Pick a table read, production meeting, rehearsal, fitting, location scout, tech scout, prep day or anything else. Each event has a time, a place, notes and who's invited (picked people, or everyone).
+- Events show on the calendar in colour, in an **Upcoming events** list under the shoot days, and in **Coming up** on the production home.
+- **On people's phones:** in a shared production, the people invited see their events on their personal page and in their calendar, alongside their shoot days.
+
+This version needs the updated server.
+
+---
+
 # Production Tools 1.4.4
 
 ## Storyboards

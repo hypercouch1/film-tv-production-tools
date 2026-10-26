@@ -78,6 +78,19 @@ export function crewDays(doc, person, { sends = new Map(), confirms = new Map() 
   return out;
 }
 
+// Events that aren't shoot days (table reads, meetings…) a person is invited to, in date order.
+const EVENT_KINDS = { tableread: 'Table read', meeting: 'Production meeting', rehearsal: 'Rehearsal', fitting: 'Fitting', scout: 'Location scout', tech: 'Tech scout', prep: 'Prep day', other: 'Event' };
+export function crewEvents(doc, person) {
+  return arr(doc.events)
+    .filter((e) => validDate(e.date) && (e.everyone || ids(e.peopleIds).includes(person.id)))
+    .map((e) => ({
+      id: str(e.id), date: e.date, start: validTime(e.start) ? e.start : '', end: validTime(e.end) ? e.end : '',
+      kind: EVENT_KINDS[e.kind] || 'Event', title: str(e.title).slice(0, 200) || EVENT_KINDS[e.kind] || 'Event',
+      location: str(e.location).slice(0, 500), notes: str(e.notes).slice(0, 2000),
+    }))
+    .sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+}
+
 // ---- Calendar (iCalendar feed people subscribe to) ----
 const icsText = (s) => str(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
 // Lines longer than 75 bytes are folded (continuation lines start with a space).
@@ -107,7 +120,7 @@ function addMinutes(date, time, minutes) {
 const minutesOf = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
 
 // Times are "floating" (the local time wherever the phone is), like a call sheet.
-export function crewCalendar(doc, person, days, { now = Date.now(), pageUrl = '' } = {}) {
+export function crewCalendar(doc, person, days, { now = Date.now(), pageUrl = '', events = [] } = {}) {
   const title = str(doc.title) || 'Production';
   const lines = [
     'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Production Tools//Crew calendar//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
@@ -133,6 +146,21 @@ export function crewCalendar(doc, person, days, { now = Date.now(), pageUrl = ''
     ].filter(Boolean).join('\n');
     lines.push(`DESCRIPTION:${icsText(desc)}`);
     if (pageUrl) lines.push(`URL:${pageUrl}`);
+    lines.push('END:VEVENT');
+  }
+  for (const e of events) {
+    lines.push('BEGIN:VEVENT', `UID:${e.id}.${person.id}@production-tools`, `DTSTAMP:${stamp(now)}`);
+    if (e.start) {
+      lines.push(`DTSTART:${addMinutes(e.date, e.start, 0)}`);
+      const length = e.end && minutesOf(e.end) > minutesOf(e.start) ? minutesOf(e.end) - minutesOf(e.start) : 60;
+      lines.push(`DTEND:${addMinutes(e.date, e.start, length)}`);
+    } else {
+      lines.push(`DTSTART;VALUE=DATE:${compactDate(e.date)}`, `DTEND;VALUE=DATE:${addMinutes(e.date, '00:00', 24 * 60).slice(0, 8)}`);
+    }
+    lines.push(`SUMMARY:${icsText(`${title}: ${e.title}`)}`);
+    if (e.location) lines.push(`LOCATION:${icsText(e.location.split('\n')[0])}`);
+    const desc = [e.title !== e.kind ? e.kind : '', e.notes, pageUrl ? `Your page: ${pageUrl}` : ''].filter(Boolean).join('\n');
+    if (desc) lines.push(`DESCRIPTION:${icsText(desc)}`);
     lines.push('END:VEVENT');
   }
   lines.push('END:VCALENDAR');

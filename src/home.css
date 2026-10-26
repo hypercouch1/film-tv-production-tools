@@ -167,3 +167,6 @@ a.tile:hover, a.tile:focus-visible {
 .up-day { display: block; font-family: var(--display); font-size: 30px; line-height: 1; }
 .up-title { font-weight: 600; font-size: 16px; }
 .up-meta { color: var(--muted); font-size: 13px; margin-top: 3px; }
+/* Events (table reads, meetings…) among the upcoming shoot days */
+.upcoming-list li.up-event a { border-left: 4px solid var(--ev); }
+.upcoming-list li.up-event .up-mon { color: var(--ev); }

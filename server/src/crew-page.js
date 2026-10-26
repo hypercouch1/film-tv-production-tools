@@ -61,6 +61,11 @@ export const CREW_HTML = `<!doctype html>
   form.code input:focus { outline: none; border-color: var(--yellow); }
   .msg { margin-top: 18px; }
   .past summary { color: var(--muted); font-weight: 600; }
+  .event { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--cyan); border-radius: 12px; padding: 12px 14px; margin-top: 10px; }
+  .event .when { font-size: 13px; font-weight: 700; color: var(--cyan); }
+  .event .what { font-size: 17px; font-weight: 700; margin-top: 2px; }
+  .event .kind { font-size: 13px; color: var(--muted); }
+  .event .notes { margin-top: 6px; font-size: 14px; white-space: pre-line; }
   .hidden { display: none !important; }
   @media print { body { background: #fff; color: #000; } .cal, .confirm, form.code { display: none !important; } .day, .box { background: #fff; border-color: #ccc; } }
 </style>
@@ -83,7 +88,7 @@ export const CREW_HTML = `<!doctype html>
     <h1 id="production"></h1>
     <p class="who">For <strong id="name"></strong><span id="role"></span></p>
     <div class="cal">
-      <span>Your shoot days in your calendar, kept up to date:</span>
+      <span>Your shoot days and events in your calendar, kept up to date:</span>
       <a id="calApple" href="#">Apple / Outlook</a>
       <a id="calGoogle" href="#" target="_blank" rel="noopener">Google Calendar</a>
     </div>
@@ -202,6 +207,19 @@ export const CREW_HTML = `<!doctype html>
     wrap.appendChild(make('h2', null, 'Your shoot days'));
     if (!upcoming.length) wrap.appendChild(make('div', 'empty', data.days.length ? 'No more shoot days for you. Thank you!' : 'You aren’t on any shoot days yet. This page updates as the schedule changes.'));
     upcoming.forEach(function (d) { wrap.appendChild(dayCard(d)); });
+    var events = (data.events || []).filter(function (e) { return e.date >= t; });
+    if (events.length) {
+      wrap.appendChild(make('h2', null, 'Meetings and other events'));
+      events.forEach(function (e) {
+        var card = make('article', 'event');
+        card.appendChild(make('div', 'when', nice(e.date, { weekday: 'long', month: 'long', day: 'numeric' }) + ' · ' + (e.start ? time(e.start) + (e.end ? ' – ' + time(e.end) : '') : 'All day')));
+        card.appendChild(make('div', 'what', e.title));
+        if (e.title !== e.kind) card.appendChild(make('div', 'kind', e.kind));
+        if (e.location) card.appendChild(make('div', 'loc', e.location));
+        if (e.notes) card.appendChild(make('div', 'notes', e.notes));
+        wrap.appendChild(card);
+      });
+    }
     if (past.length) {
       var det = make('details', 'past');
       det.appendChild(make('summary', null, 'Earlier days (' + past.length + ')'));

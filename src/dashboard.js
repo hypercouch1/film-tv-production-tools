@@ -257,27 +257,43 @@
   }
 
   // ---- Upcoming shoot days ----
+  // Upcoming shoot days and events (table reads, meetings…), soonest first.
   function renderUpcoming() {
     const today = todayStr();
+    const fmtT = (t) => (t ? new Date(`2000-01-01T${t}`).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '');
     const days = [...prod.days].sort((a, b) => a.date.localeCompare(b.date));
-    const rows = days.map((d, i) => ({ d, n: i + 1 })).filter((r) => r.d.date >= today).slice(0, 6);
+    const rows = [
+      ...days.map((d, i) => ({ date: d.date, time: d.call || '', day: d, n: i + 1 })),
+      ...(prod.events || []).map((e) => ({ date: e.date, time: e.start || '', event: e })),
+    ].filter((r) => r.date >= today).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time)).slice(0, 8);
     $('upcoming').hidden = !rows.length;
     const list = $('upcomingList');
     list.innerHTML = '';
-    for (const { d, n } of rows) {
-      const date = new Date(d.date + 'T00:00');
-      const shotsThatDay = prod.scenes.reduce((m, s) => m + s.shots.filter((x) => x.dayId === d.id).length, 0);
-      const time = d.call ? new Date(`2000-01-01T${d.call}`).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '';
-      list.append(el('li', {},
-        el('a', { href: P.link('schedule.html', { date: d.date }) },
+    for (const r of rows) {
+      const date = new Date(r.date + 'T00:00');
+      let title, meta;
+      if (r.day) {
+        const d = r.day;
+        const shotsThatDay = prod.scenes.reduce((m, s) => m + s.shots.filter((x) => x.dayId === d.id).length, 0);
+        title = `Day ${r.n}`;
+        meta = [date.toLocaleDateString(undefined, { weekday: 'long' }), d.call && `Call ${fmtT(d.call)}`, d.location, plural(shotsThatDay, 'shot')];
+      } else {
+        const e = r.event;
+        const kind = window.ShotFormats.eventKind(e.kind);
+        title = e.title || kind.label;
+        meta = [date.toLocaleDateString(undefined, { weekday: 'long' }), e.start ? fmtT(e.start) + (e.end ? ' – ' + fmtT(e.end) : '') : 'All day', e.title ? kind.label : '', e.location];
+      }
+      list.append(el('li', { class: r.event ? 'up-event' : '', style: r.event ? `--ev:${window.ShotFormats.eventKind(r.event.kind).color}` : null },
+        el('a', { href: P.link('schedule.html', { date: r.date }) },
           el('div', { class: 'up-date' },
             el('span', { class: 'up-mon' }, date.toLocaleDateString(undefined, { month: 'short' }).toUpperCase()),
             el('span', { class: 'up-day' }, String(date.getDate()))),
           el('div', { class: 'up-body' },
-            el('div', { class: 'up-title' }, `Day ${n}`),
-            el('div', { class: 'up-meta' }, [date.toLocaleDateString(undefined, { weekday: 'long' }), time && `Call ${time}`, d.location, plural(shotsThatDay, 'shot')].filter(Boolean).join(' · '))))));
+            el('div', { class: 'up-title' }, title),
+            el('div', { class: 'up-meta' }, meta.filter(Boolean).join(' · '))))));
     }
   }
+
 
   function renderHeader() {
     document.title = `${prod.title} — Production Tools`;

@@ -1000,7 +1000,12 @@
       },
       el('span', { class: 'cal-num' }, String(d.getDate())),
       shoot ? el('span', { class: 'cal-badge' }, `DAY ${days.indexOf(shoot) + 1}`) : null,
-      shoot ? el('span', { class: 'cal-sub' }, `${shotCount} shot${shotCount === 1 ? '' : 's'}${shoot.call ? ' · ' + fmtTime(shoot.call) : ''}`) : null));
+      shoot ? el('span', { class: 'cal-sub' }, `${shotCount} shot${shotCount === 1 ? '' : 's'}${shoot.call ? ' · ' + fmtTime(shoot.call) : ''}`) : null,
+      ...(() => {
+        const evs = eventsOn(p, date);
+        return [...evs.slice(0, 2).map((e) => el('span', { class: 'cal-ev', style: `--ev:${F.eventKind(e.kind).color}`, title: eventLabel(e) }, (e.start ? fmtTime(e.start) + ' ' : '') + eventLabel(e))),
+          evs.length > 2 ? el('span', { class: 'cal-sub' }, `+${evs.length - 2} more`) : null];
+      })()));
     }
     return el('div', { class: 'calendar' },
       el('div', { class: 'cal-head' },
@@ -1011,7 +1016,7 @@
           const t = new Date(); calMonth = { y: t.getFullYear(), m: t.getMonth() }; selectedDate = todayStr(); render({ keepScroll: true });
         } }, 'Today')),
       grid,
-      el('div', { class: 'cal-tip' }, 'Click a date to select it · double-click an empty date to schedule a shoot day'));
+      el('div', { class: 'cal-tip' }, 'Click a date to select it · double-click an empty date to schedule a shoot day · add table reads, meetings and other events from the date’s panel'));
   }
 
   function renderDayList(p) {
@@ -1033,7 +1038,98 @@
         el('span', { class: 'day-row-loc' }, d.location || ''),
         el('span', { class: 'day-row-count' }, `${done}/${shots.length}` + (dayEighths(p, d.id) ? ` · ${pagesLabel(dayEighths(p, d.id))}` : '')));
       }),
-      unscheduled ? el('div', { class: 'muted small unsched-note' }, `${unscheduled} shot${unscheduled === 1 ? '' : 's'} not scheduled yet`) : null);
+      unscheduled ? el('div', { class: 'muted small unsched-note' }, `${unscheduled} shot${unscheduled === 1 ? '' : 's'} not scheduled yet`) : null,
+      ...(() => {
+        const upcoming = [...(p.events || [])].filter((e) => e.date >= todayStr()).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+        return upcoming.length ? [el('h3', { class: 'panel-title ev-list-title' }, `UPCOMING EVENTS (${upcoming.length})`),
+          ...upcoming.map((e) => el('button', {
+            class: 'day-row ev-row' + (e.date === selectedDate ? ' active' : ''), style: `--ev:${F.eventKind(e.kind).color}`,
+            onclick: () => { selectedDate = e.date; openEventId = e.id; const dt = parseYmd(e.date); calMonth = { y: dt.getFullYear(), m: dt.getMonth() }; render({ keepScroll: true }); },
+          },
+          el('span', { class: 'ev-dot' }),
+          el('span', { class: 'day-row-date' }, fmtDate(e.date)),
+          el('span', { class: 'day-row-loc' }, eventLabel(e)),
+          el('span', { class: 'day-row-count' }, e.start ? fmtTime(e.start) : 'All day')))] : [];
+      })());
+  }
+
+  // ---------- Events (table reads, meetings, rehearsals… anything that isn't a shoot day) ----------
+  let openEventId = null; // the event being edited in the panel
+  const eventsOn = (p, date) => (p.events || []).filter((e) => e.date === date).sort((a, b) => (a.start || '').localeCompare(b.start || ''));
+  const eventLabel = (e) => e.title || F.eventKind(e.kind).label;
+  const everyoneOf = (p) => [
+    ...p.characters.map((c) => ({ id: c.id, name: c.actor || c.name || 'Unnamed', role: c.actor ? c.name : 'Cast' })),
+    ...p.crew.map((k) => ({ id: k.id, name: k.name || k.role || 'Crew', role: k.name ? k.role : 'Crew' })),
+  ];
+  function whoLabel(p, e) {
+    if (e.everyone) return 'Everyone';
+    const names = everyoneOf(p).filter((x) => e.peopleIds.includes(x.id)).map((x) => x.name);
+    return names.length > 3 ? `${names.slice(0, 3).join(', ')} +${names.length - 3}` : names.join(', ');
+  }
+  function addEvent(p, date) {
+    if (blockedReadOnly()) return;
+    p.events = p.events || [];
+    const e = F.newEvent(date);
+    p.events.push(e);
+    openEventId = e.id;
+    save(); render({ keepScroll: true });
+    const t = document.querySelector('.ev-editor .ev-title-input');
+    if (t) t.focus();
+  }
+  function eventsSection(p, date) {
+    const list = eventsOn(p, date);
+    const ro = collab.readOnly();
+    return el('div', { class: 'ev-section' },
+      el('div', { class: 'ev-head' }, el('h3', { class: 'panel-title' }, `EVENTS (${list.length})`),
+        ro ? null : el('button', { class: 'ghost-btn', title: 'A table read, meeting, rehearsal, fitting, scout… on this date', onclick: () => addEvent(p, date) }, '+ Event')),
+      list.length ? null : el('div', { class: 'muted small' }, 'Table reads, production meetings, rehearsals, fittings, scouts… anything that isn’t a shoot day.'),
+      ...list.map((e) => (openEventId === e.id && !ro ? eventEditor(p, e) : eventCard(p, e))));
+  }
+  function eventCard(p, e) {
+    const k = F.eventKind(e.kind);
+    return el('button', { class: 'ev-card', type: 'button', style: `--ev:${k.color}`, title: collab.readOnly() ? '' : 'Edit',
+      onclick: () => { if (collab.readOnly()) return; openEventId = e.id; render({ keepScroll: true }); } },
+    el('div', { class: 'ev-when' }, e.start ? `${fmtTime(e.start)}${e.end ? ' – ' + fmtTime(e.end) : ''}` : 'All day'),
+    el('div', { class: 'ev-name' }, eventLabel(e)),
+    el('div', { class: 'muted small' }, [eventLabel(e) !== k.label ? k.label : '', e.location, whoLabel(p, e)].filter(Boolean).join(' · ')),
+    e.notes ? el('div', { class: 'small ev-notes' }, e.notes) : null);
+  }
+  function eventEditor(p, e) {
+    const upd = (key) => (ev) => { e[key] = ev.target.value; save(); refreshCalendarOnly(p); };
+    const kind = el('select', { class: 'field', onchange: (ev) => { e.kind = ev.target.value; save(); render({ keepScroll: true }); } },
+      ...F.EVENT_KINDS.map((k) => el('option', { value: k.id }, k.label)));
+    kind.value = e.kind;
+    const people = everyoneOf(p);
+    const everyone = el('input', { type: 'checkbox', checked: e.everyone, onchange: (ev) => { e.everyone = ev.target.checked; save(); render({ keepScroll: true }); } });
+    return el('div', { class: 'ev-editor', style: `--ev:${F.eventKind(e.kind).color}` },
+      labeled('What', el('input', { class: 'field ev-title-input', value: e.title, placeholder: F.eventKind(e.kind).label + ' (e.g. Full cast table read)', oninput: upd('title') })),
+      el('div', { class: 'ev-grid' },
+        labeled('Type', kind),
+        labeled('Date', el('input', { class: 'field', type: 'date', value: e.date, onchange: (ev) => {
+          if (!ev.target.value) return;
+          e.date = ev.target.value; selectedDate = e.date; const dt = parseYmd(e.date); calMonth = { y: dt.getFullYear(), m: dt.getMonth() };
+          save(); render({ keepScroll: true });
+        } })),
+        labeled('Starts', el('input', { class: 'field', type: 'time', value: e.start, oninput: upd('start') })),
+        labeled('Ends', el('input', { class: 'field', type: 'time', value: e.end, oninput: upd('end') }))),
+      labeled('Where', el('input', { class: 'field', value: e.location, placeholder: 'Address, room or video call link', oninput: upd('location') })),
+      labeled('Notes', el('textarea', { class: 'field', rows: 2, placeholder: 'What to bring, agenda…', oninput: upd('notes') }, e.notes)),
+      el('div', { class: 'field-wrap' }, el('span', { class: 'field-label' }, 'Who’s invited'),
+        el('label', { class: 'ev-person ev-everyone' }, everyone, el('span', {}, 'Everyone in the production')),
+        e.everyone ? null : !people.length ? el('div', { class: 'muted small' }, 'Add cast and crew first (Cast & Crew).')
+          : el('div', { class: 'ev-people' }, ...people.map((x) => el('label', { class: 'ev-person' },
+            el('input', { type: 'checkbox', checked: e.peopleIds.includes(x.id), onchange: (ev) => {
+              e.peopleIds = ev.target.checked ? [...e.peopleIds, x.id] : e.peopleIds.filter((id) => id !== x.id);
+              save(); refreshCalendarOnly(p);
+            } }),
+            el('span', {}, el('strong', {}, x.name), el('span', { class: 'muted small' }, ' ' + x.role)))))),
+      el('div', { class: 'muted small' }, 'Invited people see it on their phone page and in their calendar (shared productions).'),
+      el('div', { class: 'ev-actions' },
+        el('button', { class: 'ghost-btn danger', type: 'button', onclick: () => {
+          if ((e.title || e.notes) && !confirm(`Delete "${eventLabel(e)}"?`)) return;
+          p.events = p.events.filter((x) => x !== e); openEventId = null; save(); render({ keepScroll: true });
+        } }, 'Delete'),
+        el('button', { class: 'primary-btn', type: 'button', onclick: () => { openEventId = null; render({ keepScroll: true }); } }, 'Done')));
   }
 
   function addDay(date) {
@@ -1056,7 +1152,8 @@
       panel.append(
         el('div', { class: 'panel-date' }, fmtDate(date, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })),
         el('p', { class: 'muted' }, 'No shoot scheduled on this date.'),
-        el('button', { class: 'primary-btn wide', onclick: () => addDay(date) }, '+ Schedule shoot day'));
+        collab.readOnly() ? el('span') : el('button', { class: 'primary-btn wide', onclick: () => addDay(date) }, '+ Schedule shoot day'),
+        eventsSection(p, date));
       return panel;
     }
     const n = dayNum(p, day.id);
@@ -1072,10 +1169,12 @@
           el('div', { class: 'panel-date' }, fmtDate(day.date, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }))),
         el('div', { class: 'panel-actions' },
           el('button', { class: 'ghost-btn', title: 'The printable call sheet for this day: call times, weather, location, scenes, cast and crew', onclick: () => openSummary(day.id) }, 'Call sheet'),
+          !eventsOn(p, day.date).length && !collab.readOnly() ? el('button', { class: 'ghost-btn', title: 'A table read, meeting or other event on this date', onclick: () => addEvent(p, day.date) }, '+ Event') : null,
           window.CrewLinks ? el('button', { class: 'ghost-btn', title: 'Send this day’s call sheet to cast and crew’s phones, and see who has it', onclick: () => sendCallSheet(p, day) }, 'Send…') : null,
           el('button', { class: 'primary-btn', title: 'Open this day’s shots as a checklist in the Shot Sheet', onclick: () => {
             store.flush().then(() => { location.href = window.Production.link('shotsheet.html', { day: day.id }); });
           } }, 'Run day ▶'))),
+      eventsOn(p, day.date).length ? eventsSection(p, day.date) : null,
       el('div', { class: 'day-fields' },
         labeled('Date', el('input', { class: 'field', type: 'date', value: day.date, onchange: (e) => {
           const v = e.target.value;

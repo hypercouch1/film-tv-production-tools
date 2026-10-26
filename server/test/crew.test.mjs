@@ -1,6 +1,6 @@
 // Unit checks for personal crew pages, their calendar, and authenticator codes (no server needed).
 import assert from 'node:assert/strict';
-import { findPerson, crewDays, crewCalendar } from '../src/crew.js';
+import { findPerson, crewDays, crewEvents, crewCalendar } from '../src/crew.js';
 import { base32, unbase32, codeAt, checkCode, stepAt } from '../src/totp.js';
 import { describeAll, mergeItems } from '../src/activity.js';
 
@@ -70,6 +70,20 @@ assert.equal(await checkCode(secret, '081804', 1111111109_000 + 30_000), stepAt(
 assert.equal(await checkCode(secret, '081804', 1111111109_000 + 120_000), null, 'old codes stop working');
 assert.equal(await checkCode(secret, 'abc'), null);
 step('authenticator codes (RFC 6238 test values)');
+
+// Events (table reads, meetings…) for the people invited.
+const evDoc = { ...doc, events: [
+  { id: 'e2', date: '2026-11-05', start: '18:00', end: '20:30', title: '', kind: 'tableread', location: 'Studio B\nUpstairs', everyone: true },
+  { id: 'e1', date: '2026-11-01', start: '10:00', title: 'Wardrobe fitting', kind: 'fitting', peopleIds: ['c1'] },
+  { id: 'e3', date: '2026-11-02', title: 'Rig day', kind: 'prep', peopleIds: ['k1'] },
+] };
+assert.deepStrictEqual(crewEvents(evDoc, maya).map((e) => [e.id, e.title, e.kind]), [['e1', 'Wardrobe fitting', 'Fitting'], ['e2', 'Table read', 'Table read']], 'invited ones only, in date order');
+assert.deepStrictEqual(crewEvents(evDoc, findPerson(doc, 'k1')).map((e) => e.id), ['e3', 'e2']);
+const evIcs = crewCalendar(evDoc, maya, [], { now: Date.UTC(2026, 9, 1), events: crewEvents(evDoc, maya) });
+assert.match(evIcs, /UID:e2\.c1@production-tools\r\nDTSTAMP:\d+T\d+Z\r\nDTSTART:20261105T180000\r\nDTEND:20261105T203000/);
+assert.match(evIcs, /SUMMARY:Night Diner: Table read\r\nLOCATION:Studio B\r\n/);
+assert.match(evIcs, /DTSTART:20261101T100000\r\nDTEND:20261101T110000/, 'no end time: an hour');
+step('events on crew pages and in their calendars, for the people invited');
 
 // Recent activity labels.
 const before = { title: 'Night Diner', scenes: [{ id: 's1', number: '4' }], days: [{ id: 'd1', date: '2026-11-03' }], crew: [{ id: 'k1', name: '', role: 'Gaffer' }] };

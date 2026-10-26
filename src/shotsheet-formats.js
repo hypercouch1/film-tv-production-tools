@@ -87,6 +87,23 @@
   ];
   const breakdownCategory = (id) => BREAKDOWN.find((c) => c.id === id) || null;
 
+  // Events that aren't shoot days (table reads, meetings, rehearsals…), on the schedule.
+  // { id, date, start, end, title, kind, location, notes, everyone, peopleIds }
+  const EVENT_KINDS = [
+    { id: 'tableread', label: 'Table read', color: '#a98be8' },
+    { id: 'meeting', label: 'Production meeting', color: '#3aa7c9' },
+    { id: 'rehearsal', label: 'Rehearsal', color: '#6fbf73' },
+    { id: 'fitting', label: 'Fitting', color: '#f08bb4' },
+    { id: 'scout', label: 'Location scout', color: '#f2994a' },
+    { id: 'tech', label: 'Tech scout', color: '#e8a33d' },
+    { id: 'prep', label: 'Prep day', color: '#9fb0c4' },
+    { id: 'other', label: 'Other', color: '#c49a6c' },
+  ];
+  const eventKind = (id) => EVENT_KINDS.find((k) => k.id === id) || EVENT_KINDS[EVENT_KINDS.length - 1];
+  const newEvent = (date, fields = {}) => ({ id: uid(), date, start: '10:00', end: '12:00', title: '', kind: 'meeting', location: '', notes: '', everyone: false, peopleIds: [], ...fields });
+  // Whether a person (cast or crew id) is invited.
+  const invited = (ev, personId) => !!ev.everyone || ev.peopleIds.includes(personId);
+
   // Locations
   const LOCATION_TEXT = ['name', 'address', 'contact', 'parking', 'hospital', 'power', 'permitNotes', 'cost', 'notes'];
   const PERMITS = [['', 'Not needed / not checked'], ['needed', 'Permit needed'], ['requested', 'Permit requested'], ['approved', 'Permit approved']];
@@ -225,6 +242,9 @@
       elements: (Array.isArray(raw.elements) ? raw.elements : []).filter((e) => e && typeof e === 'object')
         .map((e) => ({ ...e, id: uid(), sceneIds: ids(e.sceneIds, sceneMap) })),
       locations,
+      events: (Array.isArray(raw.events) ? raw.events : []).filter((e) => e && typeof e === 'object').map((e) => ({
+        ...e, id: uid(), peopleIds: ids(e.peopleIds, { ...charMap, ...crewMap }),
+      })),
     });
   }
 
@@ -319,6 +339,14 @@
       l.sets = (Array.isArray(l.sets) ? l.sets : []).filter((x) => typeof x === 'string' && x.trim()).map((x) => x.trim().slice(0, 200));
       return l;
     });
+    p.events = items(p.events).map((e) => ({
+      id: e.id, date: typeof e.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(e.date) ? e.date : '',
+      start: typeof e.start === 'string' && /^\d{2}:\d{2}$/.test(e.start) ? e.start : '',
+      end: typeof e.end === 'string' && /^\d{2}:\d{2}$/.test(e.end) ? e.end : '',
+      title: String(e.title == null ? '' : e.title).slice(0, 200), kind: eventKind(e.kind).id,
+      location: String(e.location == null ? '' : e.location).slice(0, 500), notes: String(e.notes == null ? '' : e.notes).slice(0, 2000),
+      everyone: !!e.everyone, peopleIds: idList(e.peopleIds).filter((id) => people.has(id)),
+    })).filter((e) => e.date);
     const locationIds = new Set(p.locations.map((l) => l.id));
     p.scenes.forEach((s) => { if (typeof s.locationId !== 'string' || !locationIds.has(s.locationId)) s.locationId = null; });
     // Breakdown elements added by hand (script tags are read from the scripts):
@@ -423,6 +451,7 @@
       availability: p.availability || {},
       elements: (p.elements || []).map(({ category, name, notes, sceneIds }) => ({ category, name, notes, sceneIds })),
       locations: p.locations || [],
+      events: (p.events || []).map(({ date, start, end, title, kind, location, notes, everyone, peopleIds }) => ({ date, start, end, title, kind, location, notes, everyone, peopleIds })),
       scriptLink: p.scriptLink || null,
       comments: p.comments || [],
       type: p.type === 'tv' ? 'tv' : 'film',
@@ -586,6 +615,19 @@
       if (desc) lines.push(fold('DESCRIPTION:' + icsEscape(desc)));
       lines.push('END:VEVENT');
     });
+    for (const e of [...(p.events || [])].sort((a, b) => a.date.localeCompare(b.date))) {
+      lines.push('BEGIN:VEVENT', `UID:${e.id}@shotsheet`, `DTSTAMP:${stamp}`);
+      if (e.start) {
+        lines.push(`DTSTART:${compactDate(e.date)}T${e.start.replace(':', '')}00`);
+        lines.push(`DTEND:${compactDate(e.date)}T${(e.end && e.end > e.start ? e.end : e.start).replace(':', '')}00`);
+      } else {
+        lines.push(`DTSTART;VALUE=DATE:${compactDate(e.date)}`, `DTEND;VALUE=DATE:${addDays(e.date, 1)}`);
+      }
+      lines.push(fold('SUMMARY:' + icsEscape(`${p.title} — ${e.title || eventKind(e.kind).label}`)));
+      if (e.location) lines.push(fold('LOCATION:' + icsEscape(e.location)));
+      if (e.notes) lines.push(fold('DESCRIPTION:' + icsEscape(e.notes)));
+      lines.push('END:VEVENT');
+    }
     lines.push('END:VCALENDAR');
     return lines.join('\r\n') + '\r\n';
   }
@@ -597,6 +639,7 @@
 
   window.ShotFormats = {
     OPTIONS, SHOT_DEFAULTS, CREW_ROLES, crewRoles, setCrewRoles, upgradeProduction, newShot, BREAKDOWN, breakdownCategory, elementKey,
+    EVENT_KINDS, eventKind, newEvent, invited,
     PERMITS, setOf, locationOf, shotLetter, normalizeProject, upgradeProject, listItems, shotEquipment,
     importFile, toShotsheet, toBackup, toCSV, toICS,
   };

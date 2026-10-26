@@ -7,7 +7,7 @@ import '../../src/sync-core.js';
 import { AVAILABILITY_HTML } from './availability-page.js';
 import { ADMIN_HTML } from './admin-page.js';
 import { CREW_HTML } from './crew-page.js';
-import { findPerson, crewDays, crewCalendar } from './crew.js';
+import { findPerson, crewDays, crewEvents, crewCalendar } from './crew.js';
 import { newSecret, checkCode, otpauthUri } from './totp.js';
 import { describeAll, mergeItems } from './activity.js';
 
@@ -493,7 +493,7 @@ async function route(req, env, url) {
   // The page (film.prismdashboard.cc/c/<code>) and the calendar people subscribe to.
   if (method === 'GET' && (m = pathname.match(/^\/c\/([A-Za-z0-9]{6,20})\/calendar\.ics$/))) {
     const { person, doc, days } = await openCrewLink(env, m[1]);
-    return new Response(crewCalendar(doc, person, days, { pageUrl: `${url.origin}/c/${m[1].toUpperCase()}` }), {
+    return new Response(crewCalendar(doc, person, days, { pageUrl: `${url.origin}/c/${m[1].toUpperCase()}`, events: crewEvents(doc, person) }), {
       headers: { 'Content-Type': 'text/calendar; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' },
     });
   }
@@ -502,7 +502,7 @@ async function route(req, env, url) {
     const { link, doc, person, days } = await openCrewLink(env, m[1]);
     if (method === 'GET' && !m[2]) {
       await env.DB.prepare('UPDATE crew_links SET opened_at = ? WHERE code_hash = ?').bind(Date.now(), link.code_hash).run();
-      return json({ production: String(doc.title || 'Untitled').slice(0, 200), name: person.name, role: person.role, days });
+      return json({ production: String(doc.title || 'Untitled').slice(0, 200), name: person.name, role: person.role, days, events: crewEvents(doc, person) });
     }
     if (method === 'POST' && m[2]) {
       const body = await readJson(req, 2_000);
